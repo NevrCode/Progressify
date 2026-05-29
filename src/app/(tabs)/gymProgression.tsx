@@ -286,6 +286,12 @@ export default function GymProgression() {
   const [activeWorkoutDrafts, setActiveWorkoutDrafts] = useState<
     Record<number, ActiveWorkoutDraft>
   >({});
+  const [finishingExerciseId, setFinishingExerciseId] = useState<number | null>(
+    null,
+  );
+  const [deletingExerciseId, setDeletingExerciseId] = useState<number | null>(
+    null,
+  );
   const [modalState, setModalState] = useState<ModalState>({
     visible: false,
     kind: null,
@@ -558,6 +564,7 @@ export default function GymProgression() {
       return;
     }
 
+    setFinishingExerciseId(exercise.id);
     try {
       const { splitWorkoutId, sessionDate } = await resolveWorkoutSessionId(
         exercise,
@@ -596,6 +603,8 @@ export default function GymProgression() {
         finishError.response?.data?.code ?? "Request failed",
         finishError.response?.data?.message ?? finishError.message,
       );
+    } finally {
+      setFinishingExerciseId(null);
     }
   };
 
@@ -1030,12 +1039,12 @@ export default function GymProgression() {
         >
           <View style={styles.header}>
             <View>
-              <Text style={styles.eyebrow}>Training</Text>
-              <Text style={styles.title}>PPL Progression</Text>
+              <Text style={styles.eyebrow}>Progressify</Text>
+              <Text style={styles.title}>Progressive Overload</Text>
             </View>
             <View style={styles.headerBadge}>
               <MaterialCommunityIcons
-                name="dumbbell"
+                name="gymnastics"
                 size={22}
                 color={theme.white}
               />
@@ -1218,17 +1227,32 @@ export default function GymProgression() {
                           confirmDelete(
                             "Delete exercise progression",
                             "This exercise and its linked data will be removed.",
-                            () => {
-                              deleteExerciseMutation.mutate(exercise.id);
+                            async () => {
+                              setDeletingExerciseId(exercise.id);
+                              try {
+                                await deleteExerciseMutation.mutateAsync(
+                                  exercise.id,
+                                );
+                              } finally {
+                                setDeletingExerciseId(null);
+                              }
                             },
                           )
                         }
+                        disabled={deletingExerciseId === exercise.id}
                       >
-                        <MaterialIcons
-                          name="delete-outline"
-                          size={18}
-                          color={theme.expense}
-                        />
+                        {deletingExerciseId === exercise.id ? (
+                          <ActivityIndicator
+                            size="small"
+                            color={theme.expense}
+                          />
+                        ) : (
+                          <MaterialIcons
+                            name="delete-outline"
+                            size={18}
+                            color={theme.expense}
+                          />
+                        )}
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -1435,6 +1459,7 @@ export default function GymProgression() {
                         <Text style={styles.setHeaderText}>Weight</Text>
                         <Text style={styles.setHeaderText}>Reps</Text>
                         <Text style={styles.setHeaderText}>RIR</Text>
+                        <Text style={styles.setHeaderText}>Action</Text>
                       </View>
                       {latestSessionSets.map((set) => (
                         <View key={set.id} style={styles.setRow}>
@@ -1447,6 +1472,13 @@ export default function GymProgression() {
                           <Text style={styles.setValue}>{set.weight}kg</Text>
                           <Text style={styles.setValue}>{set.reps}</Text>
                           <Text style={styles.setValue}>{set.rir ?? 0}</Text>
+                          <TouchableOpacity>
+                            <MaterialIcons
+                              name="delete"
+                              size={16}
+                              color={theme.expense}
+                            />
+                          </TouchableOpacity>
                         </View>
                       ))}
                     </View>
@@ -1482,14 +1514,31 @@ export default function GymProgression() {
                       <TouchableOpacity
                         style={styles.inlineAction}
                         onPress={() => addDraftSet(exercise.id)}
+                        disabled={finishingExerciseId === exercise.id}
                       >
                         <MaterialIcons
                           name="add"
                           size={16}
-                          color={theme.primary}
+                          color={
+                            finishingExerciseId === exercise.id
+                              ? theme.textLight
+                              : theme.primary
+                          }
                         />
 
-                        <Text style={styles.inlineActionText}>Add set</Text>
+                        <Text
+                          style={[
+                            styles.inlineActionText,
+                            {
+                              color:
+                                finishingExerciseId === exercise.id
+                                  ? theme.textLight
+                                  : undefined,
+                            },
+                          ]}
+                        >
+                          Add set
+                        </Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -1554,12 +1603,23 @@ export default function GymProgression() {
                       ))}
 
                       <TouchableOpacity
-                        style={styles.saveSetButton}
+                        style={[
+                          styles.saveSetButton,
+                          {
+                            opacity:
+                              finishingExerciseId === exercise.id ? 0.6 : 1,
+                          },
+                        ]}
                         onPress={() => finishWorkout(exercise)}
+                        disabled={finishingExerciseId === exercise.id}
                       >
-                        <Text style={styles.saveSetButtonText}>
-                          Finish Workout
-                        </Text>
+                        {finishingExerciseId === exercise.id ? (
+                          <ActivityIndicator size="small" color={theme.white} />
+                        ) : (
+                          <Text style={styles.saveSetButtonText}>
+                            Finish Workout
+                          </Text>
+                        )}
                       </TouchableOpacity>
                     </View>
                   ) : (

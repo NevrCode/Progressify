@@ -1,12 +1,15 @@
-import { COLORS } from "@/constants/colors";
+import { gymStyles } from "@/assets/styles/gym.style";
+import { useTheme } from "@/context/ThemeContext";
 import { FontAwesome } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 export default function TabsLayout() {
+  const { theme } = useTheme();
+  const color = gymStyles(theme).exerciseSubMeta.color;
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: COLORS.primary,
+        tabBarActiveTintColor: color,
       }}
     >
       <Tabs.Screen

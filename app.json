@@ -1,8 +1,8 @@
 {
   "expo": {
     "name": "Progressify",
-    "slug": "Progressify",
-    "version": "1.0.0",
+    "slug": "progressify",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "progressify",
@@ -17,7 +17,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.nevrcode.progressify"
     },
     "web": {
       "output": "static",
@@ -41,6 +42,14 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "apiUrl": "https://ex-tracker-168551488309.asia-southeast2.run.app",
+      "eas": {
+        "projectId": "b2090b27-3032-4529-a2d1-23f2944fc5a6"
+      }
+    },
+    "owner": "nevrcode"
   }
 }

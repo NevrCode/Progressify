@@ -123,18 +123,6 @@ export default function Profile() {
             </View>
           </View>
 
-          <View style={profileStyless.statsCard}>
-            {profileStats.map((stat, index) => (
-              <View key={stat.label} style={profileStyless.statItem}>
-                <Text style={profileStyless.statValue}>{stat.value}</Text>
-                <Text style={profileStyless.statLabel}>{stat.label}</Text>
-                {index < profileStats.length - 1 && (
-                  <View style={profileStyless.statDivider} />
-                )}
-              </View>
-            ))}
-          </View>
-
           <View style={profileStyless.section}>
             <Text style={profileStyless.sectionTitle}>Preferences</Text>
             {menuSections[1].items.map((item) => (
@@ -143,7 +131,7 @@ export default function Profile() {
                 item={item}
                 onPress={() => {
                   if (item.label === "Appearance") {
-                    // router.push("/appearance");
+                    router.push("/appearance");
                   }
                 }}
               />

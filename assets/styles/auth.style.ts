@@ -13,11 +13,12 @@ export const authStyles = (theme: ThemeType) =>
     },
     signInButton: {
       justifyContent: "center",
-      width: 120,
+      // width: 120,
       alignItems: "center",
       alignSelf: "center",
       backgroundColor: theme.white,
       padding: 10,
+      paddingHorizontal: 20,
       borderWidth: 1,
       borderColor: theme.border,
       borderRadius: 8,
@@ -27,7 +28,7 @@ export const authStyles = (theme: ThemeType) =>
       fontWeight: "bold",
     },
     loginButton: {
-      width: 120,
+      // width: 120,
       justifyContent: "center",
       alignItems: "center",
       alignSelf: "center",
@@ -48,7 +49,7 @@ export const authStyles = (theme: ThemeType) =>
     input: {
       backgroundColor: theme.white,
       height: 40,
-      width: w - 120,
+      // width: w - 120,
       borderColor: theme.border,
       borderWidth: 1,
       borderRadius: 8,

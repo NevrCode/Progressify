@@ -29,6 +29,20 @@ export default function pagesLayout() {
           title: "Manage Workout Session",
         }}
       />
+      <Stack.Screen
+        name="workoutSession"
+        options={{
+          title: "Workout Session",
+        }}
+      />
+      <Stack.Screen
+        name="activeWorkoutSession"
+        options={{
+          title: "Active Session",
+          headerBackVisible: false,
+          gestureEnabled: false,
+        }}
+      />
     </Stack>
   );
 }

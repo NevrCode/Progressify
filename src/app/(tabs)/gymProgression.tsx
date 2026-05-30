@@ -1,6 +1,7 @@
 import { gymStyles } from "@/assets/styles/gym.style";
 import { COLORS } from "@/constants/colors";
 import { useTheme } from "@/context/ThemeContext";
+import { useActiveSession } from "@/hooks/useActiveSession";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
 
 import {
@@ -22,8 +23,8 @@ import {
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -276,6 +277,14 @@ export default function GymProgression() {
   const { theme } = useTheme();
   const styles = gymStyles(theme);
   const queryClient = useQueryClient();
+  const { storedSession, hasActiveSession, checking, refresh, discard } =
+    useActiveSession();
+
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh]),
+  );
   const [date, setDate] = useState(new Date());
   const [openDate, setOpenDate] = useState(false);
   const [tableDetail, setTableDetail] = useState(false);
@@ -292,6 +301,7 @@ export default function GymProgression() {
   const [deletingExerciseId, setDeletingExerciseId] = useState<number | null>(
     null,
   );
+  const [deletingSetId, setDeletingSetId] = useState<string | null>(null);
   const [modalState, setModalState] = useState<ModalState>({
     visible: false,
     kind: null,
@@ -332,18 +342,18 @@ export default function GymProgression() {
     [dashboard],
   );
 
-  const filteredWorkouts = useMemo(() => {
-    const list =
-      activeSplit === "ALL"
-        ? splitWorkouts
-        : splitWorkouts.filter(
-            (workout) => normalizeSplit(workout.split) === activeSplit,
-          );
-    return [...list].sort(
-      (a, b) =>
-        toDateSortValue(getWorkoutDate(b)) - toDateSortValue(getWorkoutDate(a)),
-    );
-  }, [activeSplit, splitWorkouts]);
+  // const filteredWorkouts = useMemo(() => {
+  //   const list =
+  //     activeSplit === "ALL"
+  //       ? splitWorkouts
+  //       : splitWorkouts.filter(
+  //           (workout) => normalizeSplit(workout.split) === activeSplit,
+  //         );
+  //   return [...list].sort(
+  //     (a, b) =>
+  //       toDateSortValue(getWorkoutDate(b)) - toDateSortValue(getWorkoutDate(a)),
+  //   );
+  // }, [activeSplit, splitWorkouts]);
   const filteredExercises = useMemo(() => {
     const list =
       activeSplit === "ALL"
@@ -552,6 +562,43 @@ export default function GymProgression() {
     if (!invalidSet) return null;
 
     return `Set #${invalidSet.set_number} needs weight and reps above 0, and RIR cannot be negative.`;
+  };
+  const deleteDraftSet = (exerciseId: number, localId: string) => {
+    if (deletingSetId) return;
+
+    setDeletingSetId(localId);
+
+    setTimeout(() => {
+      setActiveWorkoutDrafts((current) => {
+        const draft = current[exerciseId];
+
+        if (!draft) return current;
+
+        const nextSets = draft.sets.filter((s) => s.localId !== localId);
+
+        // if no sets remain, remove the draft entirely
+        if (!nextSets.length) {
+          const copy = { ...current };
+          delete copy[exerciseId];
+          return copy;
+        }
+
+        // reindex set_number sequentially
+        const reindexed = nextSets.map((s, idx) => ({
+          ...s,
+          set_number: idx + 1,
+        }));
+
+        return {
+          ...current,
+          [exerciseId]: {
+            ...draft,
+            sets: reindexed,
+          },
+        };
+      });
+      setDeletingSetId(null);
+    }, 350);
   };
   const finishWorkout = async (exercise: ExerciseProgressionDTO) => {
     const draft = activeWorkoutDrafts[exercise.id];
@@ -1042,15 +1089,17 @@ export default function GymProgression() {
               <Text style={styles.eyebrow}>Progressify</Text>
               <Text style={styles.title}>Progressive Overload</Text>
             </View>
-            <View style={styles.headerBadge}>
+            <TouchableOpacity
+              style={styles.headerBadge}
+              onPress={() => router.push("/(pages)/workoutSession")}
+            >
               <MaterialCommunityIcons
-                name="gymnastics"
+                name="play-circle"
                 size={22}
                 color={theme.white}
               />
-            </View>
+            </TouchableOpacity>
           </View>
-
           <View style={styles.heroCard}>
             <View style={styles.heroTopRow}>
               <View>
@@ -1084,6 +1133,31 @@ export default function GymProgression() {
               </View>
             </View>
           </View>
+          {!checking && hasActiveSession && storedSession && (
+            <TouchableOpacity
+              style={styles.activeSessionBanner}
+              onPress={() => router.push("/(pages)/activeWorkoutSession")}
+              activeOpacity={0.7}
+            >
+              <View style={styles.activeSessionDot} />
+              <Text style={styles.activeSessionBannerText}>
+                {storedSession.split.charAt(0) +
+                  storedSession.split.slice(1).toLowerCase()}{" "}
+                session — {storedSession.completedIds.length}/
+                {storedSession.exerciseIds.length} done
+              </Text>
+              <Text style={styles.activeSessionBannerAction}>Resume</Text>
+              <TouchableOpacity
+                hitSlop={{ top: 10, bottom: 10, left: 6, right: 10 }}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  discard();
+                }}
+              >
+                <MaterialIcons name="close" size={16} color={theme.textLight} />
+              </TouchableOpacity>
+            </TouchableOpacity>
+          )}
           <View
             style={[
               {
@@ -1139,7 +1213,6 @@ export default function GymProgression() {
               </View>
             </TouchableOpacity>
           </View>
-
           <View style={styles.filterBar}>
             {(["ALL", ...splitOptions] as SplitFilter[]).map((split) => {
               const active = split === activeSplit;
@@ -1161,7 +1234,6 @@ export default function GymProgression() {
               );
             })}
           </View>
-
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Exercise progression</Text>
             <TouchableOpacity
@@ -1172,7 +1244,6 @@ export default function GymProgression() {
               <Text style={styles.inlineActionText}>Add exercise</Text>
             </TouchableOpacity>
           </View>
-
           {filteredSearchWorkout.length ? (
             filteredSearchWorkout.map((exercise) => {
               const activeDraft = activeWorkoutDrafts[exercise.id];
@@ -1459,7 +1530,6 @@ export default function GymProgression() {
                         <Text style={styles.setHeaderText}>Weight</Text>
                         <Text style={styles.setHeaderText}>Reps</Text>
                         <Text style={styles.setHeaderText}>RIR</Text>
-                        <Text style={styles.setHeaderText}>Action</Text>
                       </View>
                       {latestSessionSets.map((set) => (
                         <View key={set.id} style={styles.setRow}>
@@ -1472,13 +1542,6 @@ export default function GymProgression() {
                           <Text style={styles.setValue}>{set.weight}kg</Text>
                           <Text style={styles.setValue}>{set.reps}</Text>
                           <Text style={styles.setValue}>{set.rir ?? 0}</Text>
-                          <TouchableOpacity>
-                            <MaterialIcons
-                              name="delete"
-                              size={16}
-                              color={theme.expense}
-                            />
-                          </TouchableOpacity>
                         </View>
                       ))}
                     </View>
@@ -1552,6 +1615,8 @@ export default function GymProgression() {
                         <Text style={styles.setHeaderText}>Reps</Text>
 
                         <Text style={styles.setHeaderText}>RIR</Text>
+
+                        <Text style={styles.setHeaderText}>Action</Text>
                       </View>
 
                       {currentWorkoutSets.map((set) => (
@@ -1599,6 +1664,25 @@ export default function GymProgression() {
                               )
                             }
                           />
+                          <TouchableOpacity
+                            onPress={() =>
+                              deleteDraftSet(exercise.id, set.localId)
+                            }
+                            disabled={deletingSetId === set.localId}
+                          >
+                            {deletingSetId === set.localId ? (
+                              <ActivityIndicator
+                                size="small"
+                                color={theme.expense}
+                              />
+                            ) : (
+                              <MaterialIcons
+                                name="delete"
+                                size={16}
+                                color={theme.expense}
+                              />
+                            )}
+                          </TouchableOpacity>
                         </View>
                       ))}
 
@@ -1653,7 +1737,6 @@ export default function GymProgression() {
               </Text>
             </View>
           )}
-
           <View style={styles.blueprintCard}>
             <Text style={styles.sectionTitle}>Backend blueprint</Text>
             <Text style={styles.blueprintText}>

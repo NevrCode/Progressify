@@ -29,12 +29,6 @@ type MenuItem = {
   description: string;
 };
 
-const profileStats = [
-  { label: "Accounts", value: "2" },
-  { label: "Transactions", value: "128" },
-  { label: "Budgets", value: "6" },
-];
-
 const menuSections: { title: string; items: MenuItem[] }[] = [
   {
     title: "Account",
@@ -63,11 +57,6 @@ const menuSections: { title: string; items: MenuItem[] }[] = [
         icon: "palette-outline",
         label: "Appearance",
         description: "Theme and display options",
-      },
-      {
-        icon: "bell-outline",
-        label: "Notifications",
-        description: "Budget reminders and alerts",
       },
     ],
   },

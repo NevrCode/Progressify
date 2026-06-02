@@ -22,7 +22,6 @@ export type ActiveSessionData = {
   startedAt: string;
   drafts: Record<number, StoredExerciseDraft>;
   completedIds: number[];
-  splitWorkoutId: number | null;
 };
 
 export const saveActiveSession = async (data: ActiveSessionData) => {

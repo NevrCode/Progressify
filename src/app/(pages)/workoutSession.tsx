@@ -2,9 +2,15 @@ import { gymStyles } from "@/assets/styles/gym.style";
 import { useTheme } from "@/context/ThemeContext";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
 import { ExerciseProgressionDTO, SplitType } from "@/services/gymService";
+import {
+    addProgram,
+    deleteProgram,
+    loadPrograms,
+    WorkoutProgram,
+} from "@/services/programStorage";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -12,7 +18,7 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View,
+    View
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
@@ -48,6 +54,61 @@ export default function WorkoutSession() {
     new Set(),
   );
   const [search, setSearch] = useState("");
+  const [programs, setPrograms] = useState<WorkoutProgram[]>([]);
+  const [showSaveInput, setShowSaveInput] = useState(false);
+  const [programName, setProgramName] = useState("");
+
+  useEffect(() => {
+    loadPrograms().then(setPrograms);
+  }, []);
+
+  const refreshPrograms = useCallback(async () => {
+    const loaded = await loadPrograms();
+    setPrograms(loaded);
+  }, []);
+
+  const handleDeleteProgram = (program: WorkoutProgram) => {
+    Alert.alert("Delete program", `"${program.name}" will be removed.`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          const updated = await deleteProgram(program.id);
+          setPrograms(updated);
+        },
+      },
+    ]);
+  };
+
+  const handleSaveProgram = async () => {
+    const name = programName.trim();
+    if (!name) {
+      Alert.alert("Name required", "Enter a name for your program.");
+      return;
+    }
+    if (!selectedExerciseIds.size) return;
+
+    const updated = await addProgram({
+      name,
+      split: selectedSplit,
+      exerciseIds: Array.from(selectedExerciseIds),
+    });
+    setPrograms(updated);
+    setShowSaveInput(false);
+    setProgramName("");
+    Alert.alert("Saved", `"${name}" program created.`);
+  };
+
+  const loadProgram = (program: WorkoutProgram) => {
+    setSelectedSplit(normalizeSplit(program.split));
+    setSelectedExerciseIds(new Set(program.exerciseIds));
+  };
+
+  const programsForSplit = useMemo(
+    () => programs.filter((p) => normalizeSplit(p.split) === selectedSplit),
+    [programs, selectedSplit],
+  );
 
   const {
     data: dashboard,
@@ -112,11 +173,11 @@ export default function WorkoutSession() {
       return;
     }
 
-    const selectedNames = exerciseProgressions
-      .filter((exercise) => selectedExerciseIds.has(exercise.id))
-      .map((exercise) => getExerciseName(exercise));
+    // const selectedNames = exerciseProgressions
+    //   .filter((exercise) => selectedExerciseIds.has(exercise.id))
+    //   .map((exercise) => getExerciseName(exercise));
 
-    router.push({
+    router.replace({
       pathname: "/activeWorkoutSession",
       params: {
         exerciseIds: Array.from(selectedExerciseIds).join(","),
@@ -242,6 +303,42 @@ export default function WorkoutSession() {
             })}
           </View>
 
+          {/* Programs section */}
+          {programsForSplit.length > 0 && (
+            <>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>My Programs</Text>
+                <Text style={styles.sectionMeta}>
+                  {programsForSplit.length} saved
+                </Text>
+              </View>
+              {programsForSplit.map((program) => (
+                <TouchableOpacity
+                  key={program.id}
+                  style={styles.exerciseCard}
+                  activeOpacity={0.7}
+                  onPress={() => loadProgram(program)}
+                  onLongPress={() => handleDeleteProgram(program)}
+                >
+                  <View style={styles.exerciseHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.exerciseName}>{program.name}</Text>
+                      <Text style={styles.exerciseMeta}>
+                        {displaySplit(program.split)} |{" "}
+                        {program.exerciseIds.length} exercises
+                      </Text>
+                    </View>
+                    <MaterialIcons
+                      name="play-circle-outline"
+                      size={24}
+                      color={theme.primary}
+                    />
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </>
+          )}
+
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>2. Choose exercises</Text>
             {filteredExercises.length > 0 && (
@@ -260,7 +357,7 @@ export default function WorkoutSession() {
 
           <View
             style={{
-              backgroundColor: theme.white,
+              backgroundColor: theme.card,
               width: "100%",
               borderWidth: 1,
               borderColor: theme.border,
@@ -268,7 +365,7 @@ export default function WorkoutSession() {
               justifyContent: "space-between",
               alignItems: "center",
               paddingHorizontal: 10,
-              borderRadius: 20,
+              borderRadius: 12,
               marginBottom: 4,
             }}
           >
@@ -283,8 +380,13 @@ export default function WorkoutSession() {
               </View>
             </TouchableOpacity>
             <TextInput
-              style={{ width: "85%" }}
-              placeholder="Search exercises..."
+              style={{
+                color: theme.primary,
+                fontWeight: "500",
+                width: "85%",
+              }}
+              placeholder="Search Exercise..."
+              placeholderTextColor={theme.textLight}
               value={search}
               onChangeText={setSearch}
             />
@@ -386,17 +488,73 @@ export default function WorkoutSession() {
               backgroundColor: theme.card,
               borderTopWidth: 1,
               borderTopColor: theme.border,
+              gap: 10,
             }}
           >
-            <TouchableOpacity
-              style={[styles.primaryButton, { width: "100%" }]}
-              onPress={startSession}
-            >
-              <Text style={styles.primaryButtonText}>
-                Start {displaySplit(selectedSplit)} Session (
-                {selectedExerciseIds.size} exercises)
-              </Text>
-            </TouchableOpacity>
+            {showSaveInput ? (
+              <View
+                style={{
+                  flexDirection: "row",
+                  gap: 8,
+                  alignItems: "center",
+                }}
+              >
+                <TextInput
+                  style={{
+                    flex: 1,
+                    backgroundColor: theme.background,
+                    borderRadius: 10,
+                    paddingHorizontal: 14,
+                    paddingVertical: 10,
+                    color: theme.textBlack,
+                    fontSize: 14,
+                    borderWidth: 1,
+                    borderColor: theme.border,
+                  }}
+                  placeholder="Program name..."
+                  placeholderTextColor={theme.textLight}
+                  value={programName}
+                  onChangeText={setProgramName}
+                  autoFocus
+                />
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={handleSaveProgram}
+                >
+                  <Text style={styles.primaryButtonText}>Save</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.secondaryButton}
+                  onPress={() => {
+                    setShowSaveInput(false);
+                    setProgramName("");
+                  }}
+                >
+                  <Text style={styles.secondaryButtonText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <TouchableOpacity
+                  style={[styles.primaryButton, { flex: 1 }]}
+                  onPress={startSession}
+                >
+                  <Text style={styles.primaryButtonText}>
+                    Start ({selectedExerciseIds.size})
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.secondaryButton}
+                  onPress={() => setShowSaveInput(true)}
+                >
+                  <MaterialIcons
+                    name="bookmark-outline"
+                    size={18}
+                    color={theme.primary}
+                  />
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         )}
       </SafeAreaView>

@@ -133,11 +133,35 @@ const greenTheme: ThemeType = {
   bar: "#0e6b1a",
 };
 
+const darkGymTheme: ThemeType = {
+  primary: "#00E676",
+  secondary: "#00C853",
+  teriary: "#1B5E20",
+
+  background: "#0A0A0A",
+
+  text: "#E0E0E0",
+  textBlack: "#FAFAFA",
+  textLight: "#6B6B6B",
+
+  border: "#1E1E1E",
+
+  white: "#FFFFFF",
+
+  expense: "#FF5252",
+  income: "#69F0AE",
+
+  card: "#161616",
+  shadow: "#000000",
+  bar: "#00E676",
+};
+
 export const THEMES: Record<string, ThemeType> = {
   coffee: coffeeTheme,
   forest: forestTheme,
   purple: purpleTheme,
   ocean: oceanTheme,
   green: greenTheme,
+  darkGym: darkGymTheme,
 };
-export const COLORS = THEMES.green;
+export const COLORS = THEMES.darkGym;

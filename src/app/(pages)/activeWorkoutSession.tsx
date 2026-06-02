@@ -2,32 +2,32 @@ import { gymStyles } from "@/assets/styles/gym.style";
 import { useTheme } from "@/context/ThemeContext";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
 import {
-    createExerciseSession,
-    createSplitWorkout,
-    ExerciseProgressionDTO,
-    GymExerciseSessionRequestDTO,
-    GymSplitWorkoutRequestDTO,
-    SplitType,
+  createExerciseSession,
+  ExerciseProgressionDTO,
+  GymExerciseSessionRequestDTO,
+  SplitType,
 } from "@/services/gymService";
 import {
-    ActiveSessionData,
-    clearActiveSession,
-    loadActiveSession,
-    saveActiveSession,
+  ActiveSessionData,
+  clearActiveSession,
+  loadActiveSession,
+  saveActiveSession,
 } from "@/services/sessionStorage";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    BackHandler,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  BackHandler,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
@@ -125,7 +125,6 @@ export default function ActiveWorkoutSession() {
   const [completedIds, setCompletedIds] = useState<Set<number>>(new Set());
   const [finishingId, setFinishingId] = useState<number | null>(null);
   const [deletingSetKey, setDeletingSetKey] = useState<string | null>(null);
-  const [splitWorkoutId, setSplitWorkoutId] = useState<number | null>(null);
   const [allSaved, setAllSaved] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
@@ -133,11 +132,6 @@ export default function ActiveWorkoutSession() {
 
   const exerciseProgressions = useMemo(
     () => dashboard?.exercise_progressions ?? [],
-    [dashboard],
-  );
-
-  const splitWorkouts = useMemo(
-    () => dashboard?.split_workouts ?? [],
     [dashboard],
   );
 
@@ -161,7 +155,6 @@ export default function ActiveWorkoutSession() {
         sessionStartedAtRef.current = stored.startedAt;
         setDrafts(stored.drafts);
         setCompletedIds(new Set(stored.completedIds));
-        setSplitWorkoutId(stored.splitWorkoutId);
         setRestoredIds(stored.exerciseIds);
         setRestoredSplit(normalizeSplit(stored.split));
         setHydrated(true);
@@ -207,7 +200,6 @@ export default function ActiveWorkoutSession() {
       startedAt: sessionStartedAtRef.current,
       drafts,
       completedIds: Array.from(completedIds),
-      splitWorkoutId,
     };
     saveActiveSession(data);
   }, [
@@ -218,7 +210,6 @@ export default function ActiveWorkoutSession() {
     selectedSplit,
     drafts,
     completedIds,
-    splitWorkoutId,
   ]);
 
   useEffect(() => {
@@ -251,14 +242,6 @@ export default function ActiveWorkoutSession() {
     return () => handler.remove();
   }, [allSaved]);
 
-  const splitWorkoutMutation = useMutation({
-    mutationFn: async (payload: GymSplitWorkoutRequestDTO) =>
-      createSplitWorkout(payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["gym"] });
-    },
-  });
-
   const sessionMutation = useMutation({
     mutationFn: async ({
       exerciseProgressionId,
@@ -271,39 +254,6 @@ export default function ActiveWorkoutSession() {
       queryClient.invalidateQueries({ queryKey: ["gym"] });
     },
   });
-
-  const ensureSplitWorkoutId = async (): Promise<number> => {
-    if (splitWorkoutId) return splitWorkoutId;
-
-    // Check for existing workout today
-    const today = formatDateForApi(new Date());
-    const existing = splitWorkouts.find(
-      (w) =>
-        normalizeSplit(w.split) === selectedSplit &&
-        (w.date ?? w.workout_date) === today,
-    );
-
-    if (existing?.id) {
-      setSplitWorkoutId(existing.id);
-      return existing.id;
-    }
-
-    const created = await splitWorkoutMutation.mutateAsync({
-      split: selectedSplit,
-      date: today,
-      duration: getDurationLabel(sessionStartedAtRef.current),
-      exercises: selectedExercises.length,
-      total_volume: 0,
-      focus: selectedExercises.map(getExerciseName).join(", "),
-    });
-
-    if (!created?.id) {
-      throw new Error("Could not create the workout session.");
-    }
-
-    setSplitWorkoutId(created.id);
-    return created.id;
-  };
 
   const confirmExit = () => {
     router.back();
@@ -405,11 +355,9 @@ export default function ActiveWorkoutSession() {
 
     setFinishingId(exercise.id);
     try {
-      const workoutId = await ensureSplitWorkoutId();
       const sessionDate = formatDateForApi(new Date());
 
       const payload: GymExerciseSessionRequestDTO = {
-        split_workout_id: workoutId,
         session_date: sessionDate,
         notes: "",
         sets: draft.sets.map((s) => ({
@@ -660,6 +608,11 @@ export default function ActiveWorkoutSession() {
                           color={theme.income}
                         />
                       )}
+                      <MaterialIcons
+                        name="check-circle"
+                        size={18}
+                        color={theme.income}
+                      />
                     </View>
                     <Text style={styles.exerciseMeta}>
                       {exercise.muscle_group ?? "-"} |{" "}
@@ -711,90 +664,97 @@ export default function ActiveWorkoutSession() {
                 )}
 
                 {sets.length > 0 && (
-                  <View style={styles.setTable}>
-                    <View style={styles.setTableHeader}>
-                      <Text style={styles.setHeaderText}>Set</Text>
-                      <Text style={styles.setHeaderText}>Weight</Text>
-                      <Text style={styles.setHeaderText}>Reps</Text>
-                      <Text style={styles.setHeaderText}>RIR</Text>
-                      {!isCompleted && (
-                        <Text style={styles.setHeaderText}>Act</Text>
-                      )}
-                    </View>
-                    {sets.map((set) => (
-                      <View key={set.localId} style={styles.setRow}>
-                        <Text style={styles.setValue}>#{set.set_number}</Text>
-                        {isCompleted ? (
-                          <>
-                            <Text style={styles.setValue}>{set.weight}kg</Text>
-                            <Text style={styles.setValue}>{set.reps}</Text>
-                            <Text style={styles.setValue}>{set.rir}</Text>
-                          </>
-                        ) : (
-                          <>
-                            <TextInput
-                              style={styles.setValue}
-                              keyboardType="numeric"
-                              value={String(set.weight)}
-                              onChangeText={(v) =>
-                                updateDraftSet(
-                                  exercise.id,
-                                  set.localId,
-                                  "weight",
-                                  Number(v),
-                                )
-                              }
-                            />
-                            <TextInput
-                              style={styles.setValue}
-                              keyboardType="numeric"
-                              value={String(set.reps)}
-                              onChangeText={(v) =>
-                                updateDraftSet(
-                                  exercise.id,
-                                  set.localId,
-                                  "reps",
-                                  Number(v),
-                                )
-                              }
-                            />
-                            <TextInput
-                              style={styles.setValue}
-                              keyboardType="numeric"
-                              value={String(set.rir)}
-                              onChangeText={(v) =>
-                                updateDraftSet(
-                                  exercise.id,
-                                  set.localId,
-                                  "rir",
-                                  Number(v),
-                                )
-                              }
-                            />
-                            <TouchableOpacity
-                              onPress={() =>
-                                deleteDraftSet(exercise.id, set.localId)
-                              }
-                              disabled={deletingSetKey === set.localId}
-                            >
-                              {deletingSetKey === set.localId ? (
-                                <ActivityIndicator
-                                  size="small"
-                                  color={theme.expense}
-                                />
-                              ) : (
-                                <MaterialIcons
-                                  name="delete"
-                                  size={16}
-                                  color={theme.expense}
-                                />
-                              )}
-                            </TouchableOpacity>
-                          </>
+                  <KeyboardAvoidingView
+                    behavior={Platform.OS === "ios" ? "padding" : "height"}
+                    style={{ flex: 1 }}
+                  >
+                    <View style={styles.setTable}>
+                      <View style={styles.setTableHeader}>
+                        <Text style={styles.setHeaderText}>Set</Text>
+                        <Text style={styles.setHeaderText}>Weight</Text>
+                        <Text style={styles.setHeaderText}>Reps</Text>
+                        <Text style={styles.setHeaderText}>RIR</Text>
+                        {!isCompleted && (
+                          <Text style={styles.setHeaderText}>Act</Text>
                         )}
                       </View>
-                    ))}
-                  </View>
+                      {sets.map((set) => (
+                        <View key={set.localId} style={styles.setRow}>
+                          <Text style={styles.setValue}>#{set.set_number}</Text>
+                          {isCompleted ? (
+                            <>
+                              <Text style={styles.setValue}>
+                                {set.weight}kg
+                              </Text>
+                              <Text style={styles.setValue}>{set.reps}</Text>
+                              <Text style={styles.setValue}>{set.rir}</Text>
+                            </>
+                          ) : (
+                            <>
+                              <TextInput
+                                style={styles.setValue}
+                                keyboardType="numeric"
+                                value={String(set.weight)}
+                                onChangeText={(v) =>
+                                  updateDraftSet(
+                                    exercise.id,
+                                    set.localId,
+                                    "weight",
+                                    Number(v),
+                                  )
+                                }
+                              />
+                              <TextInput
+                                style={styles.setValue}
+                                keyboardType="numeric"
+                                value={String(set.reps)}
+                                onChangeText={(v) =>
+                                  updateDraftSet(
+                                    exercise.id,
+                                    set.localId,
+                                    "reps",
+                                    Number(v),
+                                  )
+                                }
+                              />
+                              <TextInput
+                                style={styles.setValue}
+                                keyboardType="numeric"
+                                value={String(set.rir)}
+                                onChangeText={(v) =>
+                                  updateDraftSet(
+                                    exercise.id,
+                                    set.localId,
+                                    "rir",
+                                    Number(v),
+                                  )
+                                }
+                              />
+                              <TouchableOpacity
+                                onPress={() =>
+                                  deleteDraftSet(exercise.id, set.localId)
+                                }
+                                disabled={deletingSetKey === set.localId}
+                              >
+                                {deletingSetKey === set.localId ? (
+                                  <ActivityIndicator
+                                    size="small"
+                                    color={theme.expense}
+                                  />
+                                ) : (
+                                  <MaterialIcons
+                                    name="delete"
+                                    size={16}
+                                    color={theme.expense}
+                                  />
+                                )}
+                              </TouchableOpacity>
+                            </>
+                          )}
+                        </View>
+                      ))}
+                    </View>
+                  </KeyboardAvoidingView>
                 )}
 
                 {!isCompleted && (

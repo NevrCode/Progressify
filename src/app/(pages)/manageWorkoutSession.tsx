@@ -6,7 +6,6 @@ import {
   ExerciseProgressionDTO,
   ExerciseSessionDTO,
   GymExerciseSessionRequestDTO,
-  SplitWorkoutDTO,
   updateExerciseSession,
   WorkoutSetDTO,
 } from "@/services/gymService";
@@ -49,20 +48,10 @@ type SessionPoint = {
 const getExerciseName = (exercise?: ExerciseProgressionDTO) =>
   exercise?.name ?? "Exercise";
 
-const getWorkoutDate = (workout: SplitWorkoutDTO) =>
-  workout.date ?? workout.workout_date ?? "";
-
 const getSessionSets = (session: ExerciseSessionDTO) => session.sets ?? [];
 
-const getSessionDate = (
-  session: ExerciseSessionDTO,
-  workoutDateMap: Map<number, string>,
-) =>
-  session.session_date ??
-  (session.split_workout_id != null
-    ? workoutDateMap.get(session.split_workout_id)
-    : undefined) ??
-  "";
+const getSessionDate = (session: ExerciseSessionDTO) =>
+  session.session_date ?? "";
 
 const formatDateForDisplay = (value?: string) => {
   if (!value) return "-";
@@ -84,13 +73,10 @@ const toDateSortValue = (value?: string) => {
   return Number.isNaN(parsed) ? Number.MAX_SAFE_INTEGER : parsed;
 };
 
-const buildSessionPoints = (
-  sessions: ExerciseSessionDTO[],
-  workoutDateMap: Map<number, string>,
-): SessionPoint[] =>
+const buildSessionPoints = (sessions: ExerciseSessionDTO[]): SessionPoint[] =>
   sessions
     .map((session) => {
-      const sessionDate = getSessionDate(session, workoutDateMap);
+      const sessionDate = getSessionDate(session);
       const sets = getSessionSets(session);
 
       if (!sessionDate || !sets.length) return null;
@@ -154,19 +140,6 @@ export default function ManageWorkoutSession() {
     isFetching,
   } = useGymDashboard();
 
-  const splitWorkouts = useMemo(
-    () => dashboard?.split_workouts ?? [],
-    [dashboard],
-  );
-  const workoutDateMap = useMemo(
-    () =>
-      new Map(
-        splitWorkouts
-          .filter((workout) => workout.id != null && !!getWorkoutDate(workout))
-          .map((workout) => [workout.id, getWorkoutDate(workout)]),
-      ),
-    [splitWorkouts],
-  );
   const exercise = useMemo(
     () =>
       dashboard?.exercise_progressions?.find(
@@ -178,16 +151,12 @@ export default function ManageWorkoutSession() {
     () =>
       [...(exercise?.exercise_sessions ?? [])].sort(
         (first, second) =>
-          toDateSortValue(getSessionDate(second, workoutDateMap)) -
-          toDateSortValue(getSessionDate(first, workoutDateMap)),
+          toDateSortValue(getSessionDate(second)) -
+          toDateSortValue(getSessionDate(first)),
       ),
-    [exercise, workoutDateMap],
+    [exercise],
   );
-  const sessionPoints = useMemo(
-    () => buildSessionPoints(sessions, workoutDateMap),
-    [sessions, workoutDateMap],
-  );
-  const latestSessionPoint = sessionPoints[sessionPoints.length - 1];
+  const sessionPoints = useMemo(() => buildSessionPoints(sessions), [sessions]);
 
   const updateSessionMutation = useMutation({
     mutationFn: async ({
@@ -210,7 +179,7 @@ export default function ManageWorkoutSession() {
 
   const openEditModal = (session: ExerciseSessionDTO) => {
     setEditingSession(session);
-    setSessionDate(getSessionDate(session, workoutDateMap));
+    setSessionDate(getSessionDate(session));
     setNotes(session.notes ?? "");
     setEditableSets(getSessionSets(session).map(createEditableSet));
   };
@@ -287,7 +256,6 @@ export default function ManageWorkoutSession() {
     }
 
     return {
-      split_workout_id: editingSession?.split_workout_id,
       session_date: sessionDate.trim(),
       notes: notes.trim(),
       sets,
@@ -427,7 +395,7 @@ export default function ManageWorkoutSession() {
                 <Text style={styles.heroStatLabel}>Top set</Text>
                 <Text style={styles.heroStatValue}>
                   {sessionPoints.length
-                    ? `${latestSessionPoint.topWeight}kg x ${latestSessionPoint.bestReps}`
+                    ? `${sessionPoints[0].topWeight}kg x ${sessionPoints[0].bestReps}`
                     : "-"}
                 </Text>
               </View>
@@ -505,7 +473,7 @@ export default function ManageWorkoutSession() {
 
           {sessions.length ? (
             sessions.map((session) => {
-              const sessionDateValue = getSessionDate(session, workoutDateMap);
+              const sessionDateValue = getSessionDate(session);
               const sets = getSessionSets(session);
               const totalVolume = sets.reduce(
                 (total, set) => total + set.weight * set.reps,

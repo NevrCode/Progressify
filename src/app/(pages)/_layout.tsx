@@ -1,48 +1,19 @@
-import { COLORS } from "@/constants/colors";
+import { useTheme } from "@/context/ThemeContext";
 import { Stack } from "expo-router";
 
 export default function pagesLayout() {
+  const { theme } = useTheme();
+
   return (
     <Stack
       screenOptions={{
-        headerStyle: {
-          backgroundColor: COLORS.background,
-        },
-        headerTintColor: "#272727",
-        headerTitleStyle: {
-          fontWeight: "bold",
-          fontSize: 16,
-        },
-        headerTitleAlign: "center",
-        headerShadowVisible: false,
+        headerShown: false,
       }}
     >
-      <Stack.Screen
-        name="appearance"
-        options={{
-          title: "Appearance",
-        }}
-      />
-      <Stack.Screen
-        name="manageWorkoutSession"
-        options={{
-          title: "Manage Workout Session",
-        }}
-      />
-      <Stack.Screen
-        name="workoutSession"
-        options={{
-          title: "Workout Session",
-        }}
-      />
-      <Stack.Screen
-        name="activeWorkoutSession"
-        options={{
-          title: "Active Session",
-          headerBackVisible: false,
-          gestureEnabled: false,
-        }}
-      />
+      <Stack.Screen name="appearance" />
+      <Stack.Screen name="manageWorkoutSession" />
+      <Stack.Screen name="workoutSession" />
+      <Stack.Screen name="activeWorkoutSession" />
     </Stack>
   );
 }

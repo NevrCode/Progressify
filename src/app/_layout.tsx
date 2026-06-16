@@ -1,9 +1,12 @@
+import { PatchNotesPopup } from "@/components/patchNotesPopUp";
 import { ThemeProvider } from "@/context/ThemeContext";
+import { usePatchNotes } from "@/hooks/usePatchNote";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, usePathname, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
 export default function RootLayout() {
   const router = useRouter();
@@ -13,7 +16,7 @@ export default function RootLayout() {
   const [checkedPathname, setCheckedPathname] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const queryClient = useMemo(() => new QueryClient(), []);
-
+  const { showPopup, latestPatch, markAsSeen } = usePatchNotes();
   useEffect(() => {
     let isMounted = true;
 
@@ -61,27 +64,36 @@ export default function RootLayout() {
     router,
   ]);
   return (
-    <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        {authChecked ? (
-          <Stack
-            screenOptions={{
-              headerShown: false,
-            }}
-          />
-        ) : (
-          <View
-            style={{
-              flex: 1,
-              justifyContent: "center",
-              alignItems: "center",
-              backgroundColor: "#FFFFFF",
-            }}
-          >
-            <ActivityIndicator size="large" color="#4CAF50" />
-          </View>
-        )}
-      </QueryClientProvider>
-    </ThemeProvider>
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <QueryClientProvider client={queryClient}>
+          {authChecked ? (
+            <>
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                }}
+              />
+              <PatchNotesPopup
+                visible={showPopup}
+                patch={latestPatch}
+                onDismiss={markAsSeen}
+              />
+            </>
+          ) : (
+            <View
+              style={{
+                flex: 1,
+                justifyContent: "center",
+                alignItems: "center",
+                backgroundColor: "#FFFFFF",
+              }}
+            >
+              <ActivityIndicator size="large" color="#4CAF50" />
+            </View>
+          )}
+        </QueryClientProvider>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }

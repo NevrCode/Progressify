@@ -5,9 +5,9 @@ const ACTIVE_SESSION_KEY = "@progressify_active_session";
 export type StoredDraftSet = {
   localId: string;
   set_number: number;
-  weight: number;
-  reps: number;
-  rir: number;
+  weight: string;
+  reps: string;
+  rir: string;
 };
 
 export type StoredExerciseDraft = {

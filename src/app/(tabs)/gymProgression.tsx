@@ -827,245 +827,252 @@ export default function GymProgression() {
   }
 
   return (
-    <SafeAreaProvider>
-      <SafeAreaView style={styles.safeArea}>
-        <ScrollView
-          contentContainerStyle={styles.container}
-          refreshControl={
-            <RefreshControl
-              refreshing={isFetching}
-              onRefresh={() => refetch()}
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        refreshControl={
+          <RefreshControl refreshing={isFetching} onRefresh={() => refetch()} />
+        }
+      >
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.eyebrow}>Progressify</Text>
+            <Text style={styles.title}>Progressive Overload</Text>
+          </View>
+          <View style={styles.headerBadge}>
+            <MaterialCommunityIcons
+              name="gymnastics"
+              size={22}
+              color={theme.white}
             />
-          }
+          </View>
+        </View>
+        <View style={styles.heroCard}>
+          <Text style={styles.heroTitle}>Progress</Text>
+          <View style={styles.heroStats}>
+            <View style={styles.heroStatChip}>
+              <Text style={styles.heroStatValue}>
+                {exerciseProgressions.length}
+              </Text>
+              <Text style={styles.heroStatLabel}>exercises</Text>
+            </View>
+            <View style={styles.heroStatChip}>
+              <Text style={styles.heroStatValue}>
+                {best1RM > 0 ? `${best1RM.toFixed(0)}` : "-"}
+              </Text>
+              <Text style={styles.heroStatLabel}>best 1RM</Text>
+              {best1RM > 0 && bestMuscleName ? (
+                <Text
+                  style={{
+                    color: theme.primary,
+                    fontSize: 9,
+                    fontWeight: "700",
+                    marginTop: 2,
+                  }}
+                  numberOfLines={1}
+                >
+                  {bestMuscleName}
+                </Text>
+              ) : null}
+            </View>
+            <View style={styles.heroStatChip}>
+              <Text style={styles.heroStatValue}>
+                {totalVolume > 0
+                  ? totalVolume >= 1000
+                    ? `${(totalVolume / 1000).toFixed(1)}k`
+                    : totalVolume.toFixed(0)
+                  : "-"}
+              </Text>
+              <Text style={styles.heroStatLabel}>volume</Text>
+            </View>
+          </View>
+        </View>
+        <TouchableOpacity
+          style={styles.startWorkoutCard}
+          onPress={() => router.push("/(pages)/workoutSession")}
+          activeOpacity={0.7}
         >
-          <View style={styles.header}>
-            <View>
-              <Text style={styles.eyebrow}>Progressify</Text>
-              <Text style={styles.title}>Progressive Overload</Text>
-            </View>
-            <View style={styles.headerBadge}>
-              <MaterialCommunityIcons
-                name="gymnastics"
-                size={22}
-                color={theme.white}
-              />
-            </View>
+          <View style={styles.startWorkoutIconWrap}>
+            <MaterialCommunityIcons
+              name="dumbbell"
+              size={20}
+              color={theme.primary}
+            />
           </View>
-          <View style={styles.heroCard}>
-            <Text style={styles.heroTitle}>Progress</Text>
-            <View style={styles.heroStats}>
-              <View style={styles.heroStatChip}>
-                <Text style={styles.heroStatValue}>
-                  {exerciseProgressions.length}
-                </Text>
-                <Text style={styles.heroStatLabel}>exercises</Text>
-              </View>
-              <View style={styles.heroStatChip}>
-                <Text style={styles.heroStatValue}>
-                  {best1RM > 0 ? `${best1RM.toFixed(0)}` : "-"}
-                </Text>
-                <Text style={styles.heroStatLabel}>best 1RM</Text>
-                {best1RM > 0 && bestMuscleName ? (
-                  <Text
-                    style={{
-                      color: theme.primary,
-                      fontSize: 9,
-                      fontWeight: "700",
-                      marginTop: 2,
-                    }}
-                    numberOfLines={1}
-                  >
-                    {bestMuscleName}
-                  </Text>
-                ) : null}
-              </View>
-              <View style={styles.heroStatChip}>
-                <Text style={styles.heroStatValue}>
-                  {totalVolume > 0
-                    ? totalVolume >= 1000
-                      ? `${(totalVolume / 1000).toFixed(1)}k`
-                      : totalVolume.toFixed(0)
-                    : "-"}
-                </Text>
-                <Text style={styles.heroStatLabel}>volume</Text>
-              </View>
-            </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.startWorkoutTitle}>Start Workout</Text>
+            <Text style={styles.startWorkoutMeta}>
+              Pick exercises and begin your session
+            </Text>
           </View>
+          <MaterialIcons name="arrow-forward" size={20} color={theme.primary} />
+        </TouchableOpacity>
+        {!checking && hasActiveSession && storedSession && (
           <TouchableOpacity
-            style={styles.startWorkoutCard}
-            onPress={() => router.push("/(pages)/workoutSession")}
+            style={styles.activeSessionBanner}
+            onPress={() => router.push("/(pages)/activeWorkoutSession")}
             activeOpacity={0.7}
           >
-            <View style={styles.startWorkoutIconWrap}>
-              <MaterialCommunityIcons
-                name="dumbbell"
+            <View style={styles.activeSessionDot} />
+            <Text style={styles.activeSessionBannerText}>
+              {storedSession.split.charAt(0) +
+                storedSession.split.slice(1).toLowerCase()}{" "}
+              session — {storedSession.completedIds.length}/
+              {storedSession.exerciseIds.length} done
+            </Text>
+            <Text style={styles.activeSessionBannerAction}>Resume</Text>
+            <TouchableOpacity
+              hitSlop={{ top: 10, bottom: 10, left: 6, right: 10 }}
+              onPress={(e) => {
+                e.stopPropagation();
+                discard();
+              }}
+            >
+              <MaterialIcons name="close" size={16} color={theme.textLight} />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        )}
+        <View
+          style={{
+            backgroundColor: theme.card,
+            width: "100%",
+            borderWidth: 1,
+            borderColor: theme.border,
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            paddingHorizontal: 10,
+            borderRadius: 12,
+            marginBottom: 4,
+          }}
+        >
+          <TouchableOpacity>
+            <View
+              style={{
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <MaterialIcons name="search" size={20} color={theme.primary} />
+            </View>
+          </TouchableOpacity>
+          <TextInput
+            style={{
+              color: theme.primary,
+              fontWeight: "500",
+              width: "85%",
+            }}
+            placeholder="Search Exercise..."
+            placeholderTextColor={theme.textLight}
+            value={search}
+            onChangeText={setSearch}
+          />
+          <TouchableOpacity
+            onPress={() => {
+              if (search !== "") setSearch("");
+            }}
+          >
+            <View
+              style={{
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <MaterialIcons
+                name={search !== "" ? "close" : "filter-list"}
                 size={20}
                 color={theme.primary}
               />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.startWorkoutTitle}>Start Workout</Text>
-              <Text style={styles.startWorkoutMeta}>
-                Pick exercises and begin your session
-              </Text>
-            </View>
-            <MaterialIcons
-              name="arrow-forward"
-              size={20}
-              color={theme.primary}
-            />
           </TouchableOpacity>
-          {!checking && hasActiveSession && storedSession && (
-            <TouchableOpacity
-              style={styles.activeSessionBanner}
-              onPress={() => router.push("/(pages)/activeWorkoutSession")}
-              activeOpacity={0.7}
-            >
-              <View style={styles.activeSessionDot} />
-              <Text style={styles.activeSessionBannerText}>
-                {storedSession.split.charAt(0) +
-                  storedSession.split.slice(1).toLowerCase()}{" "}
-                session — {storedSession.completedIds.length}/
-                {storedSession.exerciseIds.length} done
-              </Text>
-              <Text style={styles.activeSessionBannerAction}>Resume</Text>
+        </View>
+        <View style={styles.filterBar}>
+          {(["ALL", ...splitOptions] as SplitFilter[]).map((split) => {
+            const active = split === activeSplit;
+            return (
               <TouchableOpacity
-                hitSlop={{ top: 10, bottom: 10, left: 6, right: 10 }}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  discard();
-                }}
+                key={split}
+                style={[styles.filterChip, active && styles.filterChipActive]}
+                onPress={() => setActiveSplit(split)}
               >
-                <MaterialIcons name="close" size={16} color={theme.textLight} />
-              </TouchableOpacity>
-            </TouchableOpacity>
-          )}
-          <View
-            style={{
-              backgroundColor: theme.card,
-              width: "100%",
-              borderWidth: 1,
-              borderColor: theme.border,
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-              paddingHorizontal: 10,
-              borderRadius: 12,
-              marginBottom: 4,
-            }}
-          >
-            <TouchableOpacity>
-              <View
-                style={{
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <MaterialIcons name="search" size={20} color={theme.primary} />
-              </View>
-            </TouchableOpacity>
-            <TextInput
-              style={{
-                color: theme.primary,
-                fontWeight: "500",
-                width: "85%",
-              }}
-              placeholder="Search Exercise..."
-              placeholderTextColor={theme.textLight}
-              value={search}
-              onChangeText={setSearch}
-            />
-            <TouchableOpacity
-              onPress={() => {
-                if (search !== "") setSearch("");
-              }}
-            >
-              <View
-                style={{
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <MaterialIcons
-                  name={search !== "" ? "close" : "filter-list"}
-                  size={20}
-                  color={theme.primary}
-                />
-              </View>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.filterBar}>
-            {(["ALL", ...splitOptions] as SplitFilter[]).map((split) => {
-              const active = split === activeSplit;
-              return (
-                <TouchableOpacity
-                  key={split}
-                  style={[styles.filterChip, active && styles.filterChipActive]}
-                  onPress={() => setActiveSplit(split)}
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    active && styles.filterChipTextActive,
+                  ]}
                 >
-                  <Text
-                    style={[
-                      styles.filterChipText,
-                      active && styles.filterChipTextActive,
-                    ]}
-                  >
-                    {split === "ALL" ? "All" : displaySplit(split)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Exercise progression</Text>
-            <TouchableOpacity
-              style={styles.inlineAction}
-              onPress={() => openExerciseModal()}
-            >
-              <MaterialIcons name="add" size={18} color={theme.primary} />
-              <Text style={styles.inlineActionText}>Add exercise</Text>
-            </TouchableOpacity>
-          </View>
-          {filteredSearchWorkout.length ? (
-            filteredSearchWorkout.map((exercise) => {
-              const activeDraft = activeWorkoutDrafts[exercise.id];
-              const currentWorkoutSets = activeDraft?.sets ?? [];
-              const exerciseSessions = getExerciseSessions(exercise);
-              const latestSession = [...exerciseSessions].sort(
-                (a, b) =>
-                  toDateSortValue(getSessionDate(b)) -
-                  toDateSortValue(getSessionDate(a)),
-              )[0];
+                  {split === "ALL" ? "All" : displaySplit(split)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Exercise progression</Text>
+          <TouchableOpacity
+            style={styles.inlineAction}
+            onPress={() => openExerciseModal()}
+          >
+            <MaterialIcons name="add" size={18} color={theme.primary} />
+            <Text style={styles.inlineActionText}>Add exercise</Text>
+          </TouchableOpacity>
+        </View>
+        {filteredSearchWorkout.length ? (
+          filteredSearchWorkout.map((exercise) => {
+            const activeDraft = activeWorkoutDrafts[exercise.id];
+            const currentWorkoutSets = activeDraft?.sets ?? [];
+            const exerciseSessions = getExerciseSessions(exercise);
+            const latestSession = [...exerciseSessions].sort(
+              (a, b) =>
+                toDateSortValue(getSessionDate(b)) -
+                toDateSortValue(getSessionDate(a)),
+            )[0];
 
-              const latestSessionSets = latestSession?.sets ?? [];
-              const sessionProgression =
-                buildSessionProgression(exerciseSessions);
-              const hasSessionHistory = sessionProgression.length > 0;
+            const latestSessionSets = latestSession?.sets ?? [];
+            const sessionProgression =
+              buildSessionProgression(exerciseSessions);
+            const hasSessionHistory = sessionProgression.length > 0;
 
-              return (
-                <View key={exercise.id} style={styles.exerciseCard}>
-                  <View style={styles.exerciseHeader}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.exerciseName}>
-                        {getExerciseName(exercise)}
-                      </Text>
-                      <Text style={styles.exerciseMeta}>
-                        {displaySplit(exercise.split)} |{" "}
-                        {exercise.muscle_group ?? "-"} |{" "}
-                        {exercise.target_rep_range ?? "-"}
-                      </Text>
-                      <Text style={styles.exerciseSubMeta}>
-                        Last session:{" "}
-                        {latestSession
-                          ? getDayMonthYear(getSessionDate(latestSession))
-                          : "-"}
-                      </Text>
-                    </View>
-                    <View style={styles.cardActionIcons}>
+            return (
+              <View key={exercise.id} style={styles.exerciseCard}>
+                <View style={styles.exerciseHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.exerciseName}>
+                      {getExerciseName(exercise)}
+                    </Text>
+                    <Text style={styles.exerciseMeta}>
+                      {displaySplit(exercise.split)} |{" "}
+                      {exercise.muscle_group ?? "-"} |{" "}
+                      {exercise.target_rep_range ?? "-"}
+                    </Text>
+                    <Text style={styles.exerciseSubMeta}>
+                      Last session:{" "}
+                      {latestSession
+                        ? getDayMonthYear(getSessionDate(latestSession))
+                        : "-"}
+                    </Text>
+                  </View>
+                  <View style={styles.cardActionIcons}>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        gap: 6,
+                        alignItems: "flex-start",
+                      }}
+                    >
                       <TouchableOpacity
                         onPress={() => openExerciseModal(exercise)}
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 8,
+                          backgroundColor: theme.primary + "15",
+                          justifyContent: "center",
+                          alignItems: "center",
+                        }}
                       >
                         <MaterialIcons
-                          name="edit"
+                          name="edit-document"
                           size={18}
                           color={theme.primary}
                         />
@@ -1087,7 +1094,14 @@ export default function GymProgression() {
                             },
                           )
                         }
-                        disabled={deletingExerciseId === exercise.id}
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 8,
+                          backgroundColor: theme.expense + "15",
+                          justifyContent: "center",
+                          alignItems: "center",
+                        }}
                       >
                         {deletingExerciseId === exercise.id ? (
                           <ActivityIndicator
@@ -1104,107 +1118,108 @@ export default function GymProgression() {
                       </TouchableOpacity>
                     </View>
                   </View>
+                </View>
 
-                  <View style={styles.subsectionHeader}>
-                    <View>
-                      <Text style={styles.subsectionTitle}>
-                        Session progression
-                      </Text>
-                      <Text style={styles.sectionMeta}>
-                        One point per recorded workout session
-                      </Text>
-                    </View>
+                <View style={styles.subsectionHeader}>
+                  <View>
+                    <Text style={styles.subsectionTitle}>
+                      Session progression
+                    </Text>
+                    <Text style={styles.sectionMeta}>
+                      One point per recorded workout session
+                    </Text>
                   </View>
+                </View>
 
-                  {hasSessionHistory ? (
-                    <>
-                      <View style={styles.chartBlock}>
-                        <LineChart
-                          areaChart
-                          curved
-                          isAnimated
-                          data={[...sessionProgression].map((point) => ({
-                            value: Number(point.estimated1RM.toFixed(1)),
-                            label: getDayMonth(point.sessionDate),
-                            dataPointText: `${point.estimated1RM.toFixed(1)}`,
-                          }))}
-                          height={220}
-                          spacing={56}
-                          initialSpacing={18}
-                          endSpacing={18}
-                          thickness={4}
-                          color={theme.primary}
-                          startFillColor={theme.primary}
-                          endFillColor={theme.primary}
-                          startOpacity={0.35}
-                          endOpacity={0.02}
-                          hideRules={false}
-                          rulesColor={`${theme.border}55`}
-                          rulesType="dashed"
-                          yAxisColor="transparent"
-                          xAxisColor={`${theme.border}88`}
-                          hideYAxisText={false}
-                          yAxisTextStyle={{
-                            color: theme.textLight,
-                            fontSize: 11,
-                          }}
-                          xAxisLabelTextStyle={{
-                            color: theme.textLight,
-                            fontSize: 11,
-                            marginTop: 6,
-                          }}
-                          noOfSections={4}
-                          maxValue={
-                            Math.max(
-                              ...sessionProgression.map((p) => p.estimated1RM),
-                            ) + 5
-                          }
-                          dataPointsColor={theme.primary}
-                          dataPointsRadius={6}
-                          textColor={theme.text}
-                          textFontSize={11}
-                          textShiftY={-14}
-                          textShiftX={-10}
-                          focusedDataPointColor={theme.white}
-                          focusedDataPointRadius={8}
-                          showVerticalLines
-                          verticalLinesColor={`${theme.border}33`}
-                          pointerConfig={{
-                            pointerStripHeight: 160,
-                            pointerStripColor: `${theme.primary}66`,
-                            pointerStripWidth: 2,
-                            pointerColor: theme.primary,
-                            radius: 7,
-                            activatePointersOnLongPress: true,
-                            autoAdjustPointerLabelPosition: true,
-                            pointerLabelComponent: (items: any) => {
-                              const item = items[0];
-                              return (
-                                <View
+                {hasSessionHistory ? (
+                  <>
+                    <View style={styles.chartBlock}>
+                      <LineChart
+                        areaChart
+                        curved
+                        isAnimated
+                        data={[...sessionProgression].map((point) => ({
+                          value: Number(point.estimated1RM.toFixed(1)),
+                          label: getDayMonth(point.sessionDate),
+                          dataPointText: `${point.estimated1RM.toFixed(1)}`,
+                        }))}
+                        height={220}
+                        spacing={56}
+                        initialSpacing={18}
+                        endSpacing={18}
+                        thickness={4}
+                        color={theme.primary}
+                        startFillColor={theme.primary}
+                        endFillColor={theme.primary}
+                        startOpacity={0.35}
+                        endOpacity={0.02}
+                        hideRules={false}
+                        rulesColor={`${theme.border}55`}
+                        rulesType="dashed"
+                        yAxisColor="transparent"
+                        xAxisColor={`${theme.border}88`}
+                        hideYAxisText={false}
+                        yAxisTextStyle={{
+                          color: theme.textLight,
+                          fontSize: 11,
+                        }}
+                        xAxisLabelTextStyle={{
+                          color: theme.textLight,
+                          fontSize: 11,
+                          marginTop: 6,
+                        }}
+                        noOfSections={4}
+                        maxValue={
+                          Math.max(
+                            ...sessionProgression.map((p) => p.estimated1RM),
+                          ) + 5
+                        }
+                        dataPointsColor={theme.primary}
+                        dataPointsRadius={6}
+                        textColor={theme.text}
+                        textFontSize={11}
+                        textShiftY={-14}
+                        textShiftX={-10}
+                        focusedDataPointColor={theme.white}
+                        focusedDataPointRadius={8}
+                        showVerticalLines
+                        verticalLinesColor={`${theme.border}33`}
+                        pointerConfig={{
+                          pointerStripHeight: 160,
+                          pointerStripColor: `${theme.primary}66`,
+                          pointerStripWidth: 2,
+                          pointerColor: theme.primary,
+                          radius: 7,
+                          activatePointersOnLongPress: true,
+                          autoAdjustPointerLabelPosition: true,
+                          pointerLabelComponent: (items: any) => {
+                            const item = items[0];
+                            return (
+                              <View
+                                style={{
+                                  backgroundColor: theme.card,
+                                  paddingHorizontal: 12,
+                                  paddingVertical: 8,
+                                  borderRadius: 12,
+                                  borderWidth: 1,
+                                  borderColor: theme.border,
+                                }}
+                              >
+                                <Text
                                   style={{
-                                    backgroundColor: theme.card,
-                                    paddingHorizontal: 12,
-                                    paddingVertical: 8,
-                                    borderRadius: 12,
-                                    borderWidth: 1,
-                                    borderColor: theme.border,
+                                    color: theme.text,
+                                    fontWeight: "700",
                                   }}
                                 >
-                                  <Text
-                                    style={{
-                                      color: theme.text,
-                                      fontWeight: "700",
-                                    }}
-                                  >
-                                    {item.value}
-                                  </Text>
-                                </View>
-                              );
-                            },
-                          }}
-                        />
-                      </View>
-                      {/* <View style={styles.subsectionHeader}>
+                                  {item.value}
+                                </Text>
+                              </View>
+                            );
+                          },
+                        }}
+                      />
+                    </View>
+                    {/* <View style={styles.subsectionHeader}>
                         <Text style={styles.subsectionTitle}>
                           Session Detail
                         </Text>
@@ -1227,108 +1242,105 @@ export default function GymProgression() {
                         </TouchableOpacity>
                       </View> */}
 
-                      {tableDetail && (
-                        <View style={styles.sessionSummaryList}>
-                          {sessionProgression.length ? (
-                            <View style={styles.setTable}>
-                              <View style={styles.setTableHeader}>
-                                <Text style={styles.setHeaderText}>date</Text>
-                                <Text style={styles.setHeaderText}>sets</Text>
-                                <Text style={styles.setHeaderText}>1RM</Text>
-                                <Text style={styles.setHeaderText}>Volume</Text>
+                    {tableDetail && (
+                      <View style={styles.sessionSummaryList}>
+                        {sessionProgression.length ? (
+                          <View style={styles.setTable}>
+                            <View style={styles.setTableHeader}>
+                              <Text style={styles.setHeaderText}>date</Text>
+                              <Text style={styles.setHeaderText}>sets</Text>
+                              <Text style={styles.setHeaderText}>1RM</Text>
+                              <Text style={styles.setHeaderText}>Volume</Text>
+                            </View>
+                            {sessionProgression.map((set) => (
+                              <View key={set.sessionDate} style={styles.setRow}>
+                                <Text style={styles.setValue}>
+                                  {getDayMonth(set.sessionDate)}
+                                </Text>
+                                <Text style={styles.setValue}>
+                                  {set.totalSets}
+                                </Text>
+                                <Text style={styles.setValue}>
+                                  {set.estimated1RM.toFixed(1)}kg
+                                </Text>
+                                <Text style={styles.setValue}>
+                                  {set.totalVolume}
+                                </Text>
                               </View>
-                              {sessionProgression.map((set) => (
-                                <View
-                                  key={set.sessionDate}
-                                  style={styles.setRow}
-                                >
-                                  <Text style={styles.setValue}>
-                                    {getDayMonth(set.sessionDate)}
-                                  </Text>
-                                  <Text style={styles.setValue}>
-                                    {set.totalSets}
-                                  </Text>
-                                  <Text style={styles.setValue}>
-                                    {set.estimated1RM.toFixed(1)}kg
-                                  </Text>
-                                  <Text style={styles.setValue}>
-                                    {set.totalVolume}
-                                  </Text>
-                                </View>
-                              ))}
-                            </View>
-                          ) : (
-                            <View style={styles.subEmptyCard}>
-                              <Text style={styles.subEmptyText}>
-                                Add set rows to capture changing weight and reps
-                                inside the latest workout. Historical graphing
-                                should come from session records, not from this
-                                flat set list alone.
-                              </Text>
-                            </View>
-                          )}
-                        </View>
-                      )}
-                    </>
-                  ) : (
-                    <View style={styles.subEmptyCard}>
-                      <Text style={styles.subEmptyText}>
-                        Record exercise sessions with sets to see your
-                        progression graph over time.
-                      </Text>
-                    </View>
-                  )}
-
-                  <View style={styles.subsectionHeader}>
-                    <Text style={styles.subsectionTitle}>
-                      Latest workout session
-                    </Text>
-                    <TouchableOpacity
-                      style={styles.inlineAction}
-                      onPress={() => manageWorkoutSession(exercise)}
-                    >
-                      <MaterialIcons
-                        name="edit"
-                        size={16}
-                        color={theme.primary}
-                      />
-
-                      <Text style={styles.inlineActionText}>Manage</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {latestSessionSets.length ? (
-                    <View style={styles.setTable}>
-                      <View style={styles.setTableHeader}>
-                        <Text style={styles.setHeaderText}>Date</Text>
-                        <Text style={styles.setHeaderText}>Set</Text>
-                        <Text style={styles.setHeaderText}>Weight</Text>
-                        <Text style={styles.setHeaderText}>Reps</Text>
-                        <Text style={styles.setHeaderText}>RIR</Text>
+                            ))}
+                          </View>
+                        ) : (
+                          <View style={styles.subEmptyCard}>
+                            <Text style={styles.subEmptyText}>
+                              Add set rows to capture changing weight and reps
+                              inside the latest workout. Historical graphing
+                              should come from session records, not from this
+                              flat set list alone.
+                            </Text>
+                          </View>
+                        )}
                       </View>
-                      {latestSessionSets.map((set) => (
-                        <View key={set.id} style={styles.setRow}>
-                          <Text style={styles.setValue}>
-                            {getDayMonth(getSessionDate(latestSession))}
-                          </Text>
-                          <Text style={styles.setValue}>#{set.set_number}</Text>
-                          <Text style={styles.setValue}>{set.weight}kg</Text>
-                          <Text style={styles.setValue}>{set.reps}</Text>
-                          <Text style={styles.setValue}>{set.rir ?? 0}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  ) : (
-                    <View style={styles.subEmptyCard}>
-                      <Text style={styles.subEmptyText}>
-                        Add set rows to capture changing weight and reps inside
-                        the latest workout. Historical graphing should come from
-                        session records, not from this flat set list alone.
-                      </Text>
-                    </View>
-                  )}
+                    )}
+                  </>
+                ) : (
+                  <View style={styles.subEmptyCard}>
+                    <Text style={styles.subEmptyText}>
+                      Record exercise sessions with sets to see your progression
+                      graph over time.
+                    </Text>
+                  </View>
+                )}
 
-                  {/* <View style={styles.subsectionHeader}>
+                <View style={styles.subsectionHeader}>
+                  <Text style={styles.subsectionTitle}>
+                    Latest workout session
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.inlineAction}
+                    onPress={() => manageWorkoutSession(exercise)}
+                  >
+                    <MaterialIcons
+                      name="edit"
+                      size={16}
+                      color={theme.primary}
+                    />
+
+                    <Text style={styles.inlineActionText}>Manage</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {latestSessionSets.length ? (
+                  <View style={styles.setTable}>
+                    <View style={styles.setTableHeader}>
+                      <Text style={styles.setHeaderText}>Date</Text>
+                      <Text style={styles.setHeaderText}>Set</Text>
+                      <Text style={styles.setHeaderText}>Weight</Text>
+                      <Text style={styles.setHeaderText}>Reps</Text>
+                      <Text style={styles.setHeaderText}>RIR</Text>
+                    </View>
+                    {latestSessionSets.map((set) => (
+                      <View key={set.id} style={styles.setRow}>
+                        <Text style={styles.setValue}>
+                          {getDayMonth(getSessionDate(latestSession))}
+                        </Text>
+                        <Text style={styles.setValue}>#{set.set_number}</Text>
+                        <Text style={styles.setValue}>{set.weight}kg</Text>
+                        <Text style={styles.setValue}>{set.reps}</Text>
+                        <Text style={styles.setValue}>{set.rir ?? 0}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <View style={styles.subEmptyCard}>
+                    <Text style={styles.subEmptyText}>
+                      Add set rows to capture changing weight and reps inside
+                      the latest workout. Historical graphing should come from
+                      session records, not from this flat set list alone.
+                    </Text>
+                  </View>
+                )}
+
+                {/* <View style={styles.subsectionHeader}>
                     <Text style={styles.subsectionTitle}>Current workout</Text>
 
                     {!activeDraft ? (
@@ -1487,81 +1499,80 @@ export default function GymProgression() {
                       </Text>
                     </View>
                   )} */}
-                  <View style={styles.saveAndNoteRow}>
-                    {!!exercise.notes && (
-                      <View style={styles.noteRow}>
-                        <MaterialCommunityIcons
-                          name="notebook-outline"
-                          size={18}
-                          color={theme.primary}
-                        />
-                        <Text style={styles.noteText}>{exercise.notes}</Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-              );
-            })
-          ) : (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyTitle}>No exercises yet</Text>
-              <Text style={styles.emptyText}>
-                Create an exercise progression first, then attach sets and graph
-                points to it.
-              </Text>
-            </View>
-          )}
-        </ScrollView>
-
-        <Modal
-          visible={modalState.visible}
-          transparent
-          animationType="fade"
-          onRequestClose={closeModal}
-        >
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            style={{ flex: 1 }}
-          >
-            <View style={styles.modalBackdrop}>
-              <View style={styles.modalCard}>
-                <View style={styles.modalHeader}>
-                  <Text style={styles.modalTitle}>{getModalTitle()}</Text>
-                  <TouchableOpacity onPress={closeModal}>
-                    <MaterialIcons
-                      name="close"
-                      size={22}
-                      color={theme.textLight}
-                    />
-                  </TouchableOpacity>
-                </View>
-
-                {renderModalBody()}
-
-                <View style={styles.modalActions}>
-                  <TouchableOpacity
-                    style={styles.secondaryButton}
-                    onPress={closeModal}
-                  >
-                    <Text style={styles.secondaryButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.primaryButton}
-                    onPress={handleSubmit}
-                    disabled={modalSaving}
-                  >
-                    {modalSaving ? (
-                      <ActivityIndicator color={theme.white} />
-                    ) : (
-                      <Text style={styles.primaryButtonText}>Save</Text>
-                    )}
-                  </TouchableOpacity>
+                <View style={styles.saveAndNoteRow}>
+                  {!!exercise.notes && (
+                    <View style={styles.noteRow}>
+                      <MaterialCommunityIcons
+                        name="notebook-outline"
+                        size={18}
+                        color={theme.primary}
+                      />
+                      <Text style={styles.noteText}>{exercise.notes}</Text>
+                    </View>
+                  )}
                 </View>
               </View>
+            );
+          })
+        ) : (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>No exercises yet</Text>
+            <Text style={styles.emptyText}>
+              Create an exercise progression first, then attach sets and graph
+              points to it.
+            </Text>
+          </View>
+        )}
+      </ScrollView>
+
+      <Modal
+        visible={modalState.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeModal}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1 }}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>{getModalTitle()}</Text>
+                <TouchableOpacity onPress={closeModal}>
+                  <MaterialIcons
+                    name="close"
+                    size={22}
+                    color={theme.textLight}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {renderModalBody()}
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={styles.secondaryButton}
+                  onPress={closeModal}
+                >
+                  <Text style={styles.secondaryButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={handleSubmit}
+                  disabled={modalSaving}
+                >
+                  {modalSaving ? (
+                    <ActivityIndicator color={theme.white} />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Save</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
-          </KeyboardAvoidingView>
-        </Modal>
-      </SafeAreaView>
-    </SafeAreaProvider>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </SafeAreaView>
   );
 }

@@ -16,8 +16,8 @@ import {
 } from "react-native";
 
 export default function Login() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("kevin12keval@gmail.com");
+  const [password, setPassword] = useState("mypassword");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState("");

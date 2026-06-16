@@ -57,6 +57,7 @@ export default function WorkoutSession() {
   const [programs, setPrograms] = useState<WorkoutProgram[]>([]);
   const [showSaveInput, setShowSaveInput] = useState(false);
   const [programName, setProgramName] = useState("");
+  const [showAllExercises, setShowAllExercises] = useState(false);
 
   useEffect(() => {
     loadPrograms().then(setPrograms);
@@ -134,15 +135,25 @@ export default function WorkoutSession() {
     );
   }, [exerciseProgressions, selectedSplit]);
 
+  const availableExercises = useMemo(() => {
+    const source = showAllExercises ? exerciseProgressions : splitExercises;
+    return [...source].sort(
+      (a, b) =>
+        toDateSortValue(a.last_session_date) -
+        toDateSortValue(b.last_session_date),
+    );
+  }, [exerciseProgressions, showAllExercises, splitExercises]);
+
   const filteredExercises = useMemo(() => {
-    if (!search.trim()) return splitExercises;
+    if (!search.trim()) return availableExercises;
     const keyword = search.toLowerCase();
-    return splitExercises.filter(
+    return availableExercises.filter(
       (exercise) =>
         exercise.name?.toLowerCase().includes(keyword) ||
-        exercise.muscle_group?.toLowerCase().includes(keyword),
+        exercise.muscle_group?.toLowerCase().includes(keyword) ||
+        exercise.split?.toLowerCase().includes(keyword),
     );
-  }, [splitExercises, search]);
+  }, [availableExercises, search]);
 
   const toggleExercise = (exerciseId: number) => {
     setSelectedExerciseIds((current) => {
@@ -261,7 +272,7 @@ export default function WorkoutSession() {
               <View style={styles.heroStat}>
                 <Text style={styles.heroStatLabel}>Available</Text>
                 <Text style={styles.heroStatValue}>
-                  {splitExercises.length}
+                  {availableExercises.length}
                 </Text>
               </View>
               <View style={styles.heroDivider} />
@@ -355,6 +366,41 @@ export default function WorkoutSession() {
             )}
           </View>
 
+          <View style={styles.chipRow}>
+            <TouchableOpacity
+              style={[
+                styles.filterChip,
+                !showAllExercises && styles.filterChipActive,
+              ]}
+              onPress={() => setShowAllExercises(false)}
+            >
+              <Text
+                style={[
+                  styles.filterChipText,
+                  !showAllExercises && styles.filterChipTextActive,
+                ]}
+              >
+                {displaySplit(selectedSplit)} only
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.filterChip,
+                showAllExercises && styles.filterChipActive,
+              ]}
+              onPress={() => setShowAllExercises(true)}
+            >
+              <Text
+                style={[
+                  styles.filterChipText,
+                  showAllExercises && styles.filterChipTextActive,
+                ]}
+              >
+                All exercises
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <View
             style={{
               backgroundColor: theme.card,
@@ -433,6 +479,7 @@ export default function WorkoutSession() {
                         {getExerciseName(exercise)}
                       </Text>
                       <Text style={styles.exerciseMeta}>
+                        {displaySplit(exercise.split)} |{" "}
                         {exercise.muscle_group ?? "-"} |{" "}
                         {exercise.target_rep_range ?? "-"}
                       </Text>
@@ -474,7 +521,9 @@ export default function WorkoutSession() {
               <Text style={styles.emptyText}>
                 {search.trim()
                   ? "Try a different search term."
-                  : `No ${displaySplit(selectedSplit)} exercises yet. Add some from the progression page.`}
+                  : showAllExercises
+                    ? "Add exercises from the progression page first."
+                    : `No ${displaySplit(selectedSplit)} exercises yet. Switch to all exercises or add some from the progression page.`}
               </Text>
             </View>
           )}

@@ -22,6 +22,7 @@ import {
   Alert,
   BackHandler,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   Text,
@@ -34,9 +35,9 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 type DraftSet = {
   localId: string;
   set_number: number;
-  weight: number;
-  reps: number;
-  rir: number;
+  weight: string;
+  reps: string;
+  rir: string;
 };
 
 type ExerciseDraft = {
@@ -69,6 +70,20 @@ const formatDateForApi = (value: Date | string) => {
 };
 
 const getRandomInt = () => Math.floor(Math.random() * 100);
+
+const createEmptyExerciseDraft = (exerciseId: number): ExerciseDraft => ({
+  exerciseId,
+  startedAt: new Date().toISOString(),
+  sets: [
+    {
+      localId: `${Date.now()}-${exerciseId}-${getRandomInt()}`,
+      set_number: 1,
+      weight: "0",
+      reps: "0",
+      rir: "0",
+    },
+  ],
+});
 
 const getDurationLabel = (startedAt: string) => {
   const elapsedMs = Date.now() - new Date(startedAt).getTime();
@@ -127,6 +142,11 @@ export default function ActiveWorkoutSession() {
   const [deletingSetKey, setDeletingSetKey] = useState<string | null>(null);
   const [allSaved, setAllSaved] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [showSwapModal, setShowSwapModal] = useState(false);
+  const [swapTargetId, setSwapTargetId] = useState<number | null>(null);
+  const [currentExerciseIds, setCurrentExerciseIds] = useState<number[]>([]);
+  const [showAddExerciseModal, setShowAddExerciseModal] = useState(false);
+  const [exerciseSearch, setExerciseSearch] = useState("");
 
   const { data: dashboard, isLoading, error } = useGymDashboard();
 
@@ -135,12 +155,21 @@ export default function ActiveWorkoutSession() {
     [dashboard],
   );
 
+  const sessionExerciseIds = useMemo(
+    () =>
+      currentExerciseIds.length > 0
+        ? currentExerciseIds
+        : selectedIds.length > 0
+          ? selectedIds
+          : restoredIds,
+    [currentExerciseIds, selectedIds, restoredIds],
+  );
+
   const selectedExercises = useMemo(() => {
-    const ids = selectedIds.length > 0 ? selectedIds : restoredIds;
-    return ids
+    return sessionExerciseIds
       .map((id) => exerciseProgressions.find((e) => e.id === id))
       .filter((e): e is ExerciseProgressionDTO => e != null);
-  }, [selectedIds, restoredIds, exerciseProgressions]);
+  }, [sessionExerciseIds, exerciseProgressions]);
 
   useEffect(() => {
     if (hydrated) return;
@@ -157,6 +186,7 @@ export default function ActiveWorkoutSession() {
         setCompletedIds(new Set(stored.completedIds));
         setRestoredIds(stored.exerciseIds);
         setRestoredSplit(normalizeSplit(stored.split));
+        setCurrentExerciseIds(stored.exerciseIds);
         setHydrated(true);
         return;
       }
@@ -164,21 +194,10 @@ export default function ActiveWorkoutSession() {
       if (selectedExercises.length) {
         const initial: Record<number, ExerciseDraft> = {};
         for (const exercise of selectedExercises) {
-          initial[exercise.id] = {
-            exerciseId: exercise.id,
-            startedAt: new Date().toISOString(),
-            sets: [
-              {
-                localId: `${Date.now()}-${exercise.id}-${getRandomInt()}`,
-                set_number: 1,
-                weight: 0,
-                reps: 0,
-                rir: 0,
-              },
-            ],
-          };
+          initial[exercise.id] = createEmptyExerciseDraft(exercise.id);
         }
         setDrafts(initial);
+        setCurrentExerciseIds(selectedIds);
       }
       setHydrated(true);
     };
@@ -191,12 +210,11 @@ export default function ActiveWorkoutSession() {
 
   const persistState = useCallback(() => {
     if (!hydrated || allSaved || clearedRef.current) return;
-    const allIds = selectedIds.length > 0 ? selectedIds : restoredIds;
-    if (!allIds.length) return;
+    if (!sessionExerciseIds.length) return;
 
     const data: ActiveSessionData = {
       split: selectedSplit,
-      exerciseIds: allIds,
+      exerciseIds: sessionExerciseIds,
       startedAt: sessionStartedAtRef.current,
       drafts,
       completedIds: Array.from(completedIds),
@@ -205,8 +223,7 @@ export default function ActiveWorkoutSession() {
   }, [
     hydrated,
     allSaved,
-    selectedIds,
-    restoredIds,
+    sessionExerciseIds,
     selectedSplit,
     drafts,
     completedIds,
@@ -220,6 +237,10 @@ export default function ActiveWorkoutSession() {
       if (saveRef.current) clearTimeout(saveRef.current);
     };
   }, [persistState, hydrated]);
+
+  const confirmExit = useCallback(() => {
+    router.back();
+  }, [router]);
 
   // Elapsed timer
   useEffect(() => {
@@ -240,7 +261,28 @@ export default function ActiveWorkoutSession() {
       return false;
     });
     return () => handler.remove();
-  }, [allSaved]);
+  }, [allSaved, confirmExit]);
+
+  // Navigate back if all exercises removed
+  useEffect(() => {
+    const hadSession =
+      selectedIds.length > 0 ||
+      restoredIds.length > 0 ||
+      Object.keys(drafts).length > 0;
+
+    if (hydrated && hadSession && currentExerciseIds.length === 0 && !allSaved) {
+      clearActiveSession();
+      router.back();
+    }
+  }, [
+    hydrated,
+    currentExerciseIds,
+    selectedIds,
+    restoredIds,
+    drafts,
+    allSaved,
+    router,
+  ]);
 
   const sessionMutation = useMutation({
     mutationFn: async ({
@@ -255,18 +297,20 @@ export default function ActiveWorkoutSession() {
     },
   });
 
-  const confirmExit = () => {
-    router.back();
-  };
-
   // --- Draft manipulation ---
 
   const updateDraftSet = (
     exerciseId: number,
     localId: string,
     field: keyof DraftSet,
-    value: number,
+    value: string,
   ) => {
+    // Strip leading zeros (e.g. "07" → "7") but keep "0" and "0." intact
+    let clean = value;
+    if (clean.length > 1 && clean[0] === "0" && clean[1] !== ".") {
+      clean = clean.replace(/^0+/, "") || "0";
+    }
+
     setDrafts((current) => {
       const draft = current[exerciseId];
       if (!draft) return current;
@@ -275,7 +319,7 @@ export default function ActiveWorkoutSession() {
         [exerciseId]: {
           ...draft,
           sets: draft.sets.map((s) =>
-            s.localId === localId ? { ...s, [field]: value } : s,
+            s.localId === localId ? { ...s, [field]: clean } : s,
           ),
         },
       };
@@ -295,9 +339,9 @@ export default function ActiveWorkoutSession() {
             {
               localId: `${Date.now()}-${exerciseId}-${getRandomInt()}`,
               set_number: draft.sets.length + 1,
-              weight: 0,
-              reps: 0,
-              rir: 0,
+              weight: "0",
+              reps: "0",
+              rir: "0",
             },
           ],
         },
@@ -336,6 +380,135 @@ export default function ActiveWorkoutSession() {
     }, 350);
   };
 
+  // --- Available exercises for swap ---
+  const availableSessionExercises = useMemo(() => {
+    const currentIds = new Set(sessionExerciseIds);
+    const keyword = exerciseSearch.trim().toLowerCase();
+
+    return exerciseProgressions
+      .filter((exercise) => !currentIds.has(exercise.id))
+      .filter((exercise) => {
+        if (!keyword) return true;
+        return (
+          exercise.name?.toLowerCase().includes(keyword) ||
+          exercise.muscle_group?.toLowerCase().includes(keyword) ||
+          exercise.split?.toLowerCase().includes(keyword)
+        );
+      });
+  }, [exerciseProgressions, sessionExerciseIds, exerciseSearch]);
+
+  // --- Remove exercise from session ---
+  const removeExercise = (exerciseId: number) => {
+    if (finishingId === exerciseId) return;
+
+    const exercise = selectedExercises.find((e) => e.id === exerciseId);
+    const draft = drafts[exerciseId];
+    const hasData = draft?.sets.some(
+      (s) => (parseFloat(s.weight) || 0) > 0 || (parseFloat(s.reps) || 0) > 0,
+    );
+
+    const doRemove = () => {
+      setCurrentExerciseIds((prev) => prev.filter((id) => id !== exerciseId));
+      setDrafts((current) => {
+        const copy = { ...current };
+        delete copy[exerciseId];
+        return copy;
+      });
+      setCompletedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(exerciseId);
+        return next;
+      });
+    };
+
+    if (hasData) {
+      Alert.alert(
+        "Remove exercise",
+        `Remove "${getExerciseName(exercise!)}"? Entered sets will be lost.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Remove", style: "destructive", onPress: doRemove },
+        ],
+      );
+    } else {
+      doRemove();
+    }
+  };
+
+  // --- Swap exercise ---
+  const openSwapModal = (exerciseId: number) => {
+    if (finishingId === exerciseId) return;
+    setSwapTargetId(exerciseId);
+    setExerciseSearch("");
+    setShowSwapModal(true);
+  };
+
+  const closeExercisePicker = () => {
+    setShowSwapModal(false);
+    setShowAddExerciseModal(false);
+    setSwapTargetId(null);
+    setExerciseSearch("");
+  };
+
+  const openAddExerciseModal = () => {
+    setExerciseSearch("");
+    setShowAddExerciseModal(true);
+  };
+
+  const addExerciseToSession = (exerciseId: number) => {
+    if (sessionExerciseIds.includes(exerciseId)) return;
+
+    setCurrentExerciseIds((prev) => {
+      const base = prev.length ? prev : sessionExerciseIds;
+      return [...base, exerciseId];
+    });
+    setDrafts((current) => ({
+      ...current,
+      [exerciseId]: createEmptyExerciseDraft(exerciseId),
+    }));
+    closeExercisePicker();
+  };
+
+  const swapExercise = (newExerciseId: number) => {
+    if (swapTargetId === null) return;
+
+    const oldDraft = drafts[swapTargetId];
+    const hasData = oldDraft?.sets.some(
+      (s) => (parseFloat(s.weight) || 0) > 0 || (parseFloat(s.reps) || 0) > 0,
+    );
+
+    const doSwap = () => {
+      setCurrentExerciseIds((prev) =>
+        prev.map((id) => (id === swapTargetId ? newExerciseId : id)),
+      );
+      setDrafts((current) => {
+        const copy = { ...current };
+        delete copy[swapTargetId];
+        copy[newExerciseId] = createEmptyExerciseDraft(newExerciseId);
+        return copy;
+      });
+      setCompletedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(swapTargetId);
+        return next;
+      });
+      closeExercisePicker();
+    };
+
+    if (hasData) {
+      Alert.alert(
+        "Swap exercise",
+        "The current exercise has entered data. Swap anyway?",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Swap", style: "destructive", onPress: doSwap },
+        ],
+      );
+    } else {
+      doSwap();
+    }
+  };
+
   // --- Finish individual exercise ---
 
   const finishExercise = async (exercise: ExerciseProgressionDTO) => {
@@ -343,7 +516,10 @@ export default function ActiveWorkoutSession() {
     if (!draft) return;
 
     const invalidSet = draft.sets.find(
-      (s) => s.weight <= 0 || s.reps <= 0 || s.rir < 0,
+      (s) =>
+        (parseFloat(s.weight) || 0) <= 0 ||
+        (parseFloat(s.reps) || 0) <= 0 ||
+        (parseFloat(s.rir) || 0) < 0,
     );
     if (invalidSet) {
       Alert.alert(
@@ -362,9 +538,9 @@ export default function ActiveWorkoutSession() {
         notes: "",
         sets: draft.sets.map((s) => ({
           set_number: s.set_number,
-          weight: s.weight,
-          reps: s.reps,
-          rir: s.rir,
+          weight: parseFloat(s.weight) || 0,
+          reps: parseFloat(s.reps) || 0,
+          rir: parseFloat(s.rir) || 0,
         })),
       };
 
@@ -453,7 +629,14 @@ export default function ActiveWorkoutSession() {
     const totalVolume = selectedExercises.reduce((sum, e) => {
       const draft = drafts[e.id];
       if (!draft) return sum;
-      return sum + draft.sets.reduce((s, set) => s + set.weight * set.reps, 0);
+      return (
+        sum +
+        draft.sets.reduce(
+          (s, set) =>
+            s + (parseFloat(set.weight) || 0) * (parseFloat(set.reps) || 0),
+          0,
+        )
+      );
     }, 0);
 
     return (
@@ -571,6 +754,29 @@ export default function ActiveWorkoutSession() {
             </Text>
           </View>
 
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Exercises</Text>
+            <TouchableOpacity
+              style={styles.inlineAction}
+              onPress={openAddExerciseModal}
+              disabled={!!finishingId}
+            >
+              <MaterialIcons
+                name="add-circle-outline"
+                size={18}
+                color={finishingId ? theme.textLight : theme.primary}
+              />
+              <Text
+                style={[
+                  styles.inlineActionText,
+                  !!finishingId && { color: theme.textLight },
+                ]}
+              >
+                Add exercise
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           {selectedExercises.map((exercise) => {
             const draft = drafts[exercise.id];
             const isCompleted = completedIds.has(exercise.id);
@@ -608,13 +814,9 @@ export default function ActiveWorkoutSession() {
                           color={theme.income}
                         />
                       )}
-                      <MaterialIcons
-                        name="check-circle"
-                        size={18}
-                        color={theme.income}
-                      />
                     </View>
                     <Text style={styles.exerciseMeta}>
+                      {displaySplit(exercise.split)} |{" "}
                       {exercise.muscle_group ?? "-"} |{" "}
                       {exercise.target_rep_range ?? "-"}
                     </Text>
@@ -636,6 +838,50 @@ export default function ActiveWorkoutSession() {
                       );
                     })()}
                   </View>
+                  {!isCompleted && (
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        gap: 6,
+                        alignItems: "flex-start",
+                      }}
+                    >
+                      <TouchableOpacity
+                        onPress={() => openSwapModal(exercise.id)}
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 8,
+                          backgroundColor: theme.primary + "15",
+                          justifyContent: "center",
+                          alignItems: "center",
+                        }}
+                      >
+                        <MaterialIcons
+                          name="swap-horiz"
+                          size={18}
+                          color={theme.primary}
+                        />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => removeExercise(exercise.id)}
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 8,
+                          backgroundColor: theme.expense + "15",
+                          justifyContent: "center",
+                          alignItems: "center",
+                        }}
+                      >
+                        <MaterialIcons
+                          name="delete-outline"
+                          size={18}
+                          color={theme.expense}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
 
                 {!isCompleted && (
@@ -694,39 +940,39 @@ export default function ActiveWorkoutSession() {
                               <TextInput
                                 style={styles.setValue}
                                 keyboardType="numeric"
-                                value={String(set.weight)}
+                                value={set.weight}
                                 onChangeText={(v) =>
                                   updateDraftSet(
                                     exercise.id,
                                     set.localId,
                                     "weight",
-                                    Number(v),
+                                    v,
                                   )
                                 }
                               />
                               <TextInput
                                 style={styles.setValue}
                                 keyboardType="numeric"
-                                value={String(set.reps)}
+                                value={set.reps}
                                 onChangeText={(v) =>
                                   updateDraftSet(
                                     exercise.id,
                                     set.localId,
                                     "reps",
-                                    Number(v),
+                                    v,
                                   )
                                 }
                               />
                               <TextInput
                                 style={styles.setValue}
                                 keyboardType="numeric"
-                                value={String(set.rir)}
+                                value={set.rir}
                                 onChangeText={(v) =>
                                   updateDraftSet(
                                     exercise.id,
                                     set.localId,
                                     "rir",
-                                    Number(v),
+                                    v,
                                   )
                                 }
                               />
@@ -809,6 +1055,112 @@ export default function ActiveWorkoutSession() {
             )}
           </TouchableOpacity>
         </View>
+
+        {/* Swap Exercise Modal */}
+        <Modal
+          visible={showSwapModal}
+          animationType="slide"
+          transparent
+          onRequestClose={closeExercisePicker}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={[styles.modalCard, { maxHeight: "70%" }]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Swap Exercise</Text>
+                <TouchableOpacity onPress={closeExercisePicker}>
+                  <MaterialIcons
+                    name="close"
+                    size={22}
+                    color={theme.textBlack}
+                  />
+                </TouchableOpacity>
+              </View>
+              <TextInput
+                style={styles.input}
+                placeholder="Search exercises..."
+                placeholderTextColor={theme.textLight}
+                value={exerciseSearch}
+                onChangeText={setExerciseSearch}
+              />
+              <ScrollView contentContainerStyle={{ gap: 8 }}>
+                {availableSessionExercises.length === 0 ? (
+                  <Text style={styles.emptyText}>
+                    No other exercises available.
+                  </Text>
+                ) : (
+                  availableSessionExercises.map((ex) => (
+                    <TouchableOpacity
+                      key={ex.id}
+                      style={styles.listCard}
+                      onPress={() => swapExercise(ex.id)}
+                    >
+                      <Text style={styles.listTitle}>
+                        {getExerciseName(ex)}
+                      </Text>
+                      <Text style={styles.listMeta}>
+                        {displaySplit(ex.split)} | {ex.muscle_group ?? "-"} |{" "}
+                        {ex.target_rep_range ?? "-"}
+                      </Text>
+                    </TouchableOpacity>
+                  ))
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Add Exercise Modal */}
+        <Modal
+          visible={showAddExerciseModal}
+          animationType="slide"
+          transparent
+          onRequestClose={closeExercisePicker}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={[styles.modalCard, { maxHeight: "70%" }]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Add Exercise</Text>
+                <TouchableOpacity onPress={closeExercisePicker}>
+                  <MaterialIcons
+                    name="close"
+                    size={22}
+                    color={theme.textBlack}
+                  />
+                </TouchableOpacity>
+              </View>
+              <TextInput
+                style={styles.input}
+                placeholder="Search exercises..."
+                placeholderTextColor={theme.textLight}
+                value={exerciseSearch}
+                onChangeText={setExerciseSearch}
+              />
+              <ScrollView contentContainerStyle={{ gap: 8 }}>
+                {availableSessionExercises.length === 0 ? (
+                  <Text style={styles.emptyText}>
+                    No more exercises available.
+                  </Text>
+                ) : (
+                  availableSessionExercises.map((ex) => (
+                    <TouchableOpacity
+                      key={ex.id}
+                      style={styles.listCard}
+                      onPress={() => addExerciseToSession(ex.id)}
+                    >
+                      <Text style={styles.listTitle}>
+                        {getExerciseName(ex)}
+                      </Text>
+                      <Text style={styles.listMeta}>
+                        {displaySplit(ex.split)} | {ex.muscle_group ?? "-"} |{" "}
+                        {ex.target_rep_range ?? "-"}
+                      </Text>
+                    </TouchableOpacity>
+                  ))
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </SafeAreaProvider>
   );

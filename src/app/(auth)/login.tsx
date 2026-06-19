@@ -174,8 +174,8 @@ export default function Login() {
               alignItems: "center",
               borderColor: theme.border,
               borderWidth: 1.2,
-              borderRadius: 8,
-              backgroundColor: theme.white,
+              borderRadius: 10,
+              backgroundColor: theme.card,
               paddingRight: 12,
             }}
           >

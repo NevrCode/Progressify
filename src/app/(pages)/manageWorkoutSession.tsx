@@ -1,4 +1,5 @@
 import { gymStyles } from "@/assets/styles/gym.style";
+import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
 import {
@@ -6,7 +7,6 @@ import {
   ExerciseProgressionDTO,
   ExerciseSessionDTO,
   GymExerciseSessionRequestDTO,
-  SplitWorkoutDTO,
   updateExerciseSession,
   WorkoutSetDTO,
 } from "@/services/gymService";
@@ -16,14 +16,13 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   RefreshControl,
   ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { LineChart } from "react-native-gifted-charts";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -49,20 +48,10 @@ type SessionPoint = {
 const getExerciseName = (exercise?: ExerciseProgressionDTO) =>
   exercise?.name ?? "Exercise";
 
-const getWorkoutDate = (workout: SplitWorkoutDTO) =>
-  workout.date ?? workout.workout_date ?? "";
-
 const getSessionSets = (session: ExerciseSessionDTO) => session.sets ?? [];
 
-const getSessionDate = (
-  session: ExerciseSessionDTO,
-  workoutDateMap: Map<number, string>,
-) =>
-  session.session_date ??
-  (session.split_workout_id != null
-    ? workoutDateMap.get(session.split_workout_id)
-    : undefined) ??
-  "";
+const getSessionDate = (session: ExerciseSessionDTO) =>
+  session.session_date ?? "";
 
 const formatDateForDisplay = (value?: string) => {
   if (!value) return "-";
@@ -84,13 +73,10 @@ const toDateSortValue = (value?: string) => {
   return Number.isNaN(parsed) ? Number.MAX_SAFE_INTEGER : parsed;
 };
 
-const buildSessionPoints = (
-  sessions: ExerciseSessionDTO[],
-  workoutDateMap: Map<number, string>,
-): SessionPoint[] =>
+const buildSessionPoints = (sessions: ExerciseSessionDTO[]): SessionPoint[] =>
   sessions
     .map((session) => {
-      const sessionDate = getSessionDate(session, workoutDateMap);
+      const sessionDate = getSessionDate(session);
       const sets = getSessionSets(session);
 
       if (!sessionDate || !sets.length) return null;
@@ -139,7 +125,7 @@ export default function ManageWorkoutSession() {
   const queryClient = useQueryClient();
   const { exerciseId } = useLocalSearchParams<{ exerciseId?: string }>();
   const selectedExerciseId = Number(exerciseId);
-
+  const { alert } = useAlert();
   const [editingSession, setEditingSession] =
     useState<ExerciseSessionDTO | null>(null);
   const [sessionDate, setSessionDate] = useState("");
@@ -154,19 +140,6 @@ export default function ManageWorkoutSession() {
     isFetching,
   } = useGymDashboard();
 
-  const splitWorkouts = useMemo(
-    () => dashboard?.split_workouts ?? [],
-    [dashboard],
-  );
-  const workoutDateMap = useMemo(
-    () =>
-      new Map(
-        splitWorkouts
-          .filter((workout) => workout.id != null && !!getWorkoutDate(workout))
-          .map((workout) => [workout.id, getWorkoutDate(workout)]),
-      ),
-    [splitWorkouts],
-  );
   const exercise = useMemo(
     () =>
       dashboard?.exercise_progressions?.find(
@@ -178,16 +151,12 @@ export default function ManageWorkoutSession() {
     () =>
       [...(exercise?.exercise_sessions ?? [])].sort(
         (first, second) =>
-          toDateSortValue(getSessionDate(second, workoutDateMap)) -
-          toDateSortValue(getSessionDate(first, workoutDateMap)),
+          toDateSortValue(getSessionDate(second)) -
+          toDateSortValue(getSessionDate(first)),
       ),
-    [exercise, workoutDateMap],
+    [exercise],
   );
-  const sessionPoints = useMemo(
-    () => buildSessionPoints(sessions, workoutDateMap),
-    [sessions, workoutDateMap],
-  );
-  const latestSessionPoint = sessionPoints[sessionPoints.length - 1];
+  const sessionPoints = useMemo(() => buildSessionPoints(sessions), [sessions]);
 
   const updateSessionMutation = useMutation({
     mutationFn: async ({
@@ -210,7 +179,7 @@ export default function ManageWorkoutSession() {
 
   const openEditModal = (session: ExerciseSessionDTO) => {
     setEditingSession(session);
-    setSessionDate(getSessionDate(session, workoutDateMap));
+    setSessionDate(getSessionDate(session));
     setNotes(session.notes ?? "");
     setEditableSets(getSessionSets(session).map(createEditableSet));
   };
@@ -287,7 +256,6 @@ export default function ManageWorkoutSession() {
     }
 
     return {
-      split_workout_id: editingSession?.split_workout_id,
       session_date: sessionDate.trim(),
       notes: notes.trim(),
       sets,
@@ -299,7 +267,7 @@ export default function ManageWorkoutSession() {
 
     const payload = buildPayload();
     if (typeof payload === "string") {
-      Alert.alert("Session not ready", payload);
+      alert("Session not ready", payload);
       return;
     }
 
@@ -310,7 +278,7 @@ export default function ManageWorkoutSession() {
       });
       closeEditModal();
     } catch (saveError: any) {
-      Alert.alert(
+      alert(
         "Update failed",
         saveError?.message || "The session could not be updated.",
       );
@@ -318,7 +286,7 @@ export default function ManageWorkoutSession() {
   };
 
   const confirmDeleteSession = (session: ExerciseSessionDTO) => {
-    Alert.alert(
+    alert(
       "Delete session",
       "This will remove the session and its sets from the progression history.",
       [
@@ -330,7 +298,7 @@ export default function ManageWorkoutSession() {
             try {
               await deleteSessionMutation.mutateAsync(session.id);
             } catch (deleteError: any) {
-              Alert.alert(
+              alert(
                 "Delete failed",
                 deleteError?.message || "The session could not be deleted.",
               );
@@ -377,330 +345,323 @@ export default function ManageWorkoutSession() {
   }
 
   return (
-    <SafeAreaProvider>
-      <SafeAreaView style={styles.safeArea}>
-        <ScrollView
-          contentContainerStyle={styles.container}
-          refreshControl={
-            <RefreshControl refreshing={isFetching} onRefresh={refetch} />
-          }
-        >
-          <View style={styles.header}>
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        refreshControl={
+          <RefreshControl refreshing={isFetching} onRefresh={refetch} />
+        }
+      >
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.eyebrow}>Workout Sessions</Text>
+            <Text style={styles.title}>{getExerciseName(exercise)}</Text>
+          </View>
+          <TouchableOpacity style={styles.headerBadge} onPress={router.back}>
+            <MaterialIcons name="arrow-back" size={22} color={theme.white} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.heroCard}>
+          <View style={styles.heroTopRow}>
             <View>
-              <Text style={styles.eyebrow}>Workout Sessions</Text>
-              <Text style={styles.title}>{getExerciseName(exercise)}</Text>
+              <Text style={styles.heroLabel}>Progression manager</Text>
+              <Text style={styles.heroTitle}>
+                {sessionPoints.length
+                  ? `${sessionPoints.length} sessions`
+                  : "No sessions yet"}
+              </Text>
             </View>
-            <TouchableOpacity style={styles.headerBadge} onPress={router.back}>
-              <MaterialIcons name="arrow-back" size={22} color={theme.white} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.heroCard}>
-            <View style={styles.heroTopRow}>
-              <View>
-                <Text style={styles.heroLabel}>Progression manager</Text>
-                <Text style={styles.heroTitle}>
-                  {sessionPoints.length
-                    ? `${sessionPoints.length} sessions`
-                    : "No sessions yet"}
-                </Text>
-              </View>
-              <View style={styles.heroIconWrap}>
-                <MaterialCommunityIcons
-                  name="chart-line"
-                  size={22}
-                  color={theme.white}
-                />
-              </View>
-            </View>
-            <View style={styles.heroStats}>
-              <View style={styles.heroStat}>
-                <Text style={styles.heroStatLabel}>Best est. 1RM</Text>
-                <Text style={styles.heroStatValue}>
-                  {sessionPoints.length
-                    ? `${Math.max(...sessionPoints.map((point) => point.estimated1RM)).toFixed(1)}kg`
-                    : "-"}
-                </Text>
-              </View>
-              <View style={styles.heroDivider} />
-              <View style={styles.heroStat}>
-                <Text style={styles.heroStatLabel}>Top set</Text>
-                <Text style={styles.heroStatValue}>
-                  {sessionPoints.length
-                    ? `${latestSessionPoint.topWeight}kg x ${latestSessionPoint.bestReps}`
-                    : "-"}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.sectionHeader}>
-            <View>
-              <Text style={styles.sectionTitle}>Progress graph</Text>
-              <Text style={styles.sectionMeta}>Estimated 1RM by session</Text>
-            </View>
-          </View>
-
-          {sessionPoints.length ? (
-            <View style={styles.exerciseCard}>
-              <LineChart
-                areaChart
-                curved
-                isAnimated
-                data={sessionPoints.map((point) => ({
-                  value: Number(point.estimated1RM.toFixed(1)),
-                  label: formatDateForDisplay(point.sessionDate),
-                  dataPointText: point.estimated1RM.toFixed(1),
-                }))}
-                height={220}
-                spacing={56}
-                initialSpacing={18}
-                endSpacing={18}
-                thickness={4}
-                color={theme.primary}
-                startFillColor={theme.primary}
-                endFillColor={theme.primary}
-                startOpacity={0.32}
-                endOpacity={0.02}
-                rulesColor={`${theme.border}55`}
-                rulesType="dashed"
-                yAxisColor="transparent"
-                xAxisColor={`${theme.border}88`}
-                yAxisTextStyle={{
-                  color: theme.textLight,
-                  fontSize: 11,
-                }}
-                xAxisLabelTextStyle={{
-                  color: theme.textLight,
-                  fontSize: 10,
-                  marginTop: 6,
-                }}
-                noOfSections={4}
-                maxValue={
-                  Math.max(
-                    ...sessionPoints.map((point) => point.estimated1RM),
-                  ) + 5
-                }
-                dataPointsColor={theme.primary}
-                dataPointsRadius={6}
-                textColor={theme.textBlack}
-                textFontSize={10}
-                textShiftY={-14}
-                textShiftX={-10}
+            <View style={styles.heroIconWrap}>
+              <MaterialCommunityIcons
+                name="chart-line"
+                size={22}
+                color={theme.white}
               />
             </View>
-          ) : (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyTitle}>No graph yet</Text>
-              <Text style={styles.emptyText}>
-                Save at least one session with sets to see the visual trend.
+          </View>
+          <View style={styles.heroStats}>
+            <View style={styles.heroStat}>
+              <Text style={styles.heroStatLabel}>Best est. 1RM</Text>
+              <Text style={styles.heroStatValue}>
+                {sessionPoints.length
+                  ? `${Math.max(...sessionPoints.map((point) => point.estimated1RM)).toFixed(1)}kg`
+                  : "-"}
               </Text>
             </View>
-          )}
-
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Session history</Text>
-            <Text style={styles.sectionMeta}>{sessions.length} total</Text>
+            <View style={styles.heroDivider} />
+            <View style={styles.heroStat}>
+              <Text style={styles.heroStatLabel}>Top set</Text>
+              <Text style={styles.heroStatValue}>
+                {sessionPoints.length
+                  ? `${sessionPoints[0].topWeight}kg x ${sessionPoints[0].bestReps}`
+                  : "-"}
+              </Text>
+            </View>
           </View>
+        </View>
 
-          {sessions.length ? (
-            sessions.map((session) => {
-              const sessionDateValue = getSessionDate(session, workoutDateMap);
-              const sets = getSessionSets(session);
-              const totalVolume = sets.reduce(
-                (total, set) => total + set.weight * set.reps,
-                0,
-              );
+        <View style={styles.sectionHeader}>
+          <View>
+            <Text style={styles.sectionTitle}>Progress graph</Text>
+            <Text style={styles.sectionMeta}>Estimated 1RM by session</Text>
+          </View>
+        </View>
 
-              return (
-                <View key={session.id} style={styles.exerciseCard}>
-                  <View style={styles.exerciseHeader}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.exerciseName}>
-                        {formatDateForDisplay(sessionDateValue)}
+        {sessionPoints.length ? (
+          <View style={styles.exerciseCard}>
+            <LineChart
+              areaChart
+              curved
+              isAnimated
+              data={sessionPoints.map((point) => ({
+                value: Number(point.estimated1RM.toFixed(1)),
+                label: formatDateForDisplay(point.sessionDate),
+                dataPointText: point.estimated1RM.toFixed(1),
+              }))}
+              height={220}
+              spacing={56}
+              initialSpacing={18}
+              endSpacing={18}
+              thickness={4}
+              color={theme.primary}
+              startFillColor={theme.primary}
+              endFillColor={theme.primary}
+              startOpacity={0.32}
+              endOpacity={0.02}
+              rulesColor={`${theme.border}55`}
+              rulesType="dashed"
+              yAxisColor="transparent"
+              xAxisColor={`${theme.border}88`}
+              yAxisTextStyle={{
+                color: theme.textLight,
+                fontSize: 11,
+              }}
+              xAxisLabelTextStyle={{
+                color: theme.textLight,
+                fontSize: 10,
+                marginTop: 6,
+              }}
+              noOfSections={4}
+              maxValue={
+                Math.max(...sessionPoints.map((point) => point.estimated1RM)) +
+                5
+              }
+              dataPointsColor={theme.primary}
+              dataPointsRadius={6}
+              textColor={theme.textBlack}
+              textFontSize={10}
+              textShiftY={-14}
+              textShiftX={-10}
+            />
+          </View>
+        ) : (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>No graph yet</Text>
+            <Text style={styles.emptyText}>
+              Save at least one session with sets to see the visual trend.
+            </Text>
+          </View>
+        )}
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Session history</Text>
+          <Text style={styles.sectionMeta}>{sessions.length} total</Text>
+        </View>
+
+        {sessions.length ? (
+          sessions.map((session) => {
+            const sessionDateValue = getSessionDate(session);
+            const sets = getSessionSets(session);
+            const totalVolume = sets.reduce(
+              (total, set) => total + set.weight * set.reps,
+              0,
+            );
+
+            return (
+              <View key={session.id} style={styles.exerciseCard}>
+                <View style={styles.exerciseHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.exerciseName}>
+                      {formatDateForDisplay(sessionDateValue)}
+                    </Text>
+                    <Text style={styles.exerciseMeta}>
+                      {sets.length} sets | {totalVolume} total volume
+                    </Text>
+                    {!!session.notes && (
+                      <Text style={styles.exerciseSubMeta}>
+                        {session.notes}
                       </Text>
-                      <Text style={styles.exerciseMeta}>
-                        {sets.length} sets | {totalVolume} total volume
-                      </Text>
-                      {!!session.notes && (
-                        <Text style={styles.exerciseSubMeta}>
-                          {session.notes}
-                        </Text>
-                      )}
-                    </View>
-                    <View style={styles.cardActionIcons}>
-                      <TouchableOpacity onPress={() => openEditModal(session)}>
-                        <MaterialIcons
-                          name="edit"
-                          size={18}
-                          color={theme.primary}
-                        />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => confirmDeleteSession(session)}
-                      >
-                        <MaterialIcons
-                          name="delete-outline"
-                          size={18}
-                          color={theme.expense}
-                        />
-                      </TouchableOpacity>
-                    </View>
+                    )}
                   </View>
-
-                  <View style={styles.setTable}>
-                    <View style={styles.setTableHeader}>
-                      <Text style={styles.setHeaderText}>Set</Text>
-                      <Text style={styles.setHeaderText}>Weight</Text>
-                      <Text style={styles.setHeaderText}>Reps</Text>
-                      <Text style={styles.setHeaderText}>RIR</Text>
-                    </View>
-                    {sets.map((set, index) => (
-                      <View key={set.id ?? index} style={styles.setRow}>
-                        <Text style={styles.setValue}>#{set.set_number}</Text>
-                        <Text style={styles.setValue}>{set.weight}kg</Text>
-                        <Text style={styles.setValue}>{set.reps}</Text>
-                        <Text style={styles.setValue}>{set.rir ?? 0}</Text>
-                      </View>
-                    ))}
+                  <View style={styles.cardActionIcons}>
+                    <TouchableOpacity onPress={() => openEditModal(session)}>
+                      <MaterialIcons
+                        name="edit"
+                        size={18}
+                        color={theme.primary}
+                      />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => confirmDeleteSession(session)}
+                    >
+                      <MaterialIcons
+                        name="delete-outline"
+                        size={18}
+                        color={theme.expense}
+                      />
+                    </TouchableOpacity>
                   </View>
                 </View>
-              );
-            })
-          ) : (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyTitle}>No sessions recorded</Text>
-              <Text style={styles.emptyText}>
-                Finish a workout from the progression page, then manage it here.
-              </Text>
-            </View>
-          )}
-        </ScrollView>
 
-        <Modal
-          visible={!!editingSession}
-          transparent
-          animationType="fade"
-          onRequestClose={closeEditModal}
-        >
-          <View style={styles.modalBackdrop}>
-            <View style={styles.modalCard}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Edit Session</Text>
-                <TouchableOpacity onPress={closeEditModal}>
-                  <MaterialIcons
-                    name="close"
-                    size={22}
-                    color={theme.textLight}
+                <View style={styles.setTable}>
+                  <View style={styles.setTableHeader}>
+                    <Text style={styles.setHeaderText}>Set</Text>
+                    <Text style={styles.setHeaderText}>Weight</Text>
+                    <Text style={styles.setHeaderText}>Reps</Text>
+                    <Text style={styles.setHeaderText}>RIR</Text>
+                  </View>
+                  {sets.map((set, index) => (
+                    <View key={set.id ?? index} style={styles.setRow}>
+                      <Text style={styles.setValue}>#{set.set_number}</Text>
+                      <Text style={styles.setValue}>{set.weight}kg</Text>
+                      <Text style={styles.setValue}>{set.reps}</Text>
+                      <Text style={styles.setValue}>{set.rir ?? 0}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            );
+          })
+        ) : (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>No sessions recorded</Text>
+            <Text style={styles.emptyText}>
+              Finish a workout from the progression page, then manage it here.
+            </Text>
+          </View>
+        )}
+      </ScrollView>
+
+      <Modal
+        visible={!!editingSession}
+        transparent
+        animationType="fade"
+        onRequestClose={closeEditModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Session</Text>
+              <TouchableOpacity onPress={closeEditModal}>
+                <MaterialIcons name="close" size={22} color={theme.textLight} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={{ gap: 12 }}>
+              <TextInput
+                style={styles.input}
+                placeholder="Session date (YYYY-MM-DD)"
+                value={sessionDate}
+                onChangeText={setSessionDate}
+              />
+              <TextInput
+                style={[styles.input, styles.textarea]}
+                placeholder="Notes"
+                multiline
+                value={notes}
+                onChangeText={setNotes}
+              />
+
+              <View style={styles.subsectionHeader}>
+                <Text style={styles.subsectionTitle}>Sets</Text>
+                <TouchableOpacity
+                  style={styles.inlineAction}
+                  onPress={addEditableSet}
+                >
+                  <MaterialIcons name="add" size={16} color={theme.primary} />
+                  <Text style={styles.inlineActionText}>Add set</Text>
+                </TouchableOpacity>
+              </View>
+
+              {editableSets.map((set) => (
+                <View key={set.localId} style={styles.setTable}>
+                  <View style={styles.cardActionRow}>
+                    <Text style={styles.subsectionTitle}>
+                      Set #{set.set_number}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => removeEditableSet(set.localId)}
+                    >
+                      <MaterialIcons
+                        name="remove-circle-outline"
+                        size={20}
+                        color={theme.expense}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Set number"
+                    keyboardType="numeric"
+                    value={set.set_number}
+                    onChangeText={(value) =>
+                      updateSetField(set.localId, "set_number", value)
+                    }
                   />
-                </TouchableOpacity>
-              </View>
-
-              <ScrollView contentContainerStyle={{ gap: 12 }}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Session date (YYYY-MM-DD)"
-                  value={sessionDate}
-                  onChangeText={setSessionDate}
-                />
-                <TextInput
-                  style={[styles.input, styles.textarea]}
-                  placeholder="Notes"
-                  multiline
-                  value={notes}
-                  onChangeText={setNotes}
-                />
-
-                <View style={styles.subsectionHeader}>
-                  <Text style={styles.subsectionTitle}>Sets</Text>
-                  <TouchableOpacity
-                    style={styles.inlineAction}
-                    onPress={addEditableSet}
-                  >
-                    <MaterialIcons name="add" size={16} color={theme.primary} />
-                    <Text style={styles.inlineActionText}>Add set</Text>
-                  </TouchableOpacity>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Weight"
+                    keyboardType="numeric"
+                    value={set.weight}
+                    onChangeText={(value) =>
+                      updateSetField(set.localId, "weight", value)
+                    }
+                  />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Reps"
+                    keyboardType="numeric"
+                    value={set.reps}
+                    onChangeText={(value) =>
+                      updateSetField(set.localId, "reps", value)
+                    }
+                  />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="RIR"
+                    keyboardType="numeric"
+                    value={set.rir}
+                    onChangeText={(value) =>
+                      updateSetField(set.localId, "rir", value)
+                    }
+                  />
                 </View>
+              ))}
+            </ScrollView>
 
-                {editableSets.map((set) => (
-                  <View key={set.localId} style={styles.setTable}>
-                    <View style={styles.cardActionRow}>
-                      <Text style={styles.subsectionTitle}>
-                        Set #{set.set_number}
-                      </Text>
-                      <TouchableOpacity
-                        onPress={() => removeEditableSet(set.localId)}
-                      >
-                        <MaterialIcons
-                          name="remove-circle-outline"
-                          size={20}
-                          color={theme.expense}
-                        />
-                      </TouchableOpacity>
-                    </View>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Set number"
-                      keyboardType="numeric"
-                      value={set.set_number}
-                      onChangeText={(value) =>
-                        updateSetField(set.localId, "set_number", value)
-                      }
-                    />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Weight"
-                      keyboardType="numeric"
-                      value={set.weight}
-                      onChangeText={(value) =>
-                        updateSetField(set.localId, "weight", value)
-                      }
-                    />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Reps"
-                      keyboardType="numeric"
-                      value={set.reps}
-                      onChangeText={(value) =>
-                        updateSetField(set.localId, "reps", value)
-                      }
-                    />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="RIR"
-                      keyboardType="numeric"
-                      value={set.rir}
-                      onChangeText={(value) =>
-                        updateSetField(set.localId, "rir", value)
-                      }
-                    />
-                  </View>
-                ))}
-              </ScrollView>
-
-              <View style={styles.modalActions}>
-                <TouchableOpacity
-                  style={styles.secondaryButton}
-                  onPress={closeEditModal}
-                >
-                  <Text style={styles.secondaryButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.primaryButton}
-                  onPress={saveSession}
-                  disabled={updateSessionMutation.isPending}
-                >
-                  {updateSessionMutation.isPending ? (
-                    <ActivityIndicator color={theme.white} />
-                  ) : (
-                    <Text style={styles.primaryButtonText}>Save</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.secondaryButton}
+                onPress={closeEditModal}
+              >
+                <Text style={styles.secondaryButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.primaryButton}
+                onPress={saveSession}
+                disabled={updateSessionMutation.isPending}
+              >
+                {updateSessionMutation.isPending ? (
+                  <ActivityIndicator color={theme.white} />
+                ) : (
+                  <Text style={styles.primaryButtonText}>Save</Text>
+                )}
+              </TouchableOpacity>
             </View>
           </View>
-        </Modal>
-      </SafeAreaView>
-    </SafeAreaProvider>
+        </View>
+      </Modal>
+    </SafeAreaView>
   );
 }

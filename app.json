@@ -2,7 +2,7 @@
   "expo": {
     "name": "Progressify",
     "slug": "progressify",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "progressify",
@@ -17,6 +17,7 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
+      "softwareKeyboardLayoutMode": "pan",
       "predictiveBackGestureEnabled": false,
       "package": "com.nevrcode.progressify"
     },
@@ -37,19 +38,27 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-image"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
     "extra": {
+      "displayedVersion": "1.0.2",
       "router": {},
       "apiUrl": "https://ex-tracker-168551488309.asia-southeast2.run.app",
       "eas": {
         "projectId": "b2090b27-3032-4529-a2d1-23f2944fc5a6"
       }
     },
-    "owner": "nevrcode"
+    "owner": "nevrcode",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/b2090b27-3032-4529-a2d1-23f2944fc5a6"
+    }
   }
 }

@@ -70,6 +70,7 @@ api.interceptors.response.use(
 
       try {
         const refreshToken = await SecureStore.getItemAsync("refresh_token");
+        console.log(refreshToken);
         if (!refreshToken) {
           await clearStoredTokens();
           return Promise.reject(error);

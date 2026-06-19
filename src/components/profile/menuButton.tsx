@@ -1,6 +1,6 @@
 import { profileStyles } from "@/assets/styles/profile.style";
 import { useTheme } from "@/context/ThemeContext";
-import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
+import { MaterialIcons } from "@expo/vector-icons";
 import { Text, TouchableOpacity, View } from "react-native";
 
 export const MenuButton = ({
@@ -19,7 +19,7 @@ export const MenuButton = ({
       onPress={onPress}
     >
       <View style={style.menuIconWrap}>
-        <MaterialCommunityIcons
+        <MaterialIcons
           name={item.icon}
           size={21}
           color={style.avatarText.color}

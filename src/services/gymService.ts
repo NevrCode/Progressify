@@ -36,14 +36,12 @@ export interface WorkoutSetDTO {
 
 export interface ExerciseSessionDTO {
   id: number;
-  split_workout_id?: number;
   session_date?: string;
   notes?: string;
   sets?: WorkoutSetDTO[];
 }
 
 export interface GymExerciseSessionRequestDTO {
-  split_workout_id?: number;
   session_date?: string;
   notes?: string;
   sets?: WorkoutSetDTO[];
@@ -71,25 +69,7 @@ export interface ExerciseProgressionDTO {
 }
 
 export interface GymDashboardResponseDTO {
-  split_summary?: SplitSummaryDTO[];
-  split_summaries?: SplitSummaryDTO[];
-  split_workouts?: SplitWorkoutDTO[];
   exercise_progressions?: ExerciseProgressionDTO[];
-}
-
-export interface GymSplitSummaryRequestDTO {
-  split: SplitType;
-  next_day: string;
-  exercises: number;
-}
-
-export interface GymSplitWorkoutRequestDTO {
-  split: SplitType;
-  date: string;
-  duration: string;
-  exercises: number;
-  total_volume: number;
-  focus: string;
 }
 
 export interface GymExerciseProgressionRequestDTO {
@@ -178,84 +158,6 @@ export const getGymDashboard = async () => {
   }
 };
 
-export const createSplitSummary = async (dto: GymSplitSummaryRequestDTO) => {
-  try {
-    const headers = await getAuthHeaders();
-    const response = await api.post<SplitSummaryDTO>(
-      "/v1/gym/split-summary",
-      dto,
-      {
-        headers,
-      },
-    );
-
-    return response.data;
-  } catch (error: any) {
-    handleApiError(error, "Create split summary failed");
-  }
-};
-
-export const updateSplitSummary = async (
-  id: number,
-  dto: GymSplitSummaryRequestDTO,
-) => {
-  try {
-    const headers = await getAuthHeaders();
-    const response = await api.put<SplitSummaryDTO>(
-      `/v1/gym/split-summary/${id}`,
-      dto,
-      { headers },
-    );
-
-    return response.data;
-  } catch (error: any) {
-    handleApiError(error, "Update split summary failed");
-  }
-};
-
-export const deleteSplitSummary = async (id: number) => {
-  try {
-    const headers = await getAuthHeaders();
-    await api.delete(`/v1/gym/split-summary/${id}`, { headers });
-  } catch (error: any) {
-    handleApiError(error, "Delete split summary failed");
-  }
-};
-
-export const createSplitWorkout = async (dto: GymSplitWorkoutRequestDTO) => {
-  try {
-    const headers = await getAuthHeaders();
-    const response = await api.post<SplitWorkoutDTO>(
-      "/v1/gym/split-workouts",
-      dto,
-      {
-        headers,
-      },
-    );
-
-    return response.data;
-  } catch (error: any) {
-    handleApiError(error, "Create split workout failed");
-  }
-};
-
-export const updateSplitWorkout = async (
-  id: number,
-  dto: GymSplitWorkoutRequestDTO,
-) => {
-  try {
-    const headers = await getAuthHeaders();
-    const response = await api.put<SplitWorkoutDTO>(
-      `/v1/gym/split-workouts/${id}`,
-      dto,
-      { headers },
-    );
-
-    return response.data;
-  } catch (error: any) {
-    handleApiError(error, "Update split workout failed");
-  }
-};
 export const deleteSessionProgression = async (id: number) => {
   try {
     const headers = await getAuthHeaders();
@@ -265,14 +167,6 @@ export const deleteSessionProgression = async (id: number) => {
   }
 };
 
-export const deleteSplitWorkout = async (id: number) => {
-  try {
-    const headers = await getAuthHeaders();
-    await api.delete(`/v1/gym/split-workouts/${id}`, { headers });
-  } catch (error: any) {
-    handleApiError(error, "Delete split workout failed");
-  }
-};
 export const createExerciseSession = async (
   exerciseProgressionId: number,
   dto: GymExerciseSessionRequestDTO,

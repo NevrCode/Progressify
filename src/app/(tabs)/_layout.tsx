@@ -20,11 +20,20 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen
-        name="gymProgression"
+        name="home"
         options={{
           tabBarLabel: "Home",
           tabBarIcon: ({ color, size }) => (
             <FontAwesome name="home" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="gymProgression"
+        options={{
+          tabBarLabel: "Gym",
+          tabBarIcon: ({ color, size }) => (
+            <FontAwesome name="bar-chart" size={size} color={color} />
           ),
         }}
       />

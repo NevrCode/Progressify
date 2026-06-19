@@ -1,4 +1,5 @@
 import { gymStyles } from "@/assets/styles/gym.style";
+import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
 import {
@@ -15,14 +16,13 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   RefreshControl,
   ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { LineChart } from "react-native-gifted-charts";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -125,7 +125,7 @@ export default function ManageWorkoutSession() {
   const queryClient = useQueryClient();
   const { exerciseId } = useLocalSearchParams<{ exerciseId?: string }>();
   const selectedExerciseId = Number(exerciseId);
-
+  const { alert } = useAlert();
   const [editingSession, setEditingSession] =
     useState<ExerciseSessionDTO | null>(null);
   const [sessionDate, setSessionDate] = useState("");
@@ -267,7 +267,7 @@ export default function ManageWorkoutSession() {
 
     const payload = buildPayload();
     if (typeof payload === "string") {
-      Alert.alert("Session not ready", payload);
+      alert("Session not ready", payload);
       return;
     }
 
@@ -278,7 +278,7 @@ export default function ManageWorkoutSession() {
       });
       closeEditModal();
     } catch (saveError: any) {
-      Alert.alert(
+      alert(
         "Update failed",
         saveError?.message || "The session could not be updated.",
       );
@@ -286,7 +286,7 @@ export default function ManageWorkoutSession() {
   };
 
   const confirmDeleteSession = (session: ExerciseSessionDTO) => {
-    Alert.alert(
+    alert(
       "Delete session",
       "This will remove the session and its sets from the progression history.",
       [
@@ -298,7 +298,7 @@ export default function ManageWorkoutSession() {
             try {
               await deleteSessionMutation.mutateAsync(session.id);
             } catch (deleteError: any) {
-              Alert.alert(
+              alert(
                 "Delete failed",
                 deleteError?.message || "The session could not be deleted.",
               );

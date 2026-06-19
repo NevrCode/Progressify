@@ -3,30 +3,50 @@ import { api } from "@/utils/api";
 export type MealType = "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK";
 
 export type FoodEntryCreateRequestDTO = {
-  date: string;
-  meal_type: MealType;
-  food_id?: string;
-  serving_id?: string;
+  food_id: string;
   food_name: string;
-  brand_name?: string;
+  serving_id?: string;
   serving_description?: string;
   quantity: number;
-  calories: number;
-  protein: number;
-  carbohydrate: number;
-  fat: number;
+  calories?: number;
+  protein?: number;
+  fat?: number;
+  carbohydrate?: number;
+  date: number;
+  meal_type: MealType;
 };
 
-export type FoodEntryUpdateRequestDTO = Partial<FoodEntryCreateRequestDTO>;
+export type FoodEntryUpdateRequestDTO = {
+  serving_id?: string;
+  serving_description?: string;
+  quantity?: number;
+  calories?: number;
+  protein?: number;
+  fat?: number;
+  carbohydrate?: number;
+  date?: number;
+  meal_type?: MealType;
+};
 
-export type FoodEntryDetailResponseDTO = Partial<FoodEntryCreateRequestDTO> & {
+export type FoodEntryDetailResponseDTO = {
   id: number;
+  food_id?: string;
+  food_name?: string;
+  serving_id?: string;
+  serving_description?: string;
+  quantity?: number;
+  calories?: number;
+  protein?: number;
+  fat?: number;
+  carbohydrate?: number;
   date?: string;
-  created_at?: string;
+  meal_type: MealType;
 };
 
 export type FoodDiarySummaryResponseDTO = {
   date?: string;
+  calories_goal?: number;
+  protein_goal?: number;
   total_calories?: number;
   total_protein?: number;
   total_carbohydrate?: number;

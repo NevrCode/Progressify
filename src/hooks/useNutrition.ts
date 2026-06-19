@@ -1,12 +1,12 @@
 import {
-    getFoodDiarySummary,
-    getUserGoals,
-    getUserProfile,
-    overrideUserGoals,
-    recalculateGoals,
-    saveUserProfile,
-    UserGoalOverrideRequest,
-    UserProfileRequest,
+  getFoodDiarySummary,
+  getUserGoals,
+  getUserProfile,
+  overrideUserGoals,
+  recalculateGoals,
+  saveUserProfile,
+  UserGoalOverrideRequest,
+  UserProfileRequest,
 } from "@/services/nutritionService";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -28,11 +28,11 @@ export const useNutritionGoals = () =>
     retry: false,
   });
 
-export const useTodayDiarySummary = () => {
-  const today = new Date().toISOString().slice(0, 10);
+export const useTodayDiarySummary = (date: string) => {
   return useQuery({
-    queryKey: [...DIARY_SUMMARY_KEY, today],
-    queryFn: () => getFoodDiarySummary(today),
+    queryKey: [...DIARY_SUMMARY_KEY, date],
+    queryFn: () => getFoodDiarySummary(date),
+    enabled: !!date,
   });
 };
 

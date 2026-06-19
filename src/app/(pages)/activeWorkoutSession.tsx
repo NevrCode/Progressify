@@ -1,4 +1,5 @@
 import { gymStyles } from "@/assets/styles/gym.style";
+import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
 import {
@@ -19,7 +20,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   BackHandler,
   KeyboardAvoidingView,
   Modal,
@@ -28,7 +28,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
@@ -133,6 +133,7 @@ export default function ActiveWorkoutSession() {
         .filter((id) => !Number.isNaN(id) && id > 0),
     [exerciseIds],
   );
+  const { alert } = useAlert();
 
   const sessionStartedAtRef = useRef(new Date().toISOString());
   const [elapsed, setElapsed] = useState("0 min");
@@ -270,7 +271,12 @@ export default function ActiveWorkoutSession() {
       restoredIds.length > 0 ||
       Object.keys(drafts).length > 0;
 
-    if (hydrated && hadSession && currentExerciseIds.length === 0 && !allSaved) {
+    if (
+      hydrated &&
+      hadSession &&
+      currentExerciseIds.length === 0 &&
+      !allSaved
+    ) {
       clearActiveSession();
       router.back();
     }
@@ -422,7 +428,7 @@ export default function ActiveWorkoutSession() {
     };
 
     if (hasData) {
-      Alert.alert(
+      alert(
         "Remove exercise",
         `Remove "${getExerciseName(exercise!)}"? Entered sets will be lost.`,
         [
@@ -496,7 +502,7 @@ export default function ActiveWorkoutSession() {
     };
 
     if (hasData) {
-      Alert.alert(
+      alert(
         "Swap exercise",
         "The current exercise has entered data. Swap anyway?",
         [
@@ -522,7 +528,7 @@ export default function ActiveWorkoutSession() {
         (parseFloat(s.rir) || 0) < 0,
     );
     if (invalidSet) {
-      Alert.alert(
+      alert(
         "Incomplete set",
         `Set #${invalidSet.set_number} needs weight > 0, reps > 0, and RIR ≥ 0.`,
       );
@@ -559,7 +565,7 @@ export default function ActiveWorkoutSession() {
         return next;
       });
     } catch (err: any) {
-      Alert.alert(
+      alert(
         "Save failed",
         err?.message || "Could not save this exercise session.",
       );

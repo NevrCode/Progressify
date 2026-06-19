@@ -46,6 +46,7 @@
       "reactCompiler": true
     },
     "extra": {
+      "displayedVersion": "1.0.2",
       "router": {},
       "apiUrl": "https://ex-tracker-168551488309.asia-southeast2.run.app",
       "eas": {
@@ -54,7 +55,7 @@
     },
     "owner": "nevrcode",
     "runtimeVersion": {
-      "policy": "appVersion"
+      "policy": "fingerprint"
     },
     "updates": {
       "url": "https://u.expo.dev/b2090b27-3032-4529-a2d1-23f2944fc5a6"

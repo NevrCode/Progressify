@@ -1,4 +1,6 @@
 import { PatchNotesPopup } from "@/components/patchNotesPopUp";
+import { AlertProvider } from "@/context/AlertContext";
+import { DiaryProvider } from "@/context/DairyContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { usePatchNotes } from "@/hooks/usePatchNote";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -66,33 +68,37 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <QueryClientProvider client={queryClient}>
-          {authChecked ? (
-            <>
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                }}
-              />
-              <PatchNotesPopup
-                visible={showPopup}
-                patch={latestPatch}
-                onDismiss={markAsSeen}
-              />
-            </>
-          ) : (
-            <View
-              style={{
-                flex: 1,
-                justifyContent: "center",
-                alignItems: "center",
-                backgroundColor: "#FFFFFF",
-              }}
-            >
-              <ActivityIndicator size="large" color="#4CAF50" />
-            </View>
-          )}
-        </QueryClientProvider>
+        <AlertProvider>
+          <DiaryProvider>
+            <QueryClientProvider client={queryClient}>
+              {authChecked ? (
+                <>
+                  <Stack
+                    screenOptions={{
+                      headerShown: false,
+                    }}
+                  />
+                  <PatchNotesPopup
+                    visible={showPopup}
+                    patch={latestPatch}
+                    onDismiss={markAsSeen}
+                  />
+                </>
+              ) : (
+                <View
+                  style={{
+                    flex: 1,
+                    justifyContent: "center",
+                    alignItems: "center",
+                    backgroundColor: "#FFFFFF",
+                  }}
+                >
+                  <ActivityIndicator size="large" color="#4CAF50" />
+                </View>
+              )}
+            </QueryClientProvider>
+          </DiaryProvider>
+        </AlertProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );

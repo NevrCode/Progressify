@@ -1,4 +1,5 @@
 import { api } from "@/utils/api";
+import { FoodEntryDetailResponseDTO } from "./foodDiaryService";
 
 export type Gender = "MALE" | "FEMALE";
 export type ActivityLevel =
@@ -89,7 +90,7 @@ export interface FoodDiarySummary {
   goals: UserGoalResponse;
   progress: DailyMacroProgress;
   status: "UNDER" | "ON_TRACK" | "OVER";
-  entries: any[];
+  entries: FoodEntryDetailResponseDTO[];
 }
 
 // ── API calls ─────────────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { profileStyles } from "@/assets/styles/profile.style";
 import { MenuButton } from "@/components/profile/menuButton";
+import { useDiaryContext } from "@/context/DairyContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
@@ -25,7 +26,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 type MaterialIconsName = ComponentProps<typeof MaterialIcons>["name"];
 
@@ -86,6 +87,7 @@ export default function Profile() {
   const router = useRouter();
   const { theme } = useTheme();
   const profileStyless = profileStyles(theme);
+  const { selectedDate, setSelectedDate } = useDiaryContext();
 
   const handleLogout = async () => {
     await SecureStore.deleteItemAsync("access_token");
@@ -110,7 +112,7 @@ export default function Profile() {
   } = useGymDashboard();
   const { data: nutritionProfile } = useNutritionProfile();
   const { data: todaySummary, refetch: refetchSummary } =
-    useTodayDiarySummary();
+    useTodayDiarySummary(selectedDate);
 
   const accountList = useMemo(() => {
     const payload = accounts as unknown;
@@ -198,51 +200,48 @@ export default function Profile() {
   const calProg = todaySummary?.progress?.calories;
 
   return (
-    <SafeAreaProvider>
-      <SafeAreaView style={profileStyless.safeArea}>
-        <ScrollView
-          contentContainerStyle={profileStyless.container}
-          refreshControl={
-            <RefreshControl refreshing={isRefreshing} onRefresh={refetchAll} />
-          }
-        >
-          {/* Header */}
-          <View style={profileStyless.header}>
-            <View>
-              <Text style={profileStyless.eyebrow}>Account</Text>
-              <Text style={profileStyless.title}>Profile</Text>
-            </View>
-            <TouchableOpacity style={profileStyless.headerButton}>
-              <Feather name="edit-2" size={18} color={theme.primary} />
-            </TouchableOpacity>
+    <SafeAreaView style={profileStyless.safeArea}>
+      <ScrollView
+        contentContainerStyle={profileStyless.container}
+        refreshControl={
+          <RefreshControl refreshing={isRefreshing} onRefresh={refetchAll} />
+        }
+      >
+        {/* Header */}
+        <View style={profileStyless.header}>
+          <View>
+            <Text style={profileStyless.eyebrow}>Account</Text>
+            <Text style={profileStyless.title}>Profile</Text>
           </View>
+          <TouchableOpacity style={profileStyless.headerButton}>
+            <Feather name="edit-2" size={18} color={theme.primary} />
+          </TouchableOpacity>
+        </View>
 
-          {/* Identity card */}
-          <View style={profileStyless.identityCard}>
-            <View style={profileStyless.avatar}>
-              <Text style={profileStyless.avatarText}>
-                {getInitials(profileData?.name)}
-              </Text>
-              <View style={profileStyless.onlineBadge} />
-            </View>
-            <View style={profileStyless.identityTextWrap}>
-              <Text style={profileStyless.name}>{displayName}</Text>
-              <Text style={profileStyless.email}>{displayEmail}</Text>
-              <View style={profileStyless.memberChip}>
-                <MaterialCommunityIcons
-                  name="crown-outline"
-                  size={14}
-                  color={theme.teriary}
-                />
-                <Text style={profileStyless.memberChipText}>
-                  Premium planner
-                </Text>
-              </View>
+        {/* Identity card */}
+        <View style={profileStyless.identityCard}>
+          <View style={profileStyless.avatar}>
+            <Text style={profileStyless.avatarText}>
+              {getInitials(profileData?.name)}
+            </Text>
+            <View style={profileStyless.onlineBadge} />
+          </View>
+          <View style={profileStyless.identityTextWrap}>
+            <Text style={profileStyless.name}>{displayName}</Text>
+            <Text style={profileStyless.email}>{displayEmail}</Text>
+            <View style={profileStyless.memberChip}>
+              <MaterialCommunityIcons
+                name="crown-outline"
+                size={14}
+                color={theme.teriary}
+              />
+              <Text style={profileStyless.memberChipText}>Premium planner</Text>
             </View>
           </View>
+        </View>
 
-          {/* Stats row */}
-          {/* <View style={profileStyless.statsCard}>
+        {/* Stats row */}
+        {/* <View style={profileStyless.statsCard}>
             <View style={profileStyless.statItem}>
               <Text style={profileStyless.statValue}>{profileCompletion}%</Text>
               <Text style={profileStyless.statLabel}>Profile</Text>
@@ -261,7 +260,7 @@ export default function Profile() {
             </View>
           </View> */}
 
-          {/* <View style={profileStyless.insightGrid}>
+        {/* <View style={profileStyless.insightGrid}>
             <View style={profileStyless.insightCard}>
               <View style={profileStyless.insightIconWrap}>
                 <MaterialCommunityIcons
@@ -294,8 +293,8 @@ export default function Profile() {
             </View>
           </View> */}
 
-          {/* ── NUTRITION SUMMARY CARD (new) ─────────────────────────────── */}
-          {/* <TouchableOpacity
+        {/* ── NUTRITION SUMMARY CARD (new) ─────────────────────────────── */}
+        {/* <TouchableOpacity
             style={profileStyless.insightCard ?? profileStyless.statsCard}
             activeOpacity={0.85}
             onPress={() => router.push("/nutritionProfile")}
@@ -406,21 +405,21 @@ export default function Profile() {
             )}
           </TouchableOpacity> */}
 
-          {!!profileError && (
-            <View style={profileStyless.noticeCard}>
-              <MaterialIcons
-                name="info-outline"
-                size={18}
-                color={theme.expense}
-              />
-              <Text style={profileStyless.noticeText}>
-                Profile data could not refresh. Pull down to try again.
-              </Text>
-            </View>
-          )}
+        {!!profileError && (
+          <View style={profileStyless.noticeCard}>
+            <MaterialIcons
+              name="info-outline"
+              size={18}
+              color={theme.expense}
+            />
+            <Text style={profileStyless.noticeText}>
+              Profile data could not refresh. Pull down to try again.
+            </Text>
+          </View>
+        )}
 
-          {/* Quick actions */}
-          {/* <View style={profileStyless.section}>
+        {/* Quick actions */}
+        {/* <View style={profileStyless.section}>
             <Text style={profileStyless.sectionTitle}>Next steps</Text>
             {quickActions.map((action) => (
               <TouchableOpacity
@@ -451,59 +450,59 @@ export default function Profile() {
             ))}
           </View> */}
 
-          {/* Account section */}
-          {/* <View style={profileStyless.section}>
+        {/* Account section */}
+        {/* <View style={profileStyless.section}>
             <Text style={profileStyless.sectionTitle}>Account</Text>
             {menuSections[0].items.map((item) => (
               <MenuButton key={item.label} item={item} onPress={() => {}} />
             ))}
           </View> */}
 
-          {/* Preferences section */}
-          <View style={profileStyless.section}>
-            <Text style={profileStyless.sectionTitle}>Preferences</Text>
-            {menuSections[0].items.map((item) => (
-              <MenuButton
-                key={item.label}
-                item={item}
-                onPress={() => {
-                  if (item.label === "Appearance") router.push("/appearance");
-                  if (item.label === "Patch Notes") router.push("/changelog");
-                }}
-              />
-            ))}
-          </View>
-
-          {/* Logout */}
-          <TouchableOpacity
-            style={profileStyless.logoutButton}
-            onPress={handleLogout}
-            activeOpacity={0.82}
-          >
-            <View style={profileStyless.logoutIconWrap}>
-              <MaterialIcons name="logout" size={22} color={theme.expense} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={profileStyless.logoutText}>Logout</Text>
-              <Text style={profileStyless.logoutDescription}>
-                End this session on your device
-              </Text>
-            </View>
-          </TouchableOpacity>
-
-          <View style={{ alignItems: "center", paddingVertical: 24 }}>
-            <Text
-              style={{
-                color: theme.textLight,
-                fontSize: 12,
-                fontWeight: "600",
+        {/* Preferences section */}
+        <View style={profileStyless.section}>
+          <Text style={profileStyless.sectionTitle}>Preferences</Text>
+          {menuSections[0].items.map((item) => (
+            <MenuButton
+              key={item.label}
+              item={item}
+              onPress={() => {
+                if (item.label === "Appearance") router.push("/appearance");
+                if (item.label === "Patch Notes") router.push("/changelog");
               }}
-            >
-              Progressify v{Constants.expoConfig?.version ?? "1.0.0"}
+            />
+          ))}
+        </View>
+
+        {/* Logout */}
+        <TouchableOpacity
+          style={profileStyless.logoutButton}
+          onPress={handleLogout}
+          activeOpacity={0.82}
+        >
+          <View style={profileStyless.logoutIconWrap}>
+            <MaterialIcons name="logout" size={22} color={theme.expense} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={profileStyless.logoutText}>Logout</Text>
+            <Text style={profileStyless.logoutDescription}>
+              End this session on your device
             </Text>
           </View>
-        </ScrollView>
-      </SafeAreaView>
-    </SafeAreaProvider>
+        </TouchableOpacity>
+
+        <View style={{ alignItems: "center", paddingVertical: 24 }}>
+          <Text
+            style={{
+              color: theme.textLight,
+              fontSize: 12,
+              fontWeight: "600",
+            }}
+          >
+            Progressify v
+            {Constants.expoConfig?.extra?.displayedVersion ?? "1.0.0"}
+          </Text>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }

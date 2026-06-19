@@ -439,7 +439,20 @@ export const gymStyles = (theme: ThemeType) =>
       paddingVertical: 6,
       gap: 8,
     },
+    mealPrepSetRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingVertical: 6,
+      gap: 8,
+    },
     setValue: {
+      flex: 1,
+      color: theme.textBlack,
+      fontSize: 13,
+      fontWeight: "700",
+    },
+    mealPrepSetValue: {
       flex: 1,
       color: theme.textBlack,
       fontSize: 13,

@@ -1,12 +1,14 @@
 import {
-    createMealPrep,
-    deleteMealPrep,
-    getMealPreps,
-    logMealPrepToDiary,
-    MealPrepCreateRequest,
-    MealPrepLogRequest,
-    updateMealPrep,
+  createMealPrep,
+  deleteMealPrep,
+  getMealPreps,
+  logMealPrepToDiary,
+  MealPrepCreateRequest,
+  MealPrepLogRequest,
+  updateMealPrep,
 } from "@/services/mealPrepService";
+import { FOOD_DIARY_QUERY_KEY } from "@/hooks/useFoodDiary";
+import { DIARY_SUMMARY_KEY } from "@/hooks/useNutrition";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export const MEAL_PREP_QUERY_KEY = ["meal-prep"];
@@ -50,7 +52,10 @@ export const useLogMealPrep = () => {
   return useMutation({
     mutationFn: ({ id, dto }: { id: number; dto: MealPrepLogRequest }) =>
       logMealPrepToDiary(id, dto),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: MEAL_PREP_QUERY_KEY }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MEAL_PREP_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: FOOD_DIARY_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: DIARY_SUMMARY_KEY });
+    },
   });
 };

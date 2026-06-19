@@ -1,46 +1,47 @@
 import { gymStyles } from "@/assets/styles/gym.style";
 import { profileStyles } from "@/assets/styles/profile.style";
+import { useAlert } from "@/context/AlertContext";
+import { useDiaryContext } from "@/context/DairyContext";
 import { useTheme } from "@/context/ThemeContext";
 import {
-    FOOD_DIARY_QUERY_KEY,
-    useFoodDiarySummary,
-    useFoodEntries,
+  FOOD_DIARY_QUERY_KEY,
+  useFoodDiarySummary,
+  useFoodEntries,
 } from "@/hooks/useFoodDiary";
 import {
-    useNutritionGoals,
-    useNutritionProfile,
-    useOverrideGoals,
-    useRecalculateGoals,
-    useSaveNutritionProfile,
-    useTodayDiarySummary,
+  useNutritionGoals,
+  useNutritionProfile,
+  useOverrideGoals,
+  useRecalculateGoals,
+  useSaveNutritionProfile,
+  useTodayDiarySummary,
 } from "@/hooks/useNutrition";
 import {
-    createFoodEntry,
-    deleteFoodEntry,
-    FatSecretFoodDetail,
-    FatSecretSearchFood,
-    FoodEntryDetailResponseDTO,
-    getFatSecretFood,
-    MealType,
-    searchFatSecretFoods,
+  createFoodEntry,
+  deleteFoodEntry,
+  FatSecretFoodDetail,
+  FatSecretSearchFood,
+  FoodEntryDetailResponseDTO,
+  getFatSecretFood,
+  MealType,
+  searchFatSecretFoods,
 } from "@/services/foodDiaryService";
 import { ActivityLevel, Gender, GoalType } from "@/services/nutritionService";
-import { MaterialIcons } from "@expo/vector-icons";
+import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    RefreshControl,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MacroBar } from "../(pages)/nutritionProfile";
@@ -58,6 +59,12 @@ const formatDateForApi = (date: Date) =>
     String(date.getMonth() + 1).padStart(2, "0"),
     String(date.getDate()).padStart(2, "0"),
   ].join("-");
+
+const toEpochDay = (value: string) => {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return 0;
+  return Math.floor(Date.UTC(year, month - 1, day) / 86400000);
+};
 
 const addDays = (value: string, days: number) => {
   const date = new Date(`${value}T00:00:00`);
@@ -92,10 +99,7 @@ const getEntryValue = (
 
 const getEntryDate = (entry: FoodEntryDetailResponseDTO) =>
   String(
-    getEntryValue(entry, "entry_date", "entryDate") ??
-      entry.date ??
-      entry.created_at ??
-      "",
+    getEntryValue(entry, "entry_date", "entryDate") ?? entry.date ?? "",
   ).slice(0, 10);
 
 const getEntryMeal = (entry: FoodEntryDetailResponseDTO) =>
@@ -141,6 +145,8 @@ export default function FoodDiary() {
   const { theme } = useTheme();
   const styles = gymStyles(theme);
   const router = useRouter();
+  const { alert } = useAlert();
+  const { selectedDate, setSelectedDate } = useDiaryContext();
   const {
     data: profile,
     isLoading: profileLoading,
@@ -155,7 +161,7 @@ export default function FoodDiary() {
     data: todayDairySummary,
     isLoading: summaryDiaryLoading,
     refetch: refetchTodayDiarySummary,
-  } = useTodayDiarySummary();
+  } = useTodayDiarySummary(selectedDate);
 
   const saveMutation = useSaveNutritionProfile();
   const overrideMutation = useOverrideGoals();
@@ -226,7 +232,7 @@ export default function FoodDiary() {
       h = parseFloat(height),
       a = parseInt(age);
     if (!w || !h || !a)
-      return Alert.alert("Missing info", "Fill in weight, height, and age.");
+      return alert("Missing info", "Fill in weight, height, and age.");
     console.log({
       weight_kg: w,
       height_cm: h,
@@ -247,12 +253,12 @@ export default function FoodDiary() {
       {
         onSuccess: (res) => {
           setFormOpen(false);
-          Alert.alert(
+          alert(
             "Profile saved!",
             `Your daily goal: ${res.calculated_calories.toFixed(0)} kcal\nTDEE: ${res.calculated_tdee.toFixed(0)} kcal`,
           );
         },
-        onError: (e: any) => Alert.alert("Save failed", e.message),
+        onError: (e: any) => alert("Save failed", e.message),
       },
     );
   };
@@ -263,7 +269,7 @@ export default function FoodDiary() {
       cb = parseFloat(oCarbs),
       f = parseFloat(oFat);
     if (!c || !p || !cb || !f)
-      return Alert.alert(
+      return alert(
         "Required",
         "Calories, protein, carbs and fat are required.",
       );
@@ -282,21 +288,16 @@ export default function FoodDiary() {
       {
         onSuccess: () => {
           setOverrideOpen(false);
-          Alert.alert("Goals updated!");
+          alert("Goals updated!");
         },
-        onError: (e: any) => Alert.alert("Update failed", e.message),
+        onError: (e: any) => alert("Update failed", e.message),
       },
     );
   };
   const queryClient = useQueryClient();
   const profileStyless = profileStyles(theme);
   const { data: nutritionProfile } = useNutritionProfile();
-  const { data: todaySummary, refetch: refetchTodaySummary } =
-    useTodayDiarySummary();
 
-  const [selectedDate, setSelectedDate] = useState(
-    formatDateForApi(new Date()),
-  );
   const [search, setSearch] = useState("");
   const [openMoreMacros, setOpenMoreMacros] = useState(false);
   const [selectedMeal, setSelectedMeal] = useState<MealType>("BREAKFAST");
@@ -305,7 +306,7 @@ export default function FoodDiary() {
   );
   const [quantity, setQuantity] = useState("1");
   const [showFoodPicker, setShowFoodPicker] = useState(false);
-  const calProg = todaySummary?.progress?.calories;
+  const calProg = todayDairySummary?.progress?.calories;
 
   const {
     data: summary,
@@ -334,7 +335,7 @@ export default function FoodDiary() {
       setQuantity("1");
     },
     onError: (error: any) => {
-      Alert.alert("Food detail failed", error.message || "Try another food.");
+      alert("Food detail failed", error.message || "Try another food.");
     },
   });
 
@@ -347,7 +348,7 @@ export default function FoodDiary() {
       await queryClient.invalidateQueries({ queryKey: FOOD_DIARY_QUERY_KEY });
     },
     onError: (error: any) => {
-      Alert.alert("Could not save food", error.message || "Please try again.");
+      alert("Could not save food", error.message || "Please try again.");
     },
   });
 
@@ -357,7 +358,7 @@ export default function FoodDiary() {
       await queryClient.invalidateQueries({ queryKey: FOOD_DIARY_QUERY_KEY });
     },
     onError: (error: any) => {
-      Alert.alert("Delete failed", error.message || "Please try again.");
+      alert("Delete failed", error.message || "Please try again.");
     },
   });
 
@@ -374,14 +375,14 @@ export default function FoodDiary() {
   );
 
   const summaryMacros = {
-    calories: getSummaryMacro(summary, "total_calories", "calories"),
-    protein: getSummaryMacro(summary, "total_protein", "protein"),
+    calories: getSummaryMacro(summary, "totalCalories", "total_calories"),
+    protein: getSummaryMacro(summary, "totalProtein", "total_protein"),
     carbohydrate: getSummaryMacro(
       summary,
+      "totalCarbohydrate",
       "total_carbohydrate",
-      "carbohydrate",
     ),
-    fat: getSummaryMacro(summary, "total_fat", "fat"),
+    fat: getSummaryMacro(summary, "totalFat", "total_fat"),
   };
 
   const dailyEntries = useMemo(() => {
@@ -399,17 +400,17 @@ export default function FoodDiary() {
   const refreshDiary = () => {
     refetchSummary();
     refetchEntries();
-    refetchTodaySummary();
+    refetchTodayDiarySummary();
   };
 
   const saveSelectedFood = () => {
     if (!selectedFood || !serving) {
-      Alert.alert("Pick a food first", "Search FatSecret and select a food.");
+      alert("Pick a food first", "Search FatSecret and select a food.");
       return;
     }
 
     if (quantityNumber <= 0) {
-      Alert.alert("Quantity needed", "Quantity must be greater than 0.");
+      alert("Quantity needed", "Quantity must be greater than 0.");
       return;
     }
 
@@ -423,13 +424,13 @@ export default function FoodDiary() {
       protein: Number(selectedMacros.protein.toFixed(1)),
       fat: Number(selectedMacros.fat.toFixed(1)),
       carbohydrate: Number(selectedMacros.carbohydrate.toFixed(1)),
-      date: selectedDate,
+      date: toEpochDay(selectedDate),
       meal_type: selectedMeal,
     });
   };
 
   const confirmDeleteEntry = (entry: FoodEntryDetailResponseDTO) => {
-    Alert.alert(
+    alert(
       "Delete food",
       `Remove "${getEntryFoodName(entry)}" from this diary?`,
       [
@@ -542,7 +543,7 @@ export default function FoodDiary() {
                 </View>
               </View>
             )}
-            {/* <TouchableOpacity
+            <TouchableOpacity
               style={profileStyless.insightCard ?? profileStyless.statsCard}
               activeOpacity={0.85}
               onPress={() => router.push("/nutritionProfile")}
@@ -563,21 +564,19 @@ export default function FoodDiary() {
                     size={18}
                     color={theme.primary}
                   />
-                  <Text style={profileStyless.insightLabel}>
-                    Today's Nutrition
-                  </Text>
+                  <Text style={profileStyless.insightLabel}>Nutrition</Text>
                 </View>
-                {todaySummary && (
+                {todayDairySummary && (
                   <Text
                     style={{
                       fontSize: 12,
                       fontWeight: "700",
-                      color: statusColor(todaySummary.status, theme),
+                      color: statusColor(todayDairySummary.status, theme),
                     }}
                   >
-                    {todaySummary.status === "ON_TRACK"
+                    {todayDairySummary.status === "ON_TRACK"
                       ? "On Track ✓"
-                      : todaySummary.status === "OVER"
+                      : todayDairySummary.status === "OVER"
                         ? "Over Goal ↑"
                         : "Under Goal ↓"}
                   </Text>
@@ -604,7 +603,9 @@ export default function FoodDiary() {
                     <Text
                       style={[
                         profileStyless.insightMeta,
-                        { color: statusColor(todaySummary?.status, theme) },
+                        {
+                          color: statusColor(todayDairySummary?.status, theme),
+                        },
                       ]}
                     >
                       {calProg.percentage.toFixed(0)}%
@@ -623,7 +624,7 @@ export default function FoodDiary() {
                         borderRadius: 3,
                         width: `${Math.min(calProg.percentage, 100)}%`,
                         backgroundColor: statusColor(
-                          todaySummary?.status,
+                          todayDairySummary?.status,
                           theme,
                         ),
                       }}
@@ -637,18 +638,22 @@ export default function FoodDiary() {
                     }}
                   >
                     <Text style={profileStyless.insightMeta}>
-                      P: {todaySummary?.progress?.protein?.consumed?.toFixed(1)}
-                      g
-                    </Text>
-                    <Text style={profileStyless.insightMeta}>
-                      C:{" "}
-                      {todaySummary?.progress?.carbohydrate?.consumed?.toFixed(
+                      P:{" "}
+                      {todayDairySummary?.progress?.protein?.consumed?.toFixed(
                         1,
                       )}
                       g
                     </Text>
                     <Text style={profileStyless.insightMeta}>
-                      F: {todaySummary?.progress?.fat?.consumed?.toFixed(1)}g
+                      C:{" "}
+                      {todayDairySummary?.progress?.carbohydrate?.consumed?.toFixed(
+                        1,
+                      )}
+                      g
+                    </Text>
+                    <Text style={profileStyless.insightMeta}>
+                      F:{" "}
+                      {todayDairySummary?.progress?.fat?.consumed?.toFixed(1)}g
                     </Text>
                   </View>
                 </>
@@ -657,7 +662,7 @@ export default function FoodDiary() {
                   No food logged today →
                 </Text>
               )}
-            </TouchableOpacity> */}
+            </TouchableOpacity>
             {/* <View style={styles.exerciseCard}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Daily Calories Needed</Text>
@@ -714,7 +719,7 @@ export default function FoodDiary() {
           {hasProfile && (
             <View style={styles.exerciseCard}>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Today's Intake</Text>
+                <Text style={styles.sectionTitle}>Intake</Text>
                 <Text
                   style={[
                     styles.listMeta,
@@ -846,7 +851,7 @@ export default function FoodDiary() {
           )}
 
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Makan apa bang?</Text>
+            <Text style={styles.sectionTitle}>Meal Prep?</Text>
             <TouchableOpacity
               style={styles.inlineAction}
               onPress={() => setShowFoodPicker(true)}
@@ -962,58 +967,6 @@ export default function FoodDiary() {
               </TouchableOpacity>
             )}
           </View>
-
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Today&apos;s entries</Text>
-            <Text style={styles.sectionMeta}>
-              {formatDateLabel(selectedDate)}
-            </Text>
-          </View>
-
-          {dailyEntries.length ? (
-            dailyEntries.map((entry) => (
-              <View key={entry.id} style={styles.exerciseCard}>
-                <View style={styles.exerciseHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.exerciseName}>
-                      {getEntryFoodName(entry)}
-                    </Text>
-                    <Text style={styles.exerciseMeta}>
-                      {getEntryMeal(entry).replace("_", " ")} |{" "}
-                      {getEntryServing(entry) || "Serving"}
-                    </Text>
-                    <Text style={styles.exerciseSubMeta}>
-                      {getEntryMacro(entry, "calories").toFixed(0)} cal |{" "}
-                      {getEntryMacro(entry, "protein").toFixed(1)}g protein |{" "}
-                      {getEntryMacro(
-                        entry,
-                        "carbohydrate",
-                        "carbohydrate",
-                      ).toFixed(1)}
-                      g carbs | {getEntryMacro(entry, "fat").toFixed(1)}g fat
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    onPress={() => confirmDeleteEntry(entry)}
-                    disabled={deleteEntryMutation.isPending}
-                  >
-                    <MaterialIcons
-                      name="delete-outline"
-                      size={20}
-                      color={theme.expense}
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))
-          ) : (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyTitle}>No food logged</Text>
-              <Text style={styles.emptyText}>
-                Add your first food for this day to see the diary summary.
-              </Text>
-            </View>
-          )}
         </ScrollView>
       </KeyboardAvoidingView>
 

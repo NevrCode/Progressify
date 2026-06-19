@@ -1,24 +1,24 @@
 import { gymStyles } from "@/assets/styles/gym.style";
+import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
 import { ExerciseProgressionDTO, SplitType } from "@/services/gymService";
 import {
-    addProgram,
-    deleteProgram,
-    loadPrograms,
-    WorkoutProgram,
+  addProgram,
+  deleteProgram,
+  loadPrograms,
+  WorkoutProgram,
 } from "@/services/programStorage";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
@@ -48,6 +48,7 @@ export default function WorkoutSession() {
   const { theme } = useTheme();
   const styles = gymStyles(theme);
   const router = useRouter();
+  const { alert } = useAlert();
 
   const [selectedSplit, setSelectedSplit] = useState<SplitType>("PUSH");
   const [selectedExerciseIds, setSelectedExerciseIds] = useState<Set<number>>(
@@ -69,7 +70,7 @@ export default function WorkoutSession() {
   }, []);
 
   const handleDeleteProgram = (program: WorkoutProgram) => {
-    Alert.alert("Delete program", `"${program.name}" will be removed.`, [
+    alert("Delete program", `"${program.name}" will be removed.`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
@@ -85,7 +86,7 @@ export default function WorkoutSession() {
   const handleSaveProgram = async () => {
     const name = programName.trim();
     if (!name) {
-      Alert.alert("Name required", "Enter a name for your program.");
+      alert("Name required", "Enter a name for your program.");
       return;
     }
     if (!selectedExerciseIds.size) return;
@@ -98,7 +99,7 @@ export default function WorkoutSession() {
     setPrograms(updated);
     setShowSaveInput(false);
     setProgramName("");
-    Alert.alert("Saved", `"${name}" program created.`);
+    alert("Saved", `"${name}" program created.`);
   };
 
   const loadProgram = (program: WorkoutProgram) => {
@@ -177,7 +178,7 @@ export default function WorkoutSession() {
 
   const startSession = () => {
     if (!selectedExerciseIds.size) {
-      Alert.alert(
+      alert(
         "No exercises selected",
         "Pick at least one exercise to start the session.",
       );

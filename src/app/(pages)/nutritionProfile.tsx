@@ -1,5 +1,11 @@
 import { gymStyles } from "@/assets/styles/gym.style";
+import { MacroDonutChart } from "@/components/nutrition/macroDonutChart";
+import { MealPrepSection } from "@/components/nutrition/mealPrepSection";
+import { ThemeType } from "@/constants/colors";
+import { useAlert } from "@/context/AlertContext";
+import { useDiaryContext } from "@/context/DairyContext";
 import { useTheme } from "@/context/ThemeContext";
+import { FOOD_DIARY_QUERY_KEY } from "@/hooks/useFoodDiary";
 import {
   useNutritionGoals,
   useNutritionProfile,
@@ -9,17 +15,21 @@ import {
   useTodayDiarySummary,
 } from "@/hooks/useNutrition";
 import {
+  deleteFoodEntry,
+  FoodEntryDetailResponseDTO,
+} from "@/services/foodDiaryService";
+import {
   ActivityLevel,
   Gender,
   GoalType,
   MacroProgress,
 } from "@/services/nutritionService";
 import { MaterialIcons } from "@expo/vector-icons";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   RefreshControl,
   ScrollView,
   Text,
@@ -148,12 +158,220 @@ export function MacroBar({
   );
 }
 
+const MEAL_META: Record<string, { color: string }> = {
+  BREAKFAST: { color: "#f69f1d" }, // amber
+  LUNCH: { color: "#0090FF" }, // blue
+  DINNER: { color: "#2514df" }, // purple
+  SNACK: { color: "#1D9E75" }, // teal
+};
+
+function MacroPill({
+  label,
+  value,
+  unit,
+  bg,
+  color,
+}: {
+  label: string;
+  value?: number;
+  unit: string;
+  bg: string;
+  color: string;
+}) {
+  return (
+    <View
+      style={{
+        backgroundColor: bg,
+        borderRadius: 20,
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+      }}
+    >
+      <Text style={{ fontSize: 11, fontWeight: "700", color }}>
+        {label} {value?.toFixed(1) ?? "0"}
+        {unit}
+      </Text>
+    </View>
+  );
+}
+
+function FoodEntryCard({
+  entry,
+  onDelete,
+  theme,
+  style,
+}: {
+  entry: FoodEntryDetailResponseDTO;
+  onDelete: (entry: FoodEntryDetailResponseDTO) => void;
+  theme: ThemeType;
+  style: any;
+}) {
+  const mealColor = MEAL_META[entry.meal_type].color ?? theme.primary;
+
+  return (
+    <View
+      style={{
+        backgroundColor: theme.background,
+        borderRadius: 12,
+        borderWidth: 0.5,
+        borderColor: theme.border ?? "#eee",
+        borderLeftWidth: 3,
+        borderLeftColor: mealColor,
+        padding: 12,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 10,
+        marginBottom: 8,
+      }}
+    >
+      <View style={{ flex: 1, gap: 6 }}>
+        <Text style={[style.listTitle, { marginBottom: 0 }]}>
+          {entry.food_name}
+        </Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 5 }}>
+          {/* Calories — amber */}
+          <MacroPill
+            label=""
+            value={entry.calories}
+            unit=" kcal"
+            bg="#ffbc49"
+            color="#361e02"
+          />
+          {/* Protein — blue */}
+          <MacroPill
+            label="P"
+            value={entry.protein}
+            unit="g"
+            bg="#49a3f7"
+            color="#052546"
+          />
+          {/* Carbs — green */}
+          <MacroPill
+            label="C"
+            value={entry.carbohydrate}
+            unit="g"
+            bg={theme.income}
+            color="#1b3e02"
+          />
+          {/* Fat — coral */}
+          <MacroPill
+            label="F"
+            value={entry.fat}
+            unit="g"
+            bg={theme.expense}
+            color="#541702"
+          />
+          {/* Gramation — plain */}
+          <Text style={[style.listMeta, { alignSelf: "center" }]}>
+            {entry.quantity}g
+          </Text>
+        </View>
+      </View>
+
+      <TouchableOpacity
+        onPress={() => onDelete(entry)}
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: 8,
+          backgroundColor: "#f7c5c5",
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
+        <MaterialIcons name="delete-outline" size={17} color={theme.expense} />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function FoodEntriesByMeal({
+  entries,
+  onDelete,
+  theme,
+  style,
+}: {
+  entries: FoodEntryDetailResponseDTO[];
+  onDelete: (entry: FoodEntryDetailResponseDTO) => void;
+  theme: any;
+  style: any;
+}) {
+  const grouped = entries.reduce<Record<string, FoodEntryDetailResponseDTO[]>>(
+    (acc, entry) => {
+      const meal = entry.meal_type ?? "OTHER";
+      acc[meal] = [...(acc[meal] ?? []), entry];
+      return acc;
+    },
+    {},
+  );
+
+  const mealOrder = ["BREAKFAST", "LUNCH", "DINNER", "SNACK"];
+  const sortedMeals = Object.keys(grouped).sort(
+    (a, b) => mealOrder.indexOf(a) - mealOrder.indexOf(b),
+  );
+
+  return (
+    <>
+      {sortedMeals.map((meal) => {
+        const meta = MEAL_META[meal];
+        const mealEntries = grouped[meal];
+        const totalCal = mealEntries.reduce((s, e) => s + (e.calories ?? 0), 0);
+
+        return (
+          <View key={meal} style={{ marginBottom: 14 }}>
+            {/* Meal group header */}
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+                marginBottom: 8,
+              }}
+            >
+              <Text style={[style.listTitle, { marginBottom: 0 }]}>
+                {meal.charAt(0) + meal.slice(1).toLowerCase()}
+              </Text>
+              <View
+                style={{
+                  backgroundColor: theme.surface ?? theme.background,
+                  borderRadius: 20,
+                  paddingHorizontal: 8,
+                  paddingVertical: 2,
+                  borderWidth: 0.5,
+                  borderColor: theme.border ?? "#eee",
+                }}
+              >
+                <Text style={[style.listMeta, { fontSize: 11 }]}>
+                  {mealEntries.length} item{mealEntries.length !== 1 ? "s" : ""}{" "}
+                  · {totalCal.toFixed(0)} kcal
+                </Text>
+              </View>
+            </View>
+
+            {mealEntries.map((entry) => (
+              <FoodEntryCard
+                key={entry.id}
+                entry={entry}
+                onDelete={onDelete}
+                theme={theme}
+                style={style}
+              />
+            ))}
+          </View>
+        );
+      })}
+    </>
+  );
+}
+
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function NutritionProfileScreen() {
+  const { selectedDate, setSelectedDate } = useDiaryContext();
   const { theme } = useTheme();
   const style = gymStyles(theme);
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const {
     data: profile,
@@ -169,11 +387,12 @@ export default function NutritionProfileScreen() {
     data: summary,
     isLoading: summaryLoading,
     refetch: refetchSummary,
-  } = useTodayDiarySummary();
+  } = useTodayDiarySummary(selectedDate);
 
   const saveMutation = useSaveNutritionProfile();
   const overrideMutation = useOverrideGoals();
   const recalcMutation = useRecalculateGoals();
+  const entries = summary?.entries;
 
   // ── Onboarding / edit form state ──────────────────────────────────────────
   const [formOpen, setFormOpen] = useState(false);
@@ -208,6 +427,8 @@ export default function NutritionProfileScreen() {
     goals?.potassium_goal?.toString() ?? "",
   );
 
+  const { alert } = useAlert();
+
   const isLoading = profileLoading || goalsLoading || summaryLoading;
   const hasProfile = !!profile;
 
@@ -234,13 +455,47 @@ export default function NutritionProfileScreen() {
     setOPotassium(goals?.potassium_goal?.toString() ?? "");
     setOverrideOpen(true);
   };
+  const deleteEntryMutation = useMutation({
+    mutationFn: deleteFoodEntry,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: FOOD_DIARY_QUERY_KEY });
+      await queryClient.invalidateQueries({ queryKey: ["diary-summary"] });
+    },
+    onError: (error: any) => {
+      alert("Delete failed", error.message || "Please try again.");
+    },
+  });
+  const getEntryValue = (
+    entry: FoodEntryDetailResponseDTO,
+    snakeKey: string,
+    camelKey?: string,
+  ) => {
+    const source = entry as Record<string, unknown>;
+    return source[snakeKey] ?? (camelKey ? source[camelKey] : undefined);
+  };
+  const getEntryFoodName = (entry: FoodEntryDetailResponseDTO) =>
+    String(getEntryValue(entry, "food_name", "foodName") ?? "Food");
+  const confirmDeleteEntry = (entry: FoodEntryDetailResponseDTO) => {
+    alert(
+      "Delete food",
+      `Remove "${getEntryFoodName(entry)}" from this diary?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => deleteEntryMutation.mutate(entry.id),
+        },
+      ],
+    );
+  };
 
   const saveProfile = () => {
     const w = parseFloat(weight),
       h = parseFloat(height),
       a = parseInt(age);
     if (!w || !h || !a)
-      return Alert.alert("Missing info", "Fill in weight, height, and age.");
+      return alert("Missing info", "Fill in weight, height, and age.");
     console.log({
       weight_kg: w,
       height_cm: h,
@@ -261,12 +516,12 @@ export default function NutritionProfileScreen() {
       {
         onSuccess: (res) => {
           setFormOpen(false);
-          Alert.alert(
+          alert(
             "Profile saved!",
             `Your daily goal: ${res.calculated_calories.toFixed(0)} kcal\nTDEE: ${res.calculated_tdee.toFixed(0)} kcal`,
           );
         },
-        onError: (e: any) => Alert.alert("Save failed", e.message),
+        onError: (e: any) => alert("Save failed", e.message),
       },
     );
   };
@@ -277,7 +532,7 @@ export default function NutritionProfileScreen() {
       cb = parseFloat(oCarbs),
       f = parseFloat(oFat);
     if (!c || !p || !cb || !f)
-      return Alert.alert(
+      return alert(
         "Required",
         "Calories, protein, carbs and fat are required.",
       );
@@ -296,15 +551,15 @@ export default function NutritionProfileScreen() {
       {
         onSuccess: () => {
           setOverrideOpen(false);
-          Alert.alert("Goals updated!");
+          alert("Goals updated!");
         },
-        onError: (e: any) => Alert.alert("Update failed", e.message),
+        onError: (e: any) => alert("Update failed", e.message),
       },
     );
   };
 
   const confirmRecalc = () =>
-    Alert.alert(
+    alert(
       "Reset goals?",
       "This will recalculate your goals from your body profile.",
       [
@@ -313,8 +568,8 @@ export default function NutritionProfileScreen() {
           text: "Reset",
           onPress: () =>
             recalcMutation.mutate(undefined, {
-              onSuccess: () => Alert.alert("Goals recalculated!"),
-              onError: (e: any) => Alert.alert("Failed", e.message),
+              onSuccess: () => alert("Goals recalculated!"),
+              onError: (e: any) => alert("Failed", e.message),
             }),
         },
       ],
@@ -570,60 +825,47 @@ export default function NutritionProfileScreen() {
         {/* ── PROFILE SUMMARY CARD ───────────────────────────────────────── */}
         {hasProfile && (
           <View style={style.exerciseCard}>
-            <Text style={style.sectionTitle}>Your Profile</Text>
             <View style={style.heroStats}>
               <View style={style.heroStat}>
                 <Text style={style.heroStatLabel}>Weight</Text>
-                <Text style={style.heroStatValue}>{profile.weight_kg}kg</Text>
+                <Text style={style.heroMiniStatSummary}>
+                  {profile.weight_kg}kg
+                </Text>
               </View>
               <View style={style.heroDivider} />
               <View style={style.heroStat}>
                 <Text style={style.heroStatLabel}>Height</Text>
-                <Text style={style.heroStatValue}>{profile.height_cm}cm</Text>
+                <Text style={style.heroMiniStatSummary}>
+                  {profile.height_cm}cm
+                </Text>
               </View>
               <View style={style.heroDivider} />
               <View style={style.heroStat}>
                 <Text style={style.heroStatLabel}>TDEE</Text>
-                <Text style={style.heroStatValue}>
+                <Text style={style.heroMiniStatSummary}>
                   {profile.calculated_tdee?.toFixed(0)}
                 </Text>
               </View>
               <View style={style.heroDivider} />
               <View style={style.heroStat}>
                 <Text style={style.heroStatLabel}>Goal</Text>
-                <Text style={style.heroStatValue}>{profile.goal_type}</Text>
+                <Text style={style.heroMiniStatSummary}>
+                  {profile.goal_type}
+                </Text>
               </View>
             </View>
           </View>
         )}
-
-        {/* ── TODAY'S CALORIE STATUS ─────────────────────────────────────── */}
         {hasProfile && (
           <View style={style.exerciseCard}>
-            <View style={style.sectionHeader}>
-              <Text style={style.sectionTitle}>Today's Intake</Text>
-              <Text
-                style={[
-                  style.listMeta,
-                  {
-                    color: statusColor(summary?.status, theme),
-                    fontWeight: "700",
-                  },
-                ]}
-              >
-                {summaryLoading ? "..." : statusLabel(summary?.status)}
-              </Text>
-            </View>
-
             {summaryLoading ? (
               <ActivityIndicator color={theme.primary} />
             ) : prog ? (
               <>
-                {/* Big calorie ring/display */}
-                <View style={[style.heroStats, { marginBottom: 16 }]}>
+                <View style={[style.heroStats, { marginBottom: 0 }]}>
                   <View style={style.heroStat}>
                     <Text style={style.heroStatLabel}>Consumed</Text>
-                    <Text style={[style.heroStatValue, { color: calColor }]}>
+                    <Text style={[style.heroStatValue]}>
                       {prog.calories.consumed.toFixed(0)}
                     </Text>
                     <Text style={style.listMeta}>kcal</Text>
@@ -645,72 +887,6 @@ export default function NutritionProfileScreen() {
                     <Text style={style.listMeta}>kcal</Text>
                   </View>
                 </View>
-
-                {/* Macro progress bars */}
-                <MacroBar
-                  label="Protein"
-                  unit="g"
-                  progress={prog.protein}
-                  color={theme.primary}
-                  theme={theme}
-                  style={style}
-                />
-                <MacroBar
-                  label="Carbohydrate"
-                  unit="g"
-                  progress={prog.carbohydrate}
-                  color={theme.income ?? "#2ecc71"}
-                  theme={theme}
-                  style={style}
-                />
-                <MacroBar
-                  label="Fat"
-                  unit="g"
-                  progress={prog.fat}
-                  color={theme.expense ?? "#e74c3c"}
-                  theme={theme}
-                  style={style}
-                />
-                {/* <MacroBar
-                  label="Fiber"
-                  unit="g"
-                  progress={prog.fiber}
-                  color={theme.teriary ?? "#9b59b6"}
-                  theme={theme}
-                  style={style}
-                />
-                <MacroBar
-                  label="Sugar"
-                  unit="g"
-                  progress={prog.sugar}
-                  color={"#f39c12"}
-                  theme={theme}
-                  style={style}
-                />
-                <MacroBar
-                  label="Sodium"
-                  unit="mg"
-                  progress={prog.sodium}
-                  color={"#1abc9c"}
-                  theme={theme}
-                  style={style}
-                />
-                <MacroBar
-                  label="Cholesterol"
-                  unit="mg"
-                  progress={prog.cholesterol}
-                  color={"#e67e22"}
-                  theme={theme}
-                  style={style}
-                />
-                <MacroBar
-                  label="Potassium"
-                  unit="mg"
-                  progress={prog.potassium}
-                  color={"#3498db"}
-                  theme={theme}
-                  style={style}
-                /> */}
               </>
             ) : (
               <Text style={style.subEmptyText}>
@@ -719,13 +895,64 @@ export default function NutritionProfileScreen() {
             )}
           </View>
         )}
+        {hasProfile && (
+          <View style={style.exerciseCard}>
+            <View style={style.sectionHeader}>
+              <Text style={style.sectionTitle}>Intake</Text>
+              <Text
+                style={[
+                  style.listMeta,
+                  {
+                    color: statusColor(summary?.status, theme),
+                    fontWeight: "600",
+                  },
+                ]}
+              >
+                {summaryLoading ? "..." : statusLabel(summary?.status)}
+              </Text>
+            </View>
+
+            {summaryLoading ? (
+              <ActivityIndicator color={theme.primary} />
+            ) : prog ? (
+              <MacroDonutChart progress={prog} theme={theme} style={style} />
+            ) : (
+              <Text style={style.subEmptyText}>
+                No food logged today. Go log a meal!
+              </Text>
+            )}
+          </View>
+        )}
+
+        {hasProfile && (
+          <View style={style.exerciseCard}>
+            <Text style={[style.sectionTitle, { marginBottom: 12 }]}>
+              Today's Food
+            </Text>
+            {summaryLoading ? (
+              <ActivityIndicator color={theme.primary} />
+            ) : entries?.length ? (
+              <FoodEntriesByMeal
+                entries={entries}
+                onDelete={confirmDeleteEntry}
+                theme={theme}
+                style={style}
+              />
+            ) : (
+              <Text style={style.subEmptyText}>
+                No food logged today. Go log a meal!
+              </Text>
+            )}
+          </View>
+        )}
+        <MealPrepSection />
 
         {/* ── GOAL SETTINGS ─────────────────────────────────────────────── */}
         {hasProfile && goals && (
           <View style={style.exerciseCard}>
             <View style={style.sectionHeader}>
               <Text style={style.sectionTitle}>
-                Daily Goals {goals.manualOverride ? "✏️ Manual" : "⚡ Auto"}
+                Daily Goals {goals.manualOverride ? "Manual" : "Auto"}
               </Text>
             </View>
 
@@ -845,7 +1072,7 @@ export default function NutritionProfileScreen() {
                   ))}
                 </View>
                 <TouchableOpacity
-                  style={style.primaryButton}
+                  style={[style.primaryButton]}
                   onPress={saveOverride}
                   disabled={overrideMutation.isPending}
                 >

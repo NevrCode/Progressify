@@ -1,4 +1,5 @@
 import { gymStyles } from "@/assets/styles/gym.style";
+import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useActiveSession } from "@/hooks/useActiveSession";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
@@ -21,7 +22,6 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -30,7 +30,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { LineChart } from "react-native-gifted-charts";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -253,7 +253,7 @@ export default function GymProgression() {
   const queryClient = useQueryClient();
   const { storedSession, hasActiveSession, checking, refresh, discard } =
     useActiveSession();
-
+  const { alert } = useAlert();
   useFocusEffect(
     useCallback(() => {
       refresh();
@@ -502,7 +502,7 @@ export default function GymProgression() {
     const validationMessage = validateDraftWorkout(draft);
 
     if (validationMessage) {
-      Alert.alert("Workout not ready", validationMessage);
+      alert("Workout not ready", validationMessage);
       return;
     }
 
@@ -537,7 +537,7 @@ export default function GymProgression() {
       console.log("API error status:", finishError.response?.status);
       console.log("API error body:", finishError.response?.data);
 
-      Alert.alert(
+      alert(
         finishError.response?.data?.code ?? "Request failed",
         finishError.response?.data?.message ?? finishError.message,
       );
@@ -624,7 +624,7 @@ export default function GymProgression() {
     message: string,
     onConfirm: () => void,
   ) => {
-    Alert.alert(title, message, [
+    alert(title, message, [
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: onConfirm },
     ]);
@@ -638,7 +638,7 @@ export default function GymProgression() {
           !exerciseForm.muscle_group ||
           !exerciseForm.target_rep_range
         ) {
-          Alert.alert("Missing data", "Fill every exercise field first.");
+          alert("Missing data", "Fill every exercise field first.");
           return;
         }
 
@@ -659,7 +659,7 @@ export default function GymProgression() {
 
       closeModal();
     } catch (submitError: any) {
-      Alert.alert("Save failed", submitError.message || "Please try again.");
+      alert("Save failed", submitError.message || "Please try again.");
     }
   };
 

@@ -47,8 +47,8 @@ export interface MealPrepCreateRequest {
 }
 
 export interface MealPrepLogRequest {
-  date: number; // epoch day
-  meal_type: MealType;
+  date: string; // epoch day
+  mealType: MealType;
 }
 
 // ── API calls ─────────────────────────────────────────────────────────────────

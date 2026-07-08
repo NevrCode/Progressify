@@ -8,7 +8,11 @@
     "scheme": "progressify",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.nevrcode.progressify",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -39,7 +43,8 @@
       ],
       "@react-native-community/datetimepicker",
       "expo-secure-store",
-      "expo-image"
+      "expo-image",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -48,14 +53,14 @@
     "extra": {
       "displayedVersion": "1.0.2",
       "router": {},
-      "apiUrl": "https://ex-tracker-168551488309.asia-southeast2.run.app",
+      "apiUrl": "https://progressify-tracker.onrender.com",
       "eas": {
         "projectId": "b2090b27-3032-4529-a2d1-23f2944fc5a6"
       }
     },
     "owner": "nevrcode",
     "runtimeVersion": {
-      "policy": "fingerprint"
+      "policy": "appVersion"
     },
     "updates": {
       "url": "https://u.expo.dev/b2090b27-3032-4529-a2d1-23f2944fc5a6"

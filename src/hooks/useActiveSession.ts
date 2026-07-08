@@ -19,8 +19,19 @@ export const useActiveSession = () => {
   }, []);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    let active = true;
+    const init = async () => {
+      const data = await loadActiveSession();
+      if (active) {
+        setStoredSession(data);
+        setChecking(false);
+      }
+    };
+    void init();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const discard = useCallback(async () => {
     await clearActiveSession();

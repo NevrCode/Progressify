@@ -237,7 +237,6 @@ function FoodEntryCard({
             bg="#ffbc49"
             color="#361e02"
           />
-          {/* Protein — blue */}
           <MacroPill
             label="P"
             value={entry.protein}
@@ -245,7 +244,6 @@ function FoodEntryCard({
             bg="#49a3f7"
             color="#052546"
           />
-          {/* Carbs — green */}
           <MacroPill
             label="C"
             value={entry.carbohydrate}
@@ -253,7 +251,6 @@ function FoodEntryCard({
             bg={theme.income}
             color="#1b3e02"
           />
-          {/* Fat — coral */}
           <MacroPill
             label="F"
             value={entry.fat}
@@ -261,7 +258,6 @@ function FoodEntryCard({
             bg={theme.expense}
             color="#541702"
           />
-          {/* Gramation — plain */}
           <Text style={[style.listMeta, { alignSelf: "center" }]}>
             {entry.quantity}g
           </Text>
@@ -364,6 +360,12 @@ function FoodEntriesByMeal({
   );
 }
 
+const MACRO_COLORS = {
+  protein: "#3498db",
+  carbohydrate: "#2ecc71",
+  fat: "#e74c3c",
+  remaining: "#2e2e2e",
+};
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function NutritionProfileScreen() {
@@ -398,6 +400,7 @@ export default function NutritionProfileScreen() {
   const [formOpen, setFormOpen] = useState(false);
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [step, setStep] = useState(0); // 0=body, 1=activity, 2=goal
+  const [openMoreMacros, setOpenMoreMacros] = useState(false);
 
   const [weight, setWeight] = useState(profile?.weight_kg?.toString() ?? "");
   const [height, setHeight] = useState(profile?.height_cm?.toString() ?? "");
@@ -458,8 +461,15 @@ export default function NutritionProfileScreen() {
   const deleteEntryMutation = useMutation({
     mutationFn: deleteFoodEntry,
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: FOOD_DIARY_QUERY_KEY });
-      await queryClient.invalidateQueries({ queryKey: ["diary-summary"] });
+      await queryClient.invalidateQueries({
+        queryKey: [...FOOD_DIARY_QUERY_KEY, "summary", selectedDate],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: [...FOOD_DIARY_QUERY_KEY, "entries"],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["diary-summary", selectedDate],
+      });
     },
     onError: (error: any) => {
       alert("Delete failed", error.message || "Please try again.");
@@ -822,7 +832,6 @@ export default function NutritionProfileScreen() {
           </View>
         )}
 
-        {/* ── PROFILE SUMMARY CARD ───────────────────────────────────────── */}
         {hasProfile && (
           <View style={style.exerciseCard}>
             <View style={style.heroStats}>
@@ -858,47 +867,8 @@ export default function NutritionProfileScreen() {
         )}
         {hasProfile && (
           <View style={style.exerciseCard}>
-            {summaryLoading ? (
-              <ActivityIndicator color={theme.primary} />
-            ) : prog ? (
-              <>
-                <View style={[style.heroStats, { marginBottom: 0 }]}>
-                  <View style={style.heroStat}>
-                    <Text style={style.heroStatLabel}>Consumed</Text>
-                    <Text style={[style.heroStatValue]}>
-                      {prog.calories.consumed.toFixed(0)}
-                    </Text>
-                    <Text style={style.listMeta}>kcal</Text>
-                  </View>
-                  <View style={style.heroDivider} />
-                  <View style={style.heroStat}>
-                    <Text style={style.heroStatLabel}>Goal</Text>
-                    <Text style={style.heroStatValue}>
-                      {prog.calories.goal.toFixed(0)}
-                    </Text>
-                    <Text style={style.listMeta}>kcal</Text>
-                  </View>
-                  <View style={style.heroDivider} />
-                  <View style={style.heroStat}>
-                    <Text style={style.heroStatLabel}>Remaining</Text>
-                    <Text style={style.heroStatValue}>
-                      {prog.calories.remaining.toFixed(0)}
-                    </Text>
-                    <Text style={style.listMeta}>kcal</Text>
-                  </View>
-                </View>
-              </>
-            ) : (
-              <Text style={style.subEmptyText}>
-                No food logged today. Go log a meal!
-              </Text>
-            )}
-          </View>
-        )}
-        {hasProfile && (
-          <View style={style.exerciseCard}>
             <View style={style.sectionHeader}>
-              <Text style={style.sectionTitle}>Intake</Text>
+              <Text style={style.sectionTitle}>Calories Intake</Text>
               <Text
                 style={[
                   style.listMeta,
@@ -911,7 +881,100 @@ export default function NutritionProfileScreen() {
                 {summaryLoading ? "..." : statusLabel(summary?.status)}
               </Text>
             </View>
+            {summaryLoading ? (
+              <ActivityIndicator color={theme.primary} />
+            ) : prog ? (
+              <>
+                <>
+                  {/* Macro progress bars */}
+                  <MacroBar
+                    label="Protein"
+                    unit="g"
+                    progress={prog.protein}
+                    color={MACRO_COLORS.protein}
+                    theme={theme}
+                    style={style}
+                  />
+                  <MacroBar
+                    label="Carbohydrate"
+                    unit="g"
+                    progress={prog.carbohydrate}
+                    color={MACRO_COLORS.carbohydrate}
+                    theme={theme}
+                    style={style}
+                  />
+                  <MacroBar
+                    label="Fat"
+                    unit="g"
+                    progress={prog.fat}
+                    color={MACRO_COLORS.fat}
+                    theme={theme}
+                    style={style}
+                  />
+                  {openMoreMacros && (
+                    <>
+                      <MacroBar
+                        label="Fiber"
+                        unit="g"
+                        progress={prog.fiber}
+                        color={theme.teriary ?? "#9b59b6"}
+                        theme={theme}
+                        style={style}
+                      />
+                      <MacroBar
+                        label="Sugar"
+                        unit="g"
+                        progress={prog.sugar}
+                        color={"#f39c12"}
+                        theme={theme}
+                        style={style}
+                      />
+                      <MacroBar
+                        label="Sodium"
+                        unit="mg"
+                        progress={prog.sodium}
+                        color={"#1abc9c"}
+                        theme={theme}
+                        style={style}
+                      />
+                      <MacroBar
+                        label="Cholesterol"
+                        unit="mg"
+                        progress={prog.cholesterol}
+                        color={"#e67e22"}
+                        theme={theme}
+                        style={style}
+                      />
+                      <MacroBar
+                        label="Potassium"
+                        unit="mg"
+                        progress={prog.potassium}
+                        color={"#3498db"}
+                        theme={theme}
+                        style={style}
+                      />
+                    </>
+                  )}
+                  <TouchableOpacity
+                    style={{ marginTop: 8, alignSelf: "flex-end" }}
+                    onPress={() => setOpenMoreMacros(!openMoreMacros)}
+                  >
+                    <Text style={style.inlineActionText}>More Macros</Text>
+                  </TouchableOpacity>
+                </>
+              </>
+            ) : (
+              <Text style={style.subEmptyText}>
+                No food logged today. Go log a meal!
+              </Text>
+            )}
+          </View>
+        )}
 
+        {/* ── PROFILE SUMMARY CARD ───────────────────────────────────────── */}
+
+        {hasProfile && (
+          <View style={style.exerciseCard}>
             {summaryLoading ? (
               <ActivityIndicator color={theme.primary} />
             ) : prog ? (
@@ -927,7 +990,7 @@ export default function NutritionProfileScreen() {
         {hasProfile && (
           <View style={style.exerciseCard}>
             <Text style={[style.sectionTitle, { marginBottom: 12 }]}>
-              Today's Food
+              Today&apos;s Food
             </Text>
             {summaryLoading ? (
               <ActivityIndicator color={theme.primary} />

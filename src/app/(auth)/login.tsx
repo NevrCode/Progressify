@@ -119,7 +119,6 @@ export default function Login() {
           />
         </View>
 
-        {/* Email Input */}
         <View style={{ marginBottom: 8 }}>
           <Text
             style={{
@@ -156,7 +155,6 @@ export default function Login() {
           ) : null}
         </View>
 
-        {/* Password Input */}
         <View style={{ marginBottom: 12 }}>
           <Text
             style={{
@@ -269,7 +267,7 @@ export default function Login() {
               fontSize: 12,
             }}
           >
-            Don't have an account?
+            Don&apos;t have an account?
           </Text>
           <View
             style={{

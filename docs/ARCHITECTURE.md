@@ -20,161 +20,154 @@ Backend
 
 # Application Architecture
 
-The application follows a feature-based architecture.
+The application follows a feature-based architecture with Expo Router file-based routing.
 
 ```text
 src/
 │
-├── pages/
-│   ├── gymProgression.tsx
-│   ├── workoutSession.tsx
-│   ├── activeWorkoutSession.tsx
-│   └── manageWorkoutSession.tsx
+├── app/
+│   ├── (auth)/                  # Authentication Flow
+│   │   ├── login.tsx            # Login Page
+│   │   ├── signin.tsx           # Sign-in Page
+│   │   └── forgetPassword.tsx   # Reset Password Request
+│   │
+│   ├── (pages)/                 # Modals and Full Pages
+│   │   ├── activeWorkoutSession.tsx
+│   │   ├── manageWorkoutSession.tsx
+│   │   ├── workoutSession.tsx
+│   │   ├── nutritionProfile.tsx # Goal setup for Calories & Macros
+│   │   ├── appearance.tsx       # Theme settings
+│   │   └── changelog.tsx        # Version history
+│   │
+│   ├── (tabs)/                  # Bottom Tab Navigation
+│   │   ├── home.tsx             # Daily summary / shortcuts
+│   │   ├── gymProgression.tsx   # Gym Dashboard
+│   │   ├── foodDiary.tsx        # Calorie and macro diary
+│   │   └── profile.tsx          # Settings and profile
+│   │
+│   ├── _layout.tsx              # Root Navigation Layout
+│   └── index.tsx                # Entry routing logic
 │
-├── services/
+├── components/                  # Shared UI components
+│   ├── gym/
+│   ├── nutrition/               # Macro Donut charts, Meal prep section
+│   └── profile/
+│
+├── services/                    # API Services and Storage
 │   ├── gymService.ts
+│   ├── foodDiaryService.ts
+│   ├── customFoodService.ts
+│   ├── mealPrepService.ts
+│   ├── nutritionService.ts
 │   ├── sessionStorage.ts
 │   └── programStorage.ts
 │
-├── hooks/
-│   ├── useGymDashboard.ts
-│   └── useActiveSession.ts
+├── hooks/                       # Custom React Query & Business logic hooks
+│   ├── useActiveSession.ts
+│   ├── useFoodDiary.ts
+│   ├── useMealPrep.ts
+│   ├── useNutrition.ts
+│   └── usePatchNote.ts
 │
-├── context/
-│   └── ThemeContext.tsx
-│
-└── assets/
-    └── styles/
+└── context/                     # Global State Providers
+    ├── AlertContext.tsx         # Custom animated alert dialogs
+    └── ThemeContext.tsx         # Theme provider
 ```
 
 ---
 
 # Screen Responsibilities
 
-## gymProgression
-
-Purpose:
-
-Main dashboard.
-
+## home
+Purpose: Dashboard landing screen.
 Responsibilities:
+- Daily caloric progress and macronutrient summary
+- Quick access shortcuts to start workout or log foods
+- Display recent workout overview
+- Update / patch notes announcements
 
-- Display exercise progression
-- Display 1RM chart
-- Display latest workout session
-- Create exercise
-- Edit exercise
-- Delete exercise
-- Navigate to session management
-
----
+## gymProgression
+Purpose: Gym progression hub.
+Responsibilities:
+- Display exercise progression history
+- Visual 1RM chart tracking progress
+- Exercise directory (Create, Edit, Delete exercise)
+- Historical session management navigation
 
 ## workoutSession
-
-Purpose:
-
-Workout setup screen.
-
+Purpose: Setup and program selector.
 Responsibilities:
-
-- Select split
-- Select exercises
-- Load saved workout programs
-- Save workout programs
-- Start workout session
-
----
+- Choose workout split/program
+- Save/load workout program templates
+- Edit and search exercises in splits
+- Start an active workout session
 
 ## activeWorkoutSession
-
-Purpose:
-
-Execute a workout.
-
+Purpose: Live workout execution.
 Responsibilities:
+- Add, complete, and delete workout sets
+- Real-time elapsed time display
+- Live storage caching for crash-recovery
+- Swap or remove exercises on the fly
 
-- Track live workout
-- Track sets
-- Save progress locally
-- Restore unfinished workouts
-- Swap exercises
-- Remove exercises
-- Complete exercises
-- Save sessions
-
----
-
-## manageWorkoutSession
-
-Purpose:
-
-Manage historical sessions.
-
+## foodDiary
+Purpose: Nutritional logger and diary.
 Responsibilities:
+- Dynamic food search (FatSecret API + Custom foods)
+- Daily calorie and macro target visualization
+- Log food under breakfast, lunch, dinner, snack
+- Log and configure meal prep bundles
+- Edit or delete daily diary logs
 
-- Edit session
-- Delete session
-- Update sets
-- View progression graph
-- Maintain history integrity
-
----
-
-## caloriesCount
-
-Purpose:
-
-Manage Calorie intake data from create, read and update and delete,
-
+## nutritionProfile
+Purpose: Calorie and macro target settings.
 Responsibilities:
-
-- Edit session
-- Delete session
-- Update sets
-- View progression graph
-- Maintain history integrity
+- Setup custom calorie targets
+- Customize macronutrient split percentages (Carbs, Protein, Fat)
+- Synchronize goals with local storage and backend API
 
 ---
 
 # State Management
 
 Global
-
 - React Query
 - ThemeContext
+- AlertContext
+- DairyContext
 
 Local
-
 - useState
 - useMemo
 - useCallback
 
 Persistent
-
 - AsyncStorage
+- SecureStore
 
 ---
 
 # Query Rules
 
+## Gym Data
 All gym data is cached under:
-
 ```ts
-["gym"];
+["gym"]
 ```
+Any mutation affecting Exercises, Sessions, or Sets must invalidate `["gym"]` to prevent stale UI.
 
-Any mutation affecting:
-
-- Exercise
-- Session
-- Sets
-
-must invalidate:
-
+## Custom Foods Data
+All custom foods are cached under:
 ```ts
-queryClient.invalidateQueries({
-  queryKey: ["gym"],
-});
+["custom-foods"]
 ```
+Any mutation affecting custom foods (adding, deleting) must invalidate `["custom-foods"]`.
 
-Failure to do this causes stale UI.
+## Nutrition & Food Diary Data
+Daily log entries and targets are cached under:
+```ts
+["food-diary"]
+["nutrition-goals"]
+```
+Any changes to logged foods or targets must invalidate these keys.
+

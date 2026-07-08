@@ -1,10 +1,11 @@
 import { ThemeType } from "@/constants/colors";
-import { Dimensions, StyleSheet } from "react-native";
+import { Dimensions } from "react-native";
+import { createWithFont } from "./fontHelper";
 
 const w = Dimensions.get("window").width;
 const h = Dimensions.get("window").height;
 export const authStyles = (theme: ThemeType) =>
-  StyleSheet.create({
+  createWithFont({
     container: {
       flex: 1,
       justifyContent: "center",

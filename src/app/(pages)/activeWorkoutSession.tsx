@@ -16,6 +16,7 @@ import {
 } from "@/services/sessionStorage";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -28,6 +29,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  Vibration,
   View
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -123,6 +125,66 @@ export default function ActiveWorkoutSession() {
 
   const [restoredIds, setRestoredIds] = useState<number[]>([]);
   const [restoredSplit, setRestoredSplit] = useState<SplitType | null>(null);
+
+  // Rest Timer State
+  const [restTime, setRestTime] = useState<number>(0);
+  const [isRestPaused, setIsRestPaused] = useState<boolean>(false);
+  const [initialRestDuration, setInitialRestDuration] = useState<number>(90);
+  const [isRestActive, setIsRestActive] = useState<boolean>(false);
+
+  const startRestTimer = (seconds: number) => {
+    setRestTime(seconds);
+    setInitialRestDuration(seconds);
+    setIsRestPaused(false);
+    setIsRestActive(true);
+  };
+
+  const adjustRestTime = (seconds: number) => {
+    setRestTime((prev) => Math.max(0, prev + seconds));
+  };
+
+  const toggleRestPause = () => {
+    setIsRestPaused((prev) => !prev);
+  };
+
+  const stopRestTimer = () => {
+    setRestTime(0);
+    setIsRestPaused(false);
+    setIsRestActive(false);
+  };
+
+  const formatRestTime = (totalSeconds: number) => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  useEffect(() => {
+    let interval: any = null;
+    if (isRestActive && restTime > 0 && !isRestPaused) {
+      interval = setInterval(() => {
+        setRestTime((prev) => {
+          if (prev <= 1) {
+            clearInterval(interval);
+            if (Platform.OS !== "web") {
+              try {
+                Vibration.vibrate([0, 500, 200, 500]);
+              } catch {
+                // ignore
+              }
+            }
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      if (interval) clearInterval(interval);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isRestActive, restTime, isRestPaused]);
 
   const selectedSplit = restoredSplit ?? normalizeSplit(split);
   const selectedIds = useMemo(
@@ -927,7 +989,7 @@ export default function ActiveWorkoutSession() {
                         <Text style={styles.setHeaderText}>Reps</Text>
                         <Text style={styles.setHeaderText}>RIR</Text>
                         {!isCompleted && (
-                          <Text style={styles.setHeaderText}>Act</Text>
+                          <Text style={[styles.setHeaderText, { textAlign: "right" }]}>Act</Text>
                         )}
                       </View>
                       {sets.map((set) => (
@@ -982,25 +1044,48 @@ export default function ActiveWorkoutSession() {
                                   )
                                 }
                               />
-                              <TouchableOpacity
-                                onPress={() =>
-                                  deleteDraftSet(exercise.id, set.localId)
-                                }
-                                disabled={deletingSetKey === set.localId}
-                              >
-                                {deletingSetKey === set.localId ? (
-                                  <ActivityIndicator
-                                    size="small"
-                                    color={theme.expense}
-                                  />
-                                ) : (
-                                  <MaterialIcons
-                                    name="delete"
+                              <View style={styles.setActionCell}>
+                                <TouchableOpacity
+                                  onPress={() => startRestTimer(90)}
+                                  style={{
+                                    paddingHorizontal: 6,
+                                    paddingVertical: 2,
+                                    justifyContent: "center",
+                                    alignItems: "center",
+                                  }}
+                                >
+                                  <MaterialCommunityIcons
+                                    name="timer-play-outline"
                                     size={16}
-                                    color={theme.expense}
+                                    color={theme.primary}
                                   />
-                                )}
-                              </TouchableOpacity>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  onPress={() =>
+                                    deleteDraftSet(exercise.id, set.localId)
+                                  }
+                                  disabled={deletingSetKey === set.localId}
+                                  style={{
+                                    paddingHorizontal: 4,
+                                    paddingVertical: 2,
+                                    justifyContent: "center",
+                                    alignItems: "center",
+                                  }}
+                                >
+                                  {deletingSetKey === set.localId ? (
+                                    <ActivityIndicator
+                                      size="small"
+                                      color={theme.expense}
+                                    />
+                                  ) : (
+                                    <MaterialIcons
+                                      name="delete"
+                                      size={16}
+                                      color={theme.expense}
+                                    />
+                                  )}
+                                </TouchableOpacity>
+                              </View>
                             </>
                           )}
                         </View>
@@ -1034,6 +1119,163 @@ export default function ActiveWorkoutSession() {
           {/* Bottom spacer */}
           <View style={{ height: 20 }} />
         </ScrollView>
+
+        {/* Floating Rest Timer Overlay */}
+        {isRestActive && (
+          <LinearGradient
+            colors={
+              restTime === 0
+                ? [theme.income + "F2", theme.income]
+                : [theme.primary + "E6", theme.primary + "FF"]
+            }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{
+              marginHorizontal: 20,
+              marginBottom: 10,
+              borderRadius: 16,
+              paddingVertical: 12,
+              paddingHorizontal: 16,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              shadowColor: theme.shadow,
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.25,
+              shadowRadius: 10,
+              elevation: 8,
+              borderWidth: 1,
+              borderColor: restTime === 0 ? theme.income + "30" : theme.primary + "30",
+            }}
+          >
+            {/* Left section: Icon and Time */}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+              <MaterialCommunityIcons
+                name={
+                  restTime === 0
+                    ? "bell-ring-outline"
+                    : isRestPaused
+                      ? "timer-off-outline"
+                      : "timer-sand"
+                }
+                size={26}
+                color={theme.background}
+              />
+              <View>
+                <Text
+                  style={{
+                    color: theme.background,
+                    fontSize: 10,
+                    fontWeight: "800",
+                    textTransform: "uppercase",
+                    letterSpacing: 0.8,
+                    opacity: 0.9,
+                  }}
+                >
+                  {restTime === 0 ? "Rest Finished" : "Rest Timer"}
+                </Text>
+                <Text
+                  style={{
+                    color: theme.background,
+                    fontSize: 22,
+                    fontWeight: "900",
+                    letterSpacing: -0.5,
+                    marginTop: 1,
+                  }}
+                >
+                  {restTime === 0 ? "Go Lift!" : formatRestTime(restTime)}
+                </Text>
+              </View>
+            </View>
+
+            {/* Middle section: Action Controls */}
+            {restTime > 0 ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <TouchableOpacity
+                  onPress={() => adjustRestTime(-30)}
+                  style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    borderRadius: 8,
+                    backgroundColor: theme.background + "20",
+                    justifyContent: "center",
+                    alignItems: "center",
+                  }}
+                >
+                  <Text style={{ color: theme.background, fontSize: 11, fontWeight: "900" }}>-30s</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => adjustRestTime(30)}
+                  style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    borderRadius: 8,
+                    backgroundColor: theme.background + "20",
+                    justifyContent: "center",
+                    alignItems: "center",
+                  }}
+                >
+                  <Text style={{ color: theme.background, fontSize: 11, fontWeight: "900" }}>+30s</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <TouchableOpacity
+                  onPress={() => startRestTimer(initialRestDuration)}
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
+                    borderRadius: 8,
+                    backgroundColor: theme.background,
+                    justifyContent: "center",
+                    alignItems: "center",
+                    flexDirection: "row",
+                    gap: 4,
+                  }}
+                >
+                  <MaterialIcons name="replay" size={14} color={theme.income} />
+                  <Text style={{ color: theme.income, fontSize: 11, fontWeight: "900" }}>Restart</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Right section: Play/Pause/Dismiss */}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              {restTime > 0 && (
+                <TouchableOpacity
+                  onPress={toggleRestPause}
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    backgroundColor: theme.background,
+                    justifyContent: "center",
+                    alignItems: "center",
+                  }}
+                >
+                  <MaterialCommunityIcons
+                    name={isRestPaused ? "play" : "pause"}
+                    size={20}
+                    color={theme.primary}
+                  />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                onPress={stopRestTimer}
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  backgroundColor: theme.background + "20",
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
+                <MaterialCommunityIcons name="close" size={20} color={theme.background} />
+              </TouchableOpacity>
+            </View>
+          </LinearGradient>
+        )}
 
         {/* Bottom bar */}
         <View

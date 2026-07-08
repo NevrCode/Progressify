@@ -1,8 +1,8 @@
 import { ThemeType } from "@/constants/colors";
-import { StyleSheet } from "react-native";
+import { createWithFont } from "./fontHelper";
 
 export const profileStyles = (theme: ThemeType) =>
-  StyleSheet.create({
+  createWithFont({
     safeArea: {
       flex: 1,
       backgroundColor: theme.background,

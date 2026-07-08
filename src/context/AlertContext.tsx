@@ -37,12 +37,11 @@ const AlertContext = createContext<AlertContextType>({
 
 export function AlertProvider({ children }: { children: React.ReactNode }) {
   const { theme } = useTheme();
-  const style = gymStyles(theme);
 
   const [visible, setVisible] = useState(false);
   const [options, setOptions] = useState<AlertOptions>({ title: "" });
-  const scaleAnim = useRef(new Animated.Value(0.85)).current;
-  const opacityAnim = useRef(new Animated.Value(0)).current;
+  const [scaleAnim] = useState(() => new Animated.Value(0.85));
+  const [opacityAnim] = useState(() => new Animated.Value(0));
 
   const alert = useCallback(
     (title: string, message?: string, buttons?: AlertButton[]) => {

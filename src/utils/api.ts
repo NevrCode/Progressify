@@ -1,6 +1,11 @@
+import {
+  cacheResponse,
+  enqueueMutation,
+  getCachedResponse,
+  processSyncQueue,
+} from "@/services/syncQueueService";
 import axios from "axios";
 import Constants from "expo-constants";
-
 import * as SecureStore from "expo-secure-store";
 
 const baseURL =
@@ -57,9 +62,73 @@ const clearStoredTokens = async () => {
 
 // Response interceptor to handle 401 and refresh access tokens
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Cache GET Responses and Process Sync Queue
+    if (response.config.method === "get") {
+      if (response.data && typeof response.data === "object") {
+        const cacheKey =
+          response.config.url +
+          (response.config.params
+            ? JSON.stringify(response.config.params)
+            : "");
+        void cacheResponse(cacheKey, response.data);
+      }
+    }
+    void processSyncQueue();
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config;
+
+    // Handle Offline state (No Network Connection, Connection Timeout, or Server Down)
+    const isOfflineOrDown =
+      !error.response ||
+      error.code === "ERR_NETWORK" ||
+      error.code === "ECONNABORTED" ||
+      [502, 503, 504].includes(error.response?.status);
+
+    if (isOfflineOrDown) {
+      if (originalRequest) {
+        if (originalRequest.method === "get") {
+          const cacheKey =
+            originalRequest.url +
+            (originalRequest.params
+              ? JSON.stringify(originalRequest.params)
+              : "");
+          const cachedData = await getCachedResponse(cacheKey);
+          if (cachedData) {
+            console.log(
+              `[Offline Cache] Serving cached data for ${originalRequest.url}`,
+            );
+            return {
+              data: cachedData,
+              status: 200,
+              statusText: "OK",
+              headers: {},
+              config: originalRequest,
+            };
+          }
+        } else if (
+          ["post", "put", "delete"].includes(originalRequest.method || "")
+        ) {
+          console.log(
+            `[Offline Queue] Queueing offline ${originalRequest.method} request to ${originalRequest.url}`,
+          );
+          await enqueueMutation(
+            originalRequest.url || "",
+            (originalRequest.method || "POST").toUpperCase() as any,
+            originalRequest.data,
+          );
+          return {
+            data: { status: "success", offline: true },
+            status: 200,
+            statusText: "OK",
+            headers: {},
+            config: originalRequest,
+          };
+        }
+      }
+    }
 
     if (
       error.response &&

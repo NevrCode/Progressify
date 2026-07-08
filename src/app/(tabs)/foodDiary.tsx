@@ -345,7 +345,15 @@ export default function FoodDiary() {
       setSelectedFood(null);
       setSearch("");
       setQuantity("1");
-      await queryClient.invalidateQueries({ queryKey: FOOD_DIARY_QUERY_KEY });
+      await queryClient.invalidateQueries({
+        queryKey: [...FOOD_DIARY_QUERY_KEY, "summary", selectedDate],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: [...FOOD_DIARY_QUERY_KEY, "entries"],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["diary-summary", selectedDate],
+      });
     },
     onError: (error: any) => {
       alert("Could not save food", error.message || "Please try again.");
@@ -355,7 +363,15 @@ export default function FoodDiary() {
   const deleteEntryMutation = useMutation({
     mutationFn: deleteFoodEntry,
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: FOOD_DIARY_QUERY_KEY });
+      await queryClient.invalidateQueries({
+        queryKey: [...FOOD_DIARY_QUERY_KEY, "summary", selectedDate],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: [...FOOD_DIARY_QUERY_KEY, "entries"],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["diary-summary", selectedDate],
+      });
     },
     onError: (error: any) => {
       alert("Delete failed", error.message || "Please try again.");

@@ -1,7 +1,7 @@
 import { ThemeType } from "@/constants/colors";
 import { createWithFont } from "./fontHelper";
 
-export const gymStyles = (theme: ThemeType) =>
+export const homeStyle = (theme: ThemeType) =>
   createWithFont({
     safeArea: {
       flex: 1,
@@ -52,6 +52,9 @@ export const gymStyles = (theme: ThemeType) =>
       flexDirection: "row",
       gap: 8,
     },
+    waterStat: {
+      flexDirection: "row",
+    },
     heroStatChip: {
       flex: 1,
       backgroundColor: theme.card,
@@ -70,6 +73,18 @@ export const gymStyles = (theme: ThemeType) =>
       textTransform: "uppercase",
       letterSpacing: 0.5,
     },
+    heroUpperCard: {
+      flex: 1,
+      backgroundColor: theme.card,
+      borderRadius: 12,
+      paddingVertical: 12,
+      paddingHorizontal: 10,
+      alignItems: "center",
+      borderWidth: 1,
+      borderColor: theme.border,
+      gap: 2,
+    },
+
     heroCalorieStatLabel: {
       color: theme.expense,
       fontSize: 10,

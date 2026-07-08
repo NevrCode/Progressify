@@ -52,10 +52,18 @@ export const useLogMealPrep = () => {
   return useMutation({
     mutationFn: ({ id, dto }: { id: number; dto: MealPrepLogRequest }) =>
       logMealPrepToDiary(id, dto),
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
+      const date = variables.dto.date;
       queryClient.invalidateQueries({ queryKey: MEAL_PREP_QUERY_KEY });
-      queryClient.invalidateQueries({ queryKey: FOOD_DIARY_QUERY_KEY });
-      queryClient.invalidateQueries({ queryKey: DIARY_SUMMARY_KEY });
+      queryClient.invalidateQueries({
+        queryKey: [...FOOD_DIARY_QUERY_KEY, "summary", date],
+      });
+      queryClient.invalidateQueries({
+        queryKey: [...FOOD_DIARY_QUERY_KEY, "entries"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: [...DIARY_SUMMARY_KEY, date],
+      });
     },
   });
 };

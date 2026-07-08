@@ -12,7 +12,7 @@ export type FoodEntryCreateRequestDTO = {
   protein?: number;
   fat?: number;
   carbohydrate?: number;
-  date: number;
+  date: string;
   meal_type: MealType;
 };
 

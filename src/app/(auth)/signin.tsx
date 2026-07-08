@@ -5,13 +5,13 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 export default function SignIn() {
@@ -151,7 +151,6 @@ export default function SignIn() {
           />
         </View>
 
-        {/* Full Name Input */}
         <View style={{ marginBottom: 16 }}>
           <Text
             style={{

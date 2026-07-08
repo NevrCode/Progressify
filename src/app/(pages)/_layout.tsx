@@ -1,7 +1,7 @@
 import { useTheme } from "@/context/ThemeContext";
 import { Stack } from "expo-router";
 
-export default function pagesLayout() {
+export default function PagesLayout() {
   const { theme } = useTheme();
 
   return (

@@ -6,11 +6,26 @@ import { usePatchNotes } from "@/hooks/usePatchNote";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, usePathname, useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
+import {
+  useFonts,
+  PlusJakartaSans_400Regular,
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_600SemiBold,
+  PlusJakartaSans_700Bold,
+  PlusJakartaSans_800ExtraBold,
+} from "@expo-google-fonts/plus-jakarta-sans";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 export default function RootLayout() {
+  const [fontsLoaded] = useFonts({
+    PlusJakartaSans_400Regular,
+    PlusJakartaSans_500Medium,
+    PlusJakartaSans_600SemiBold,
+    PlusJakartaSans_700Bold,
+    PlusJakartaSans_800ExtraBold,
+  });
   const router = useRouter();
   const pathname = usePathname();
   const [authChecked, setAuthChecked] = useState(false);
@@ -55,7 +70,7 @@ export default function RootLayout() {
     }
 
     if (isAuthenticated && (inAuthFlow || atRoot)) {
-      router.replace("/gymProgression");
+      router.replace("/home");
     }
   }, [
     authChecked,
@@ -71,7 +86,7 @@ export default function RootLayout() {
         <AlertProvider>
           <DiaryProvider>
             <QueryClientProvider client={queryClient}>
-              {authChecked ? (
+              {authChecked && fontsLoaded ? (
                 <>
                   <Stack
                     screenOptions={{

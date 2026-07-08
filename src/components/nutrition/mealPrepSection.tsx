@@ -19,7 +19,6 @@ import {
 } from "@/services/foodDiaryService";
 import {
   MealPrepItemRequest,
-  MealPrepItemResponse,
   MealPrepResponse,
 } from "@/services/mealPrepService";
 import { MaterialIcons } from "@expo/vector-icons";
@@ -28,19 +27,16 @@ import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
-  ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-
-// ── Constants ─────────────────────────────────────────────────────────────────
+import { FoodSearchModal, SelectedFoodResult } from "./foodSearchModal";
 
 type DraftItem = MealPrepItemRequest & { key: string };
 
-// Rotating accent colors for food items inside a prep
-const ITEM_ACCENT_COLORS = [
+const ACCENT_COLORS = [
   "#378ADD",
   "#1D9E75",
   "#7F77DD",
@@ -62,14 +58,12 @@ const parseNumber = (v?: string | number) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const formatDateForApi = (date: Date) =>
+const formatDateForApi = (d: Date) =>
   [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, "0"),
+    String(d.getDate()).padStart(2, "0"),
   ].join("-");
-
-// ── Macro pill ────────────────────────────────────────────────────────────────
 
 function MacroPill({
   label,
@@ -89,8 +83,8 @@ function MacroPill({
       style={{
         backgroundColor: bg,
         borderRadius: 20,
-        paddingHorizontal: 10,
-        paddingVertical: 3,
+        paddingHorizontal: 8,
+        paddingVertical: 2,
       }}
     >
       <Text style={{ fontSize: 11, fontWeight: "700", color }}>
@@ -103,55 +97,92 @@ function MacroPill({
   );
 }
 
-// ── Food item row inside expanded prep ────────────────────────────────────────
-
-function PrepFoodItem({
-  item,
+function PrepRow({
+  prep,
   index,
+  onPress,
   theme,
 }: {
-  item: MealPrepItemResponse;
+  prep: MealPrepResponse;
   index: number;
+  onPress: () => void;
   theme: ThemeType;
 }) {
-  const accentColor = ITEM_ACCENT_COLORS[index % ITEM_ACCENT_COLORS.length];
+  const accent = ACCENT_COLORS[index % ACCENT_COLORS.length];
+  const [showAllItems, setShowAllItems] = useState(false); // ← add this
+
+  const PREVIEW_COUNT = 3;
   return (
-    <View
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.75}
       style={{
-        backgroundColor: theme.background,
-        borderRadius: 10,
-        borderLeftWidth: 3,
-        borderLeftColor: accentColor,
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        marginBottom: 6,
+        flexDirection: "row",
+        alignItems: "center",
+        paddingVertical: 12,
+        paddingHorizontal: 14,
+        gap: 12,
+        borderBottomWidth: 0.5,
+        borderBottomColor: theme.border ?? "#eee",
       }}
     >
-      <Text
+      <View
         style={{
-          fontSize: 13,
-          fontWeight: "600",
-          marginBottom: 3,
-          color: theme.textBlack,
+          width: 4,
+          height: 36,
+          borderRadius: 3,
+          backgroundColor: accent,
+          flexShrink: 0,
         }}
-      >
-        {item.food_name}
-      </Text>
-      <Text style={{ fontSize: 11, color: theme.textLight }}>
-        {item.gramation?.toFixed(0)}g · {item.calories?.toFixed(0)} kcal · P{" "}
-        {item.protein?.toFixed(1)}g · C {item.carbohydrate?.toFixed(1)}g · F{" "}
-        {item.fat?.toFixed(1)}g
-      </Text>
-    </View>
+      />
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text
+          style={{
+            fontSize: 14,
+            fontWeight: "600",
+            color: theme.textBlack,
+            marginBottom: 4,
+          }}
+          numberOfLines={1}
+        >
+          {prep.name}
+        </Text>
+        <View
+          style={{
+            flexDirection: "row",
+            gap: 5,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <MacroPill
+            label=""
+            value={prep.total_calories}
+            unit=" kcal"
+            bg="#FAEEDA"
+            color="#633806"
+          />
+          <MacroPill
+            label="P"
+            value={prep.total_protein}
+            unit="g"
+            bg="#E6F1FB"
+            color="#0C447C"
+          />
+          <Text style={{ fontSize: 11, color: theme.textLight }}>
+            {prep.items.length} food{prep.items.length !== 1 ? "s" : ""}
+          </Text>
+        </View>
+      </View>
+      <MaterialIcons name="chevron-right" size={18} color={theme.textLight} />
+    </TouchableOpacity>
   );
 }
 
-// ── Prep card ─────────────────────────────────────────────────────────────────
-
-function PrepCard({
+function PrepDetailSheet({
   prep,
-  expanded,
-  onToggle,
+  index,
+  onClose,
   onEdit,
   onDelete,
   onLog,
@@ -159,214 +190,230 @@ function PrepCard({
   style,
 }: {
   prep: MealPrepResponse;
-  expanded: boolean;
-  onToggle: () => void;
+  index: number;
+  onClose: () => void;
   onEdit: () => void;
   onDelete: () => void;
   onLog: () => void;
   theme: ThemeType;
   style: any;
 }) {
-  const topColors = ITEM_ACCENT_COLORS[prep.id % ITEM_ACCENT_COLORS.length];
-
+  const accent = ACCENT_COLORS[index % ACCENT_COLORS.length];
+  const [showAllItems, setShowAllItems] = useState(false);
+  const PREVIEW_COUNT = 3;
+  const visibleItems = showAllItems
+    ? prep.items
+    : prep.items.slice(0, PREVIEW_COUNT);
+  const hasMore = prep.items.length > PREVIEW_COUNT;
   return (
     <View
-      style={{
-        backgroundColor: theme.card,
-        borderRadius: 14,
-        borderWidth: 0.5,
-        borderColor: theme.border ?? "#eee",
-        overflow: "hidden",
-        marginBottom: 10,
-      }}
+      style={[
+        style.modalCard,
+        { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 },
+      ]}
     >
-      {/* Colored top accent bar */}
-      <View style={{ height: 4, flexDirection: "row" }}>
-        <View style={{ flex: 1, backgroundColor: topColors }} />
-        <View style={{ flex: 1, backgroundColor: topColors }} />
+      <View style={{ alignItems: "center", marginBottom: 12 }}>
+        <View
+          style={{
+            width: 36,
+            height: 4,
+            borderRadius: 2,
+            backgroundColor: theme.border ?? "#ddd",
+          }}
+        />
       </View>
-
-      {/* Header */}
-      <TouchableOpacity
-        onPress={onToggle}
-        activeOpacity={0.8}
-        style={{ padding: 14, paddingBottom: expanded ? 10 : 14 }}
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "flex-start",
+          marginBottom: 12,
+        }}
       >
         <View
           style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
+            width: 4,
+            borderRadius: 2,
+            backgroundColor: accent,
+            alignSelf: "stretch",
+            marginRight: 10,
           }}
-        >
-          <View style={{ flex: 1 }}>
-            <Text style={[style.exerciseName, { marginBottom: 2 }]}>
-              {prep.name}
-            </Text>
-            {!!prep.description && (
-              <Text style={[style.listMeta, { marginBottom: 8 }]}>
-                {prep.description}
-              </Text>
-            )}
-            {/* Macro pills */}
-            <View
-              style={{
-                flexDirection: "row",
-                flexWrap: "wrap",
-                gap: 5,
-                marginTop: 4,
-              }}
-            >
-              <MacroPill
-                label=""
-                value={prep.total_calories}
-                unit=" kcal"
-                bg="#ffbc49"
-                color="#361e02"
-              />
-              {/* Protein — blue */}
-              <MacroPill
-                label="P"
-                value={prep.total_protein}
-                unit="g"
-                bg="#49a3f7"
-                color="#052546"
-              />
-              {/* Carbs — green */}
-              <MacroPill
-                label="C"
-                value={prep.total_carbohydrate}
-                unit="g"
-                bg={theme.income}
-                color="#1b3e02"
-              />
-              {/* Fat — coral */}
-              <MacroPill
-                label="F"
-                value={prep.total_fat}
-                unit="g"
-                bg={theme.expense}
-                color="#541702"
-              />
-              <View
-                style={{
-                  backgroundColor: theme.border ?? "#eee",
-                  borderRadius: 20,
-                  paddingHorizontal: 10,
-                  paddingVertical: 3,
-                }}
-              >
-                <Text style={{ fontSize: 11, color: theme.textLight }}>
-                  {prep.items.length} foods
-                </Text>
-              </View>
-            </View>
-          </View>
-          <MaterialIcons
-            name={expanded ? "expand-less" : "expand-more"}
-            size={22}
-            color={theme.textLight}
-            style={{ marginTop: 2 }}
-          />
-        </View>
-      </TouchableOpacity>
-
-      {/* Expanded */}
-      {expanded && (
-        <>
+        />
+        <View style={{ flex: 1 }}>
+          <Text style={[style.exerciseName, { marginBottom: 2 }]}>
+            {prep.name}
+          </Text>
+          {!!prep.description && (
+            <Text style={style.listMeta}>{prep.description}</Text>
+          )}
           <View
             style={{
-              height: 0.5,
-              backgroundColor: theme.border ?? "#eee",
-              marginHorizontal: 14,
+              flexDirection: "row",
+              gap: 5,
+              marginTop: 6,
+              flexWrap: "wrap",
             }}
-          />
-
-          {/* Food items */}
-          <View style={{ padding: 14, paddingTop: 12, paddingBottom: 8 }}>
-            {prep.items.map((item, index) => (
-              <PrepFoodItem
-                key={item.id}
-                item={item}
-                index={index}
-                theme={theme}
-              />
-            ))}
-          </View>
-
-          {/* Action buttons */}
-          <View
-            style={{ flexDirection: "row", gap: 8, padding: 14, paddingTop: 4 }}
           >
-            {/* Log — primary */}
-            <TouchableOpacity
-              onPress={onLog}
+            <MacroPill
+              label=""
+              value={prep.total_calories}
+              unit=" kcal"
+              bg="#FAEEDA"
+              color="#633806"
+            />
+            <MacroPill
+              label="P"
+              value={prep.total_protein}
+              unit="g"
+              bg="#E6F1FB"
+              color="#0C447C"
+            />
+            <MacroPill
+              label="C"
+              value={prep.total_carbohydrate}
+              unit="g"
+              bg="#EAF3DE"
+              color="#27500A"
+            />
+            <MacroPill
+              label="F"
+              value={prep.total_fat}
+              unit="g"
+              bg="#FAECE7"
+              color="#712B13"
+            />
+          </View>
+        </View>
+        <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
+          <MaterialIcons name="close" size={20} color={theme.textLight} />
+        </TouchableOpacity>
+      </View>
+      <View
+        style={{
+          height: 0.5,
+          backgroundColor: theme.border ?? "#eee",
+          marginBottom: 12,
+        }}
+      />
+      <View>
+        {visibleItems.map((item, i) => (
+          <View
+            key={item.id}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              paddingVertical: 8,
+              borderBottomWidth: i < visibleItems.length - 1 ? 0.5 : 0,
+              borderBottomColor: theme.border ?? "#eee",
+              gap: 10,
+            }}
+          >
+            <View
               style={{
-                flex: 2,
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 6,
-                backgroundColor: theme.primary,
-                borderRadius: 10,
-                paddingVertical: 10,
+                width: 4,
+                height: 32,
+                borderRadius: 2,
+                backgroundColor: ACCENT_COLORS[i % ACCENT_COLORS.length],
+                flexShrink: 0,
               }}
-            >
-              <MaterialIcons name="playlist-add-check" size={16} color="#fff" />
-              <Text style={{ color: "#fff", fontSize: 13, fontWeight: "700" }}>
-                Log to Diary
-              </Text>
-            </TouchableOpacity>
-
-            {/* Edit */}
-            <TouchableOpacity
-              onPress={onEdit}
-              style={{
-                flex: 1,
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 4,
-                backgroundColor: theme.background,
-                borderRadius: 10,
-                paddingVertical: 10,
-                borderWidth: 0.5,
-                borderColor: theme.border,
-              }}
-            >
-              <MaterialIcons name="edit" size={15} color={theme.primary} />
+            />
+            <View style={{ flex: 1 }}>
               <Text
                 style={{
-                  color: theme.primary,
                   fontSize: 13,
                   fontWeight: "600",
+                  color: theme.textBlack,
+                  marginBottom: 2,
                 }}
+                numberOfLines={1}
               >
-                Edit
+                {item.food_name}
               </Text>
-            </TouchableOpacity>
-
-            {/* Delete — icon only */}
-            <TouchableOpacity
-              onPress={onDelete}
-              style={{
-                width: 40,
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: theme.background,
-                borderRadius: 10,
-              }}
-            >
-              <MaterialIcons name="delete-outline" size={18} color="#A32D2D" />
-            </TouchableOpacity>
+              <Text style={{ fontSize: 11, color: theme.textLight }}>
+                {item.gramation?.toFixed(0)}g · {item.calories?.toFixed(0)} kcal
+                · P {item.protein?.toFixed(1)}g · C{" "}
+                {item.carbohydrate?.toFixed(1)}g · F {item.fat?.toFixed(1)}g
+              </Text>
+            </View>
           </View>
-        </>
-      )}
+        ))}
+        {hasMore && (
+          <TouchableOpacity
+            onPress={() => setShowAllItems(!showAllItems)}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 4,
+              paddingVertical: 10,
+            }}
+          >
+            <MaterialIcons
+              name={showAllItems ? "expand-less" : "expand-more"}
+              size={16}
+              color={theme.primary}
+            />
+            <Text
+              style={{ fontSize: 12, color: theme.primary, fontWeight: "600" }}
+            >
+              {showAllItems
+                ? "Show less"
+                : `Show all ${prep.items.length} foods`}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+      <View style={{ flexDirection: "row", gap: 8, marginTop: 16 }}>
+        <TouchableOpacity
+          onPress={onLog}
+          style={{
+            flex: 2,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+            backgroundColor: theme.primary,
+            borderRadius: 12,
+            // paddingVertical: 4,
+          }}
+        >
+          <MaterialIcons name="fastfood" size={14} color={theme.textBlack} />
+          <Text
+            style={{ color: theme.textBlack, fontSize: 14, fontWeight: "700" }}
+          >
+            Eat
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={onEdit}
+          style={{
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: 12,
+            paddingVertical: 16,
+            borderWidth: 0.5,
+            backgroundColor: theme.background,
+            borderColor: theme.border ?? "#eee",
+          }}
+        >
+          <MaterialIcons name="edit" size={16} color={theme.primary} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={onDelete}
+          style={{
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: 12,
+            backgroundColor: theme.background,
+          }}
+        >
+          <MaterialIcons name="delete-outline" size={18} color="#A32D2D" />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
-
-// ── Main component ────────────────────────────────────────────────────────────
 
 export function MealPrepSection() {
   const { theme } = useTheme();
@@ -382,7 +429,10 @@ export function MealPrepSection() {
   const deleteMutation = useDeleteMealPrep();
   const logMutation = useLogMealPrep();
 
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [selectedPrep, setSelectedPrep] = useState<MealPrepResponse | null>(
+    null,
+  );
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [formOpen, setFormOpen] = useState(false);
   const [editingPrep, setEditingPrep] = useState<MealPrepResponse | null>(null);
   const [prepName, setPrepName] = useState("");
@@ -391,9 +441,7 @@ export function MealPrepSection() {
   const [showFoodPicker, setShowFoodPicker] = useState(false);
   const [search, setSearch] = useState("");
   const [editingItemKey, setEditingItemKey] = useState<string | null>(null);
-  const [logTargetPrep, setLogTargetPrep] = useState<MealPrepResponse | null>(
-    null,
-  );
+  const [showLogModal, setShowLogModal] = useState(false);
   const [logMealType, setLogMealType] = useState<MealType>("LUNCH");
 
   const foodSearchQuery = useQuery({
@@ -424,9 +472,7 @@ export function MealPrepSection() {
           prev.map((i) => (i.key === editingItemKey ? newItem : i)),
         );
         setEditingItemKey(null);
-      } else {
-        setDraftItems((prev) => [...prev, newItem]);
-      }
+      } else setDraftItems((prev) => [...prev, newItem]);
       setShowFoodPicker(false);
       setSearch("");
     },
@@ -438,8 +484,10 @@ export function MealPrepSection() {
     setDraftItems((prev) =>
       prev.map((item) => {
         if (item.key !== key) return item;
-        const base = parseNumber(item.gramation) || 100;
-        const ratio = base > 0 ? grams / base : 0;
+        const ratio =
+          (parseNumber(item.gramation) || 100) > 0
+            ? grams / (parseNumber(item.gramation) || 100)
+            : 0;
         return {
           ...item,
           gramation: grams,
@@ -475,8 +523,16 @@ export function MealPrepSection() {
     setDraftItems([]);
     setFormOpen(true);
   };
+  const closeForm = () => {
+    setFormOpen(false);
+    setEditingPrep(null);
+    setDraftItems([]);
+    setPrepName("");
+    setPrepDesc("");
+  };
 
   const openEdit = (prep: MealPrepResponse) => {
+    setSelectedPrep(null);
     setEditingPrep(prep);
     setPrepName(prep.name);
     setPrepDesc(prep.description ?? "");
@@ -497,14 +553,6 @@ export function MealPrepSection() {
     setFormOpen(true);
   };
 
-  const closeForm = () => {
-    setFormOpen(false);
-    setEditingPrep(null);
-    setDraftItems([]);
-    setPrepName("");
-    setPrepDesc("");
-  };
-
   const savePrep = () => {
     if (!prepName.trim())
       return alert("Name required", "Give your meal prep a name.");
@@ -515,7 +563,7 @@ export function MealPrepSection() {
       description: prepDesc.trim() || undefined,
       items: draftItems,
     };
-    if (editingPrep) {
+    if (editingPrep)
       updateMutation.mutate(
         { id: editingPrep.id, dto },
         {
@@ -523,12 +571,11 @@ export function MealPrepSection() {
           onError: (e: any) => alert("Update failed", e.message),
         },
       );
-    } else {
+    else
       createMutation.mutate(dto, {
         onSuccess: closeForm,
         onError: (e: any) => alert("Create failed", e.message),
       });
-    }
   };
 
   const confirmDelete = (prep: MealPrepResponse) =>
@@ -537,21 +584,29 @@ export function MealPrepSection() {
       {
         text: "Delete",
         style: "destructive",
-        onPress: () => deleteMutation.mutate(prep.id),
+        onPress: () => {
+          deleteMutation.mutate(prep.id);
+          setSelectedPrep(null);
+        },
       },
     ]);
 
   const logPrep = () => {
-    if (!logTargetPrep) return;
+    if (!selectedPrep) return;
+    console.log({
+      id: selectedPrep.id,
+      dto: { date: selectedDate, meal_type: logMealType },
+    });
     logMutation.mutate(
       {
-        id: logTargetPrep.id,
-        dto: { date: selectedDate, mealType: logMealType },
+        id: selectedPrep.id,
+        dto: { date: selectedDate, meal_type: logMealType },
       },
       {
         onSuccess: () => {
-          setLogTargetPrep(null);
-          alert("Logged ✓", `"${logTargetPrep.name}" added to your diary.`);
+          setShowLogModal(false);
+          setSelectedPrep(null);
+          alert("Logged ✓", `"${selectedPrep.name}" added to diary.`);
         },
         onError: (e: any) => alert("Log failed", e.message),
       },
@@ -560,33 +615,33 @@ export function MealPrepSection() {
 
   return (
     <>
-      {/* Section header */}
-      <View style={[style.sectionHeader, { marginBottom: 10 }]}>
+      <View style={[style.sectionHeader, { marginBottom: 8 }]}>
         <Text style={style.sectionTitle}>Meal Preps</Text>
         <TouchableOpacity
-          style={[
-            style.inlineAction,
-            {
-              backgroundColor: theme.primary + "15",
-              borderRadius: 20,
-              paddingHorizontal: 12,
-              paddingVertical: 5,
-            },
-          ]}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 4,
+            backgroundColor: theme.primary + "15",
+            borderRadius: 20,
+            paddingHorizontal: 12,
+            paddingVertical: 5,
+          }}
           onPress={formOpen ? closeForm : openCreate}
         >
           <MaterialIcons
             name={formOpen ? "close" : "add"}
-            size={15}
+            size={14}
             color={theme.primary}
           />
-          <Text style={[style.inlineActionText, { marginLeft: 3 }]}>
+          <Text
+            style={{ fontSize: 12, color: theme.primary, fontWeight: "600" }}
+          >
             {formOpen ? "Cancel" : "New Prep"}
           </Text>
         </TouchableOpacity>
       </View>
 
-      {/* Create / edit form */}
       {formOpen && (
         <View style={style.exerciseCard}>
           <Text style={style.sectionTitle}>
@@ -606,18 +661,17 @@ export function MealPrepSection() {
             value={prepDesc}
             onChangeText={setPrepDesc}
           />
-
           {draftItems.length > 0 && (
             <View style={{ gap: 8, marginTop: 4 }}>
               {draftItems.map((item, index) => (
                 <View
                   key={item.key}
                   style={{
-                    backgroundColor: "rgba(0,0,0,0.03)",
+                    backgroundColor: theme.background,
                     borderRadius: 10,
                     borderLeftWidth: 3,
                     borderLeftColor:
-                      ITEM_ACCENT_COLORS[index % ITEM_ACCENT_COLORS.length],
+                      ACCENT_COLORS[index % ACCENT_COLORS.length],
                     padding: 12,
                   }}
                 >
@@ -669,94 +723,80 @@ export function MealPrepSection() {
                   >
                     <MacroPill
                       label=""
-                      value={item.calories}
+                      value={parseNumber(item.calories)}
                       unit=" kcal"
-                      bg="#ffbc49"
-                      color="#361e02"
+                      bg="#FAEEDA"
+                      color="#633806"
                     />
-                    {/* Protein — blue */}
                     <MacroPill
                       label="P"
-                      value={item.protein}
+                      value={parseNumber(item.protein)}
                       unit="g"
-                      bg="#49a3f7"
-                      color="#052546"
+                      bg="#E6F1FB"
+                      color="#0C447C"
                     />
-                    {/* Carbs — green */}
                     <MacroPill
                       label="C"
-                      value={item.carbohydrate}
+                      value={parseNumber(item.carbohydrate)}
                       unit="g"
-                      bg={theme.income}
-                      color="#1b3e02"
+                      bg="#EAF3DE"
+                      color="#27500A"
                     />
-                    {/* Fat — coral */}
                     <MacroPill
                       label="F"
-                      value={item.fat}
+                      value={parseNumber(item.fat)}
                       unit="g"
-                      bg={theme.expense}
-                      color="#541702"
+                      bg="#FAECE7"
+                      color="#712B13"
                     />
                   </View>
                 </View>
               ))}
             </View>
           )}
-
           {draftItems.length > 0 && (
-            <View style={[style.exerciseCard, { marginTop: 10 }]}>
-              <Text
-                style={[
-                  style.listMeta,
-                  { textAlign: "center", marginBottom: 4 },
-                ]}
-              >
-                Total
-              </Text>
-              <View
-                style={{
-                  flexDirection: "row",
-                  gap: 6,
-                  justifyContent: "center",
-                  flexWrap: "wrap",
-                }}
-              >
-                <MacroPill
-                  label=""
-                  value={draftTotals.calories}
-                  unit=" Cal"
-                  bg="#ffbc49"
-                  color="#361e02"
-                />
-                {/* Protein — blue */}
-                <MacroPill
-                  label="P"
-                  value={draftTotals.protein}
-                  unit="g"
-                  bg="#49a3f7"
-                  color="#052546"
-                />
-                {/* Carbs — green */}
-                <MacroPill
-                  label="C"
-                  value={draftTotals.carbohydrate}
-                  unit="g"
-                  bg={theme.income}
-                  color="#1b3e02"
-                />
-                {/* Fat — coral */}
-                <MacroPill
-                  label="F"
-                  value={draftTotals.fat}
-                  unit="g"
-                  bg={theme.expense}
-                  color="#541702"
-                />
-              </View>
+            <View
+              style={{
+                flexDirection: "row",
+                gap: 5,
+                justifyContent: "center",
+                flexWrap: "wrap",
+                marginTop: 10,
+                padding: 10,
+                backgroundColor: theme.background,
+                borderRadius: 10,
+              }}
+            >
+              <MacroPill
+                label=""
+                value={draftTotals.calories}
+                unit=" kcal"
+                bg="#FAEEDA"
+                color="#633806"
+              />
+              <MacroPill
+                label="P"
+                value={draftTotals.protein}
+                unit="g"
+                bg="#E6F1FB"
+                color="#0C447C"
+              />
+              <MacroPill
+                label="C"
+                value={draftTotals.carbohydrate}
+                unit="g"
+                bg="#EAF3DE"
+                color="#27500A"
+              />
+              <MacroPill
+                label="F"
+                value={draftTotals.fat}
+                unit="g"
+                bg="#FAECE7"
+                color="#712B13"
+              />
             </View>
           )}
-
           <TouchableOpacity
             style={[style.inlineAction, { marginTop: 10 }]}
             onPress={() => {
@@ -767,7 +807,6 @@ export function MealPrepSection() {
             <MaterialIcons name="search" size={16} color={theme.primary} />
             <Text style={style.inlineActionText}>Add Food</Text>
           </TouchableOpacity>
-
           <TouchableOpacity
             style={[style.primaryButton, { marginTop: 12 }]}
             onPress={savePrep}
@@ -784,7 +823,6 @@ export function MealPrepSection() {
         </View>
       )}
 
-      {/* List */}
       {isLoading ? (
         <ActivityIndicator color={theme.primary} style={{ marginTop: 16 }} />
       ) : mealPreps.length === 0 && !formOpen ? (
@@ -794,178 +832,78 @@ export function MealPrepSection() {
           </Text>
         </View>
       ) : (
-        mealPreps.map((prep) => (
-          <PrepCard
-            key={prep.id}
-            prep={prep}
-            expanded={expandedId === prep.id}
-            onToggle={() =>
-              setExpandedId(expandedId === prep.id ? null : prep.id)
-            }
-            onEdit={() => {
-              openEdit(prep);
-              setExpandedId(null);
+        !formOpen && (
+          <View
+            style={{
+              backgroundColor: theme.card,
+              borderRadius: 14,
+              borderWidth: 0.5,
+              borderColor: theme.border ?? "#eee",
+              overflow: "hidden",
             }}
-            onDelete={() => confirmDelete(prep)}
-            onLog={() => {
-              setLogTargetPrep(prep);
-              setLogMealType("LUNCH");
-              setSelectedDate(formatDateForApi(new Date()));
-            }}
-            theme={theme}
-            style={style}
-          />
-        ))
+          >
+            {mealPreps.map((prep, index) => (
+              <PrepRow
+                key={prep.id}
+                prep={prep}
+                index={index}
+                theme={theme}
+                onPress={() => {
+                  setSelectedPrep(prep);
+                  setSelectedIndex(index);
+                }}
+              />
+            ))}
+          </View>
+        )
       )}
 
-      {/* Food search modal */}
       <Modal
-        visible={showFoodPicker}
+        visible={!!selectedPrep}
         transparent
         animationType="slide"
-        onRequestClose={() => {
-          setShowFoodPicker(false);
-          setSearch("");
-          setEditingItemKey(null);
-        }}
+        onRequestClose={() => setSelectedPrep(null)}
       >
-        <View style={style.modalBackdrop}>
-          <View style={[style.modalCard, { maxHeight: "78%" }]}>
-            <View style={style.modalHeader}>
-              <Text style={style.modalTitle}>Find Food</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setShowFoodPicker(false);
-                  setSearch("");
-                  setEditingItemKey(null);
+        <TouchableOpacity
+          style={[style.modalBackdrop, { justifyContent: "flex-end" }]}
+          activeOpacity={1}
+          onPress={() => setSelectedPrep(null)}
+        >
+          <View style={{ width: "100%" }}>
+            {selectedPrep && (
+              <PrepDetailSheet
+                prep={selectedPrep}
+                index={selectedIndex}
+                onClose={() => setSelectedPrep(null)}
+                onEdit={() => openEdit(selectedPrep)}
+                onDelete={() => confirmDelete(selectedPrep)}
+                onLog={() => {
+                  setShowLogModal(true);
+                  setLogMealType("LUNCH");
+                  setSelectedDate(formatDateForApi(new Date()));
                 }}
-              >
-                <MaterialIcons name="close" size={22} color={theme.textBlack} />
-              </TouchableOpacity>
-            </View>
-            <TextInput
-              style={style.input}
-              placeholder="Chicken rice, banana, egg..."
-              placeholderTextColor={theme.textLight}
-              value={search}
-              onChangeText={setSearch}
-              autoFocus
-            />
-            <ScrollView contentContainerStyle={{ gap: 8 }}>
-              {foodSearchQuery.isFetching ? (
-                <View style={style.loadingState}>
-                  <ActivityIndicator color={theme.primary} />
-                  <Text style={style.loadingText}>Searching foods...</Text>
-                </View>
-              ) : search.trim().length < 2 ? (
-                <Text style={style.emptyText}>
-                  Type at least 2 characters to search.
-                </Text>
-              ) : foodSearchQuery.data?.length ? (
-                foodSearchQuery.data.map((food) => (
-                  <TouchableOpacity
-                    key={food.food_id}
-                    style={style.listCard}
-                    activeOpacity={0.82}
-                    onPress={() => foodDetailMutation.mutate(food)}
-                    disabled={foodDetailMutation.isPending}
-                  >
-                    <View style={style.exerciseHeader}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={style.listTitle}>{food.food_name}</Text>
-                        <Text style={style.listMeta}>
-                          {food.brand_name ?? food.food_type ?? "-"}
-                        </Text>
-                        {!!food.food_description && (
-                          <Text style={style.listSubtle}>
-                            {food.food_description}
-                          </Text>
-                        )}
-                      </View>
-                      {foodDetailMutation.isPending ? (
-                        <ActivityIndicator size="small" color={theme.primary} />
-                      ) : (
-                        <MaterialIcons
-                          name="add-circle-outline"
-                          size={22}
-                          color={theme.primary}
-                        />
-                      )}
-                    </View>
-                  </TouchableOpacity>
-                ))
-              ) : (
-                <Text style={style.emptyText}>
-                  No foods found. Try another term.
-                </Text>
-              )}
-            </ScrollView>
+                theme={theme}
+                style={style}
+              />
+            )}
           </View>
-        </View>
+        </TouchableOpacity>
       </Modal>
 
-      {/* Log modal */}
       <Modal
-        visible={!!logTargetPrep}
+        visible={showLogModal}
         transparent
         animationType="slide"
-        onRequestClose={() => setLogTargetPrep(null)}
+        onRequestClose={() => setShowLogModal(false)}
       >
         <View style={style.modalBackdrop}>
           <View style={style.modalCard}>
             <View style={style.modalHeader}>
               <Text style={style.modalTitle}>Log to Diary</Text>
-              <TouchableOpacity onPress={() => setLogTargetPrep(null)}>
+              <TouchableOpacity onPress={() => setShowLogModal(false)}>
                 <MaterialIcons name="close" size={22} color={theme.textBlack} />
               </TouchableOpacity>
             </View>
-
-            {/* Prep summary */}
-            <View style={{ marginBottom: 14 }}>
-              <Text style={style.exerciseName}>{logTargetPrep?.name}</Text>
-              <View
-                style={{
-                  flexDirection: "row",
-                  gap: 5,
-                  marginTop: 6,
-                  flexWrap: "wrap",
-                }}
-              >
-                <MacroPill
-                  label=""
-                  value={logTargetPrep?.total_calories}
-                  unit=" kcal"
-                  bg="#ffbc49"
-                  color="#361e02"
-                />
-                {/* Protein — blue */}
-                <MacroPill
-                  label="P"
-                  value={logTargetPrep?.total_protein}
-                  unit="g"
-                  bg="#49a3f7"
-                  color="#052546"
-                />
-                {/* Carbs — green */}
-                <MacroPill
-                  label="C"
-                  value={logTargetPrep?.total_carbohydrate}
-                  unit="g"
-                  bg={theme.income}
-                  color="#1b3e02"
-                />
-                {/* Fat — coral */}
-                <MacroPill
-                  label="F"
-                  value={logTargetPrep?.total_fat}
-                  unit="g"
-                  bg={theme.expense}
-                  color="#541702"
-                />
-              </View>
-            </View>
-
-            {/* Meal type picker */}
             <Text
               style={[style.listMeta, { marginBottom: 8, fontWeight: "700" }]}
             >
@@ -992,14 +930,13 @@ export function MealPrepSection() {
                 );
               })}
             </View>
-
             <View style={{ flexDirection: "row", gap: 8, marginTop: 16 }}>
               <TouchableOpacity
                 style={[
                   style.filterChip,
                   { flex: 1, justifyContent: "center" },
                 ]}
-                onPress={() => setLogTargetPrep(null)}
+                onPress={() => setShowLogModal(false)}
               >
                 <Text style={style.filterChipText}>Cancel</Text>
               </TouchableOpacity>
@@ -1018,6 +955,26 @@ export function MealPrepSection() {
           </View>
         </View>
       </Modal>
+
+      <FoodSearchModal
+        visible={showFoodPicker}
+        onClose={() => setShowFoodPicker(false)}
+        onFoodSelected={(food: SelectedFoodResult) => {
+          const newItem: DraftItem = {
+            key: Date.now().toString(),
+            food_id: food.food_id,
+            food_name: food.food_name,
+            serving_id: food.serving_id,
+            serving_description: food.serving_description,
+            gramation: food.metric_serving_amount,
+            calories: food.calories,
+            protein: food.protein,
+            fat: food.fat,
+            carbohydrate: food.carbohydrate,
+          };
+          setDraftItems((prev) => [...prev, newItem]);
+        }}
+      />
     </>
   );
 }

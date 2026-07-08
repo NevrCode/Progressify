@@ -43,7 +43,7 @@ export function PatchNotesPopup({
                   { color: theme.primary, fontWeight: "700", marginBottom: 2 },
                 ]}
               >
-                What's New — v{patch.version}
+                What&apos;s New — v{patch.version}
               </Text>
               <Text style={style.modalTitle}>{patch.title}</Text>
             </View>

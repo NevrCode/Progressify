@@ -22,7 +22,7 @@ export const SectionLabel: React.FC<SectionLabelProps> = ({
           letterSpacing: 0.8,
           textTransform: "uppercase",
           color: theme.textLight,
-          marginTop: 20,
+          marginTop: 8,
           marginBottom: 8,
           marginHorizontal: 4,
         },

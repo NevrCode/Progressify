@@ -1,10 +1,11 @@
 import { gymStyles } from "@/assets/styles/gym.style";
+import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
+import { SyncStatusBadge } from "@/components/base/SyncStatusBadge";
+import { MuscleHeatmap } from "@/components/gym/MuscleHeatmap";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useActiveSession } from "@/hooks/useActiveSession";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
-import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
-import { MuscleHeatmap } from "@/components/gym/MuscleHeatmap";
 
 import {
   createExerciseProgression,
@@ -19,12 +20,12 @@ import {
 } from "@/services/gymService";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { LinearGradient } from "expo-linear-gradient";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -33,7 +34,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import { LineChart } from "react-native-gifted-charts";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -291,6 +292,24 @@ export default function GymProgression() {
     number | null
   >(null);
   const [activeSplit, setActiveSplit] = useState<SplitFilter>("ALL");
+  const splitTranslateX = useRef(new Animated.Value(0)).current;
+  const [switcherWidth, setSwitcherWidth] = useState(0);
+
+  useEffect(() => {
+    const toVal =
+      activeSplit === "ALL"
+        ? 0
+        : activeSplit === "PUSH"
+          ? 1
+          : activeSplit === "PULL"
+            ? 2
+            : 3;
+    Animated.timing(splitTranslateX, {
+      toValue: toVal,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  }, [activeSplit]);
   const [activeWorkoutDrafts, setActiveWorkoutDrafts] = useState<
     Record<number, ActiveWorkoutDraft>
   >({});
@@ -897,155 +916,144 @@ export default function GymProgression() {
               Progression
             </Text>
           </View>
-          <View
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 14,
-              backgroundColor: theme.primary + "15",
-              borderWidth: 1.5,
-              borderColor: theme.primary + "30",
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            <MaterialCommunityIcons
-              name="dumbbell"
-              size={24}
-              color={theme.primary}
-            />
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <SyncStatusBadge />
+            <View
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 14,
+                backgroundColor: theme.primary + "15",
+                borderWidth: 1.5,
+                borderColor: theme.primary + "30",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <MaterialCommunityIcons
+                name="dumbbell"
+                size={24}
+                color={theme.primary}
+              />
+            </View>
           </View>
         </View>
 
-        {/* ── Progression Overview Card ── */}
-        <ShadowGlowCard>
-          <View style={[styles.sectionHeader, { marginBottom: 14 }]}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <MaterialCommunityIcons
-                name="chart-timeline-variant"
-                size={18}
-                color={theme.primary}
-              />
-              <Text style={styles.sectionTitle}>Progression Overview</Text>
-            </View>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            backgroundColor: theme.primary + "06",
+            borderRadius: 14,
+            padding: 14,
+            borderWidth: 1.5,
+            borderColor: theme.primary + "20",
+          }}
+        >
+          <View style={{ flex: 1, alignItems: "center" }}>
+            <Text
+              style={{
+                fontSize: 10,
+                fontWeight: "700",
+                fontFamily: "PlusJakartaSans_700Bold",
+                color: theme.textLight,
+                textTransform: "uppercase",
+                marginBottom: 4,
+              }}
+            >
+              Exercises
+            </Text>
+            <Text
+              style={{
+                fontSize: 16,
+                fontWeight: "900",
+                fontFamily: "PlusJakartaSans_800ExtraBold",
+                color: theme.textBlack,
+              }}
+            >
+              {exerciseProgressions.length}
+            </Text>
           </View>
-
           <View
             style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              backgroundColor: theme.primary + "06",
-              borderRadius: 14,
-              padding: 14,
-              borderWidth: 1.5,
-              borderColor: theme.primary + "20",
+              width: 1,
+              backgroundColor: theme.border + "50",
             }}
-          >
-            <View style={{ flex: 1, alignItems: "center" }}>
-              <Text
-                style={{
-                  fontSize: 10,
-                  fontWeight: "700",
-                  fontFamily: "PlusJakartaSans_700Bold",
-                  color: theme.textLight,
-                  textTransform: "uppercase",
-                  marginBottom: 4,
-                }}
-              >
-                Exercises
-              </Text>
-              <Text
-                style={{
-                  fontSize: 16,
-                  fontWeight: "900",
-                  fontFamily: "PlusJakartaSans_800ExtraBold",
-                  color: theme.textBlack,
-                }}
-              >
-                {exerciseProgressions.length}
-              </Text>
-            </View>
-            <View
+          />
+          <View style={{ flex: 1, alignItems: "center" }}>
+            <Text
               style={{
-                width: 1,
-                backgroundColor: theme.border + "50",
+                fontSize: 10,
+                fontWeight: "700",
+                fontFamily: "PlusJakartaSans_700Bold",
+                color: theme.textLight,
+                textTransform: "uppercase",
+                marginBottom: 4,
               }}
-            />
-            <View style={{ flex: 1, alignItems: "center" }}>
+            >
+              Best 1RM
+            </Text>
+            <Text
+              style={{
+                fontSize: 16,
+                fontWeight: "900",
+                fontFamily: "PlusJakartaSans_800ExtraBold",
+                color: theme.textBlack,
+              }}
+              numberOfLines={1}
+            >
+              {best1RM > 0 ? `${best1RM.toFixed(0)} kg` : "-"}
+            </Text>
+            {best1RM > 0 && bestMuscleName ? (
               <Text
                 style={{
-                  fontSize: 10,
-                  fontWeight: "700",
-                  fontFamily: "PlusJakartaSans_700Bold",
-                  color: theme.textLight,
-                  textTransform: "uppercase",
-                  marginBottom: 4,
-                }}
-              >
-                Best 1RM
-              </Text>
-              <Text
-                style={{
-                  fontSize: 16,
-                  fontWeight: "900",
+                  color: theme.primary,
+                  fontSize: 8,
+                  fontWeight: "800",
                   fontFamily: "PlusJakartaSans_800ExtraBold",
-                  color: theme.textBlack,
+                  marginTop: 2,
                 }}
                 numberOfLines={1}
               >
-                {best1RM > 0 ? `${best1RM.toFixed(0)} kg` : "-"}
+                {bestMuscleName}
               </Text>
-              {best1RM > 0 && bestMuscleName ? (
-                <Text
-                  style={{
-                    color: theme.primary,
-                    fontSize: 8,
-                    fontWeight: "800",
-                    fontFamily: "PlusJakartaSans_800ExtraBold",
-                    marginTop: 2,
-                  }}
-                  numberOfLines={1}
-                >
-                  {bestMuscleName}
-                </Text>
-              ) : null}
-            </View>
-            <View
-              style={{
-                width: 1,
-                backgroundColor: theme.border + "50",
-              }}
-            />
-            <View style={{ flex: 1, alignItems: "center" }}>
-              <Text
-                style={{
-                  fontSize: 10,
-                  fontWeight: "700",
-                  fontFamily: "PlusJakartaSans_700Bold",
-                  color: theme.textLight,
-                  textTransform: "uppercase",
-                  marginBottom: 4,
-                }}
-              >
-                Volume
-              </Text>
-              <Text
-                style={{
-                  fontSize: 16,
-                  fontWeight: "900",
-                  fontFamily: "PlusJakartaSans_800ExtraBold",
-                  color: theme.textBlack,
-                }}
-              >
-                {totalVolume > 0
-                  ? totalVolume >= 1000
-                    ? `${(totalVolume / 1000).toFixed(1)}k kg`
-                    : `${totalVolume.toFixed(0)} kg`
-                  : "-"}
-              </Text>
-            </View>
+            ) : null}
           </View>
-        </ShadowGlowCard>
+          <View
+            style={{
+              width: 1,
+              backgroundColor: theme.border + "50",
+            }}
+          />
+          <View style={{ flex: 1, alignItems: "center" }}>
+            <Text
+              style={{
+                fontSize: 10,
+                fontWeight: "700",
+                fontFamily: "PlusJakartaSans_700Bold",
+                color: theme.textLight,
+                textTransform: "uppercase",
+                marginBottom: 4,
+              }}
+            >
+              Volume
+            </Text>
+            <Text
+              style={{
+                fontSize: 16,
+                fontWeight: "900",
+                fontFamily: "PlusJakartaSans_800ExtraBold",
+                color: theme.textBlack,
+              }}
+            >
+              {totalVolume > 0
+                ? totalVolume >= 1000
+                  ? `${(totalVolume / 1000).toFixed(1)}k `
+                  : `${totalVolume.toFixed(0)} `
+                : "-"}
+            </Text>
+          </View>
+        </View>
 
         {/* ── Start Workout launcher card ── */}
         <TouchableOpacity
@@ -1057,7 +1065,7 @@ export default function GymProgression() {
             style={{
               flexDirection: "row",
               alignItems: "center",
-              backgroundColor: theme.card,
+              backgroundColor: theme.card + "30",
               borderRadius: 16,
               padding: 16,
               borderWidth: 1.5,
@@ -1127,7 +1135,7 @@ export default function GymProgression() {
               gap: 10,
               borderWidth: 1.5,
               borderColor: theme.primary + "40",
-              shadowColor: theme.primary,
+              // shadowColor: theme.primary,
               shadowOffset: { width: 0, height: 4 },
               shadowOpacity: 0.1,
               shadowRadius: 6,
@@ -1142,7 +1150,6 @@ export default function GymProgression() {
                 width: 8,
                 height: 8,
                 borderRadius: 4,
-                backgroundColor: theme.primary,
                 marginRight: 2,
               }}
             />
@@ -1183,7 +1190,7 @@ export default function GymProgression() {
         {/* ── Search Input Bar ── */}
         <View
           style={{
-            backgroundColor: theme.card,
+            backgroundColor: theme.background,
             width: "100%",
             borderWidth: 1.5,
             borderColor: theme.border,
@@ -1191,7 +1198,7 @@ export default function GymProgression() {
             alignItems: "center",
             paddingHorizontal: 14,
             paddingVertical: 4,
-            borderRadius: 16,
+            borderRadius: 24,
             marginBottom: 12,
             shadowColor: theme.shadow,
             shadowOffset: { width: 0, height: 4 },
@@ -1215,7 +1222,7 @@ export default function GymProgression() {
               paddingVertical: 10,
             }}
             placeholder="Search exercise..."
-            placeholderTextColor={theme.textLight}
+            placeholderTextColor={theme.textBlack + "80"}
             value={search}
             onChangeText={setSearch}
           />
@@ -1228,12 +1235,47 @@ export default function GymProgression() {
 
         {/* ── Split Pill Switcher ── */}
         <View
+          onLayout={(e) => setSwitcherWidth(e.nativeEvent.layout.width)}
           style={{
             flexDirection: "row",
-            gap: 8,
+            backgroundColor: theme.background,
+            borderRadius: 24,
+            padding: 4,
+            borderWidth: 1.5,
+            borderColor: theme.border,
             marginBottom: 16,
+            position: "relative",
           }}
         >
+          {switcherWidth > 0 && (
+            <Animated.View
+              style={{
+                position: "absolute",
+                top: 4,
+                bottom: 4,
+                left: 4,
+                width: (switcherWidth - 8) / 4,
+                backgroundColor: theme.primary + "12",
+                borderWidth: 1.5,
+                borderColor: theme.primary + "30",
+                borderRadius: 20,
+                transform: [
+                  {
+                    translateX: splitTranslateX.interpolate({
+                      inputRange: [0, 1, 2, 3],
+                      outputRange: [
+                        0,
+                        (switcherWidth - 8) * 0.25,
+                        (switcherWidth - 8) * 0.5,
+                        (switcherWidth - 8) * 0.75,
+                      ],
+                    }),
+                  },
+                ],
+              }}
+            />
+          )}
+
           {(["ALL", ...splitOptions] as SplitFilter[]).map((split) => {
             const active = split === activeSplit;
             return (
@@ -1244,12 +1286,8 @@ export default function GymProgression() {
                   flexDirection: "row",
                   justifyContent: "center",
                   alignItems: "center",
-                  paddingVertical: 8,
-                  borderRadius: 16,
-                  backgroundColor:
-                    active ? theme.primary + "15" : "transparent",
-                  borderWidth: 1.5,
-                  borderColor: active ? theme.primary + "30" : "transparent",
+                  paddingVertical: 10,
+                  borderRadius: 20,
                 }}
                 activeOpacity={0.8}
                 onPress={() => setActiveSplit(split)}
@@ -1258,6 +1296,7 @@ export default function GymProgression() {
                   style={{
                     fontSize: 12,
                     fontWeight: "800",
+                    fontFamily: "PlusJakartaSans_800ExtraBold",
                     color: active ? theme.primary : theme.textLight,
                   }}
                 >
@@ -1297,7 +1336,14 @@ export default function GymProgression() {
             const trend = get1RMTrend(sessionProgression);
 
             return (
-              <ShadowGlowCard key={exercise.id}>
+              <ShadowGlowCard
+                key={exercise.id}
+                style={{
+                  backgroundColor: theme.primary + "06",
+                  borderColor: theme.primary + "20",
+                  borderWidth: 1.5,
+                }}
+              >
                 <View style={styles.exerciseHeader}>
                   <TouchableOpacity
                     style={{
@@ -1328,18 +1374,16 @@ export default function GymProgression() {
                         {trend && (
                           <View
                             style={{
-                              backgroundColor:
-                                trend.isPositive
-                                  ? theme.income + "15"
-                                  : theme.expense + "15",
+                              backgroundColor: trend.isPositive
+                                ? theme.income + "15"
+                                : theme.expense + "15",
                               borderRadius: 8,
                               paddingHorizontal: 6,
                               paddingVertical: 2,
                               borderWidth: 1,
-                              borderColor:
-                                trend.isPositive
-                                  ? theme.income + "30"
-                                  : theme.expense + "30",
+                              borderColor: trend.isPositive
+                                ? theme.income + "30"
+                                : theme.expense + "30",
                             }}
                           >
                             <Text
@@ -1520,410 +1564,196 @@ export default function GymProgression() {
                 {expandedExerciseId === exercise.id && (
                   <>
                     <View style={styles.subsectionHeader}>
-                  <View>
-                    <Text style={styles.subsectionTitle}>
-                      Session progression
-                    </Text>
-                    <Text style={styles.sectionMeta}>
-                      One point per recorded workout session
-                    </Text>
-                  </View>
-                </View>
-
-                {hasSessionHistory ? (
-                  <>
-                    <View style={[styles.chartBlock, {
-                      shadowColor: theme.shadow,
-                      shadowOffset: { width: 0, height: 3 },
-                      shadowOpacity: 0.04,
-                      shadowRadius: 6,
-                      elevation: 1,
-                    }]}>
-                      <LineChart
-                        areaChart
-                        curved
-                        isAnimated
-                        data={[...sessionProgression].map((point) => ({
-                          value: Number(point.estimated1RM.toFixed(1)),
-                          label: getDayMonth(point.sessionDate),
-                          dataPointText: `${point.estimated1RM.toFixed(1)}`,
-                        }))}
-                        height={220}
-                        spacing={56}
-                        initialSpacing={18}
-                        endSpacing={18}
-                        thickness={4}
-                        color={theme.primary}
-                        startFillColor={theme.primary}
-                        endFillColor={theme.primary}
-                        startOpacity={0.35}
-                        endOpacity={0.02}
-                        hideRules={false}
-                        rulesColor={`${theme.border}55`}
-                        rulesType="dashed"
-                        yAxisColor="transparent"
-                        xAxisColor={`${theme.border}88`}
-                        hideYAxisText={false}
-                        yAxisTextStyle={{
-                          color: theme.textLight,
-                          fontSize: 11,
-                        }}
-                        xAxisLabelTextStyle={{
-                          color: theme.textLight,
-                          fontSize: 11,
-                          marginTop: 6,
-                        }}
-                        noOfSections={4}
-                        maxValue={
-                          Math.max(
-                            ...sessionProgression.map((p) => p.estimated1RM),
-                          ) + 5
-                        }
-                        dataPointsColor={theme.primary}
-                        dataPointsRadius={6}
-                        textColor={theme.text}
-                        textFontSize={11}
-                        textShiftY={-14}
-                        textShiftX={-10}
-                        focusedDataPointColor={theme.white}
-                        focusedDataPointRadius={8}
-                        showVerticalLines
-                        verticalLinesColor={`${theme.border}33`}
-                        pointerConfig={{
-                          pointerStripHeight: 160,
-                          pointerStripColor: `${theme.primary}66`,
-                          pointerStripWidth: 2,
-                          pointerColor: theme.primary,
-                          radius: 7,
-                          activatePointersOnLongPress: true,
-                          autoAdjustPointerLabelPosition: true,
-                          pointerLabelComponent: (items: any) => {
-                            const item = items[0];
-                            return (
-                              <View
-                                style={{
-                                  backgroundColor: theme.card,
-                                  paddingHorizontal: 12,
-                                  paddingVertical: 8,
-                                  borderRadius: 12,
-                                  borderWidth: 1,
-                                  borderColor: theme.border,
-                                }}
-                              >
-                                <Text
-                                  style={{
-                                    color: theme.text,
-                                    fontWeight: "700",
-                                  }}
-                                >
-                                  {item.value}
-                                </Text>
-                              </View>
-                            );
-                          },
-                        }}
-                      />
-                    </View>
-                    <View style={styles.subsectionHeader}>
-                      <Text style={styles.subsectionTitle}>
-                        Session Detail
-                      </Text>
-                      <TouchableOpacity
-                        style={styles.inlineAction}
-                        onPress={() => {
-                          setExpandedTableExerciseId(
-                            expandedTableExerciseId === exercise.id
-                              ? null
-                              : exercise.id,
-                          );
-                        }}
-                      >
-                        <MaterialIcons
-                          name={
-                            expandedTableExerciseId === exercise.id
-                              ? "arrow-drop-up"
-                              : "arrow-drop-down"
-                          }
-                          size={16}
-                          color={theme.primary}
-                        />
-                        <Text style={styles.inlineActionText}>
-                          {expandedTableExerciseId === exercise.id
-                            ? "Close Table"
-                            : "Open Table"}
+                      <View>
+                        <Text style={styles.subsectionTitle}>
+                          Session progression
                         </Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    {expandedTableExerciseId === exercise.id && (
-                      <View style={styles.sessionSummaryList}>
-                        {sessionProgression.length ? (
-                          <View style={styles.setTable}>
-                            <View style={styles.setTableHeader}>
-                              <Text style={styles.setHeaderText}>date</Text>
-                              <Text style={styles.setHeaderText}>sets</Text>
-                              <Text style={styles.setHeaderText}>1RM</Text>
-                              <Text style={styles.setHeaderText}>Volume</Text>
-                            </View>
-                            {sessionProgression.map((set) => (
-                              <View key={set.sessionDate} style={styles.setRow}>
-                                <Text style={styles.setValue}>
-                                  {getDayMonth(set.sessionDate)}
-                                </Text>
-                                <Text style={styles.setValue}>
-                                  {set.totalSets}
-                                </Text>
-                                <Text style={styles.setValue}>
-                                  {set.estimated1RM.toFixed(1)}kg
-                                </Text>
-                                <Text style={styles.setValue}>
-                                  {set.totalVolume}
-                                </Text>
-                              </View>
-                            ))}
-                          </View>
-                        ) : (
-                          <View style={styles.subEmptyCard}>
-                            <Text style={styles.subEmptyText}>
-                              Add set rows to capture changing weight and reps
-                              inside the latest workout. Historical graphing
-                              should come from session records, not from this
-                              flat set list alone.
-                            </Text>
-                          </View>
-                        )}
+                        <Text style={styles.sectionMeta}>
+                          One point per recorded workout session
+                        </Text>
                       </View>
-                    )}
-                  </>
-                ) : (
-                  <View style={styles.subEmptyCard}>
-                    <Text style={styles.subEmptyText}>
-                      Record exercise sessions with sets to see your progression
-                      graph over time.
-                    </Text>
-                  </View>
-                )}
-
-                <View style={styles.subsectionHeader}>
-                  <Text style={styles.subsectionTitle}>
-                    Latest workout session
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.inlineAction}
-                    onPress={() => manageWorkoutSession(exercise)}
-                  >
-                    <MaterialIcons
-                      name="edit"
-                      size={16}
-                      color={theme.primary}
-                    />
-
-                    <Text style={styles.inlineActionText}>Manage</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {latestSessionSets.length ? (
-                  <View style={styles.setTable}>
-                    <View style={styles.setTableHeader}>
-                      <Text style={styles.setHeaderText}>Date</Text>
-                      <Text style={styles.setHeaderText}>Set</Text>
-                      <Text style={styles.setHeaderText}>Weight</Text>
-                      <Text style={styles.setHeaderText}>Reps</Text>
-                      <Text style={styles.setHeaderText}>RIR</Text>
                     </View>
-                    {latestSessionSets.map((set) => (
-                      <View key={set.id} style={styles.setRow}>
-                        <Text style={styles.setValue}>
-                          {getDayMonth(getSessionDate(latestSession))}
-                        </Text>
-                        <Text style={styles.setValue}>#{set.set_number}</Text>
-                        <Text style={styles.setValue}>{set.weight}kg</Text>
-                        <Text style={styles.setValue}>{set.reps}</Text>
-                        <Text style={styles.setValue}>{set.rir ?? 0}</Text>
-                      </View>
-                    ))}
-                  </View>
-                ) : (
-                  <View style={styles.subEmptyCard}>
-                    <Text style={styles.subEmptyText}>
-                      Add set rows to capture changing weight and reps inside
-                      the latest workout. Historical graphing should come from
-                      session records, not from this flat set list alone.
-                    </Text>
-                  </View>
-                )}
 
-                {/* <View style={styles.subsectionHeader}>
-                    <Text style={styles.subsectionTitle}>Current workout</Text>
-
-                    {!activeDraft ? (
-                      <TouchableOpacity
-                        style={styles.inlineAction}
-                        onPress={() => startWorkout(exercise)}
-                      >
-                        <MaterialIcons
-                          name="play-arrow"
-                          size={16}
-                          color={theme.primary}
-                        />
-
-                        <Text style={styles.inlineActionText}>
-                          Start workout
-                        </Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        style={styles.inlineAction}
-                        onPress={() => addDraftSet(exercise.id)}
-                        disabled={finishingExerciseId === exercise.id}
-                      >
-                        <MaterialIcons
-                          name="add"
-                          size={16}
-                          color={
-                            finishingExerciseId === exercise.id
-                              ? theme.textLight
-                              : theme.primary
-                          }
-                        />
-
-                        <Text
+                    {hasSessionHistory ? (
+                      <>
+                        <View
                           style={[
-                            styles.inlineActionText,
+                            styles.chartBlock,
                             {
-                              color:
-                                finishingExerciseId === exercise.id
-                                  ? theme.textLight
-                                  : theme.primary,
+                              shadowColor: theme.shadow,
+                              shadowOffset: { width: 0, height: 3 },
+                              shadowOpacity: 0.04,
+                              shadowRadius: 6,
+                              elevation: 1,
                             },
                           ]}
                         >
-                          Add set
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                  {activeDraft ? (
-                    <View style={styles.setTable}>
-                      <View style={styles.setTableHeader}>
-                        <Text style={styles.setHeaderText}>Set</Text>
-
-                        <Text style={styles.setHeaderText}>Weight</Text>
-
-                        <Text style={styles.setHeaderText}>Reps</Text>
-
-                        <Text style={styles.setHeaderText}>RIR</Text>
-
-                        <Text style={styles.setHeaderText}>Action</Text>
-                      </View>
-
-                      {currentWorkoutSets.map((set) => (
-                        <View key={set.localId} style={styles.setRow}>
-                          <Text style={styles.setValue}>#{set.set_number}</Text>
-
-                          <TextInput
-                            style={styles.setValue}
-                            keyboardType="numeric"
-                            value={String(set.weight)}
-                            onChangeText={(value) =>
-                              updateDraftSet(
-                                exercise.id,
-                                set.localId,
-                                "weight",
-                                Number(value),
-                              )
+                          <LineChart
+                            areaChart
+                            curved
+                            isAnimated
+                            data={[...sessionProgression].map((point) => ({
+                              value: Number(point.estimated1RM.toFixed(1)),
+                              label: getDayMonth(point.sessionDate),
+                              dataPointText: `${point.estimated1RM.toFixed(1)}`,
+                            }))}
+                            height={220}
+                            spacing={56}
+                            initialSpacing={18}
+                            endSpacing={18}
+                            thickness={4}
+                            color={theme.primary}
+                            startFillColor={theme.primary}
+                            endFillColor={theme.primary}
+                            startOpacity={0.35}
+                            endOpacity={0.02}
+                            hideRules={false}
+                            rulesColor={`${theme.border}55`}
+                            rulesType="dashed"
+                            yAxisColor="transparent"
+                            xAxisColor={`${theme.border}88`}
+                            hideYAxisText={false}
+                            yAxisTextStyle={{
+                              color: theme.textLight,
+                              fontSize: 11,
+                            }}
+                            xAxisLabelTextStyle={{
+                              color: theme.textLight,
+                              fontSize: 11,
+                              marginTop: 6,
+                            }}
+                            noOfSections={4}
+                            maxValue={
+                              Math.max(
+                                ...sessionProgression.map(
+                                  (p) => p.estimated1RM,
+                                ),
+                              ) + 5
                             }
+                            dataPointsColor={theme.primary}
+                            dataPointsRadius={6}
+                            textColor={theme.text}
+                            textFontSize={11}
+                            textShiftY={-14}
+                            textShiftX={-10}
+                            focusedDataPointColor={theme.white}
+                            focusedDataPointRadius={8}
+                            showVerticalLines
+                            verticalLinesColor={`${theme.border}33`}
+                            pointerConfig={{
+                              pointerStripHeight: 160,
+                              pointerStripColor: `${theme.primary}66`,
+                              pointerStripWidth: 2,
+                              pointerColor: theme.primary,
+                              radius: 7,
+                              activatePointersOnLongPress: true,
+                              autoAdjustPointerLabelPosition: true,
+                              pointerLabelComponent: (items: any) => {
+                                const item = items[0];
+                                return (
+                                  <View
+                                    style={{
+                                      backgroundColor: theme.card,
+                                      paddingHorizontal: 12,
+                                      paddingVertical: 8,
+                                      borderRadius: 12,
+                                      borderWidth: 1,
+                                      borderColor: theme.border,
+                                    }}
+                                  >
+                                    <Text
+                                      style={{
+                                        color: theme.text,
+                                        fontWeight: "700",
+                                      }}
+                                    >
+                                      {item.value}
+                                    </Text>
+                                  </View>
+                                );
+                              },
+                            }}
                           />
-
-                          <TextInput
-                            style={styles.setValue}
-                            keyboardType="numeric"
-                            value={String(set.reps)}
-                            onChangeText={(value) =>
-                              updateDraftSet(
-                                exercise.id,
-                                set.localId,
-                                "reps",
-                                Number(value),
-                              )
-                            }
-                          />
-
-                          <TextInput
-                            style={styles.setValue}
-                            keyboardType="numeric"
-                            value={String(set.rir)}
-                            onChangeText={(value) =>
-                              updateDraftSet(
-                                exercise.id,
-                                set.localId,
-                                "rir",
-                                Number(value),
-                              )
-                            }
-                          />
-                          <TouchableOpacity
-                            onPress={() =>
-                              deleteDraftSet(exercise.id, set.localId)
-                            }
-                            disabled={deletingSetId === set.localId}
-                          >
-                            {deletingSetId === set.localId ? (
-                              <ActivityIndicator
-                                size="small"
-                                color={theme.expense}
-                              />
-                            ) : (
-                              <MaterialIcons
-                                name="delete"
-                                size={16}
-                                color={theme.expense}
-                              />
-                            )}
-                          </TouchableOpacity>
                         </View>
-                      ))}
+                      </>
+                    ) : (
+                      <View style={styles.subEmptyCard}>
+                        <Text style={styles.subEmptyText}>
+                          Record exercise sessions with sets to see your
+                          progression graph over time.
+                        </Text>
+                      </View>
+                    )}
 
+                    <View
+                      style={[
+                        styles.subsectionHeader,
+                        { marginTop: 16, marginBottom: 8 },
+                      ]}
+                    >
+                      <Text style={styles.subsectionTitle}>
+                        Latest workout session
+                      </Text>
                       <TouchableOpacity
-                        style={[
-                          styles.saveSetButton,
-                          {
-                            opacity:
-                              finishingExerciseId === exercise.id ? 0.6 : 1,
-                            alignSelf: "flex-end",
-                          },
-                        ]}
-                        onPress={() => finishWorkout(exercise)}
-                        disabled={finishingExerciseId === exercise.id}
+                        style={styles.inlineAction}
+                        onPress={() => manageWorkoutSession(exercise)}
                       >
-                        {finishingExerciseId === exercise.id ? (
-                          <ActivityIndicator size="small" color={theme.white} />
-                        ) : (
-                          <Text style={styles.saveSetButtonText}>
-                            Finish Workout
-                          </Text>
-                        )}
+                        <MaterialIcons
+                          name="edit"
+                          size={16}
+                          color={theme.primary}
+                        />
+
+                        <Text style={styles.inlineActionText}>Manage</Text>
                       </TouchableOpacity>
                     </View>
-                  ) : (
-                    <View style={styles.subEmptyCard}>
-                      <Text style={styles.subEmptyText}>
-                        Start a workout to begin tracking sets for this session.
-                      </Text>
+
+                    {latestSessionSets.length ? (
+                      <View style={[styles.setTable, { marginBottom: 12 }]}>
+                        <View style={styles.setTableHeader}>
+                          <Text style={styles.setHeaderText}>Date</Text>
+                          <Text style={styles.setHeaderText}>Set</Text>
+                          <Text style={styles.setHeaderText}>Weight</Text>
+                          <Text style={styles.setHeaderText}>Reps</Text>
+                          <Text style={styles.setHeaderText}>RIR</Text>
+                        </View>
+                        {latestSessionSets.map((set) => (
+                          <View key={set.id} style={styles.setRow}>
+                            <Text style={styles.setValue}>
+                              {getDayMonth(getSessionDate(latestSession))}
+                            </Text>
+                            <Text style={styles.setValue}>
+                              #{set.set_number}
+                            </Text>
+                            <Text style={styles.setValue}>{set.weight}kg</Text>
+                            <Text style={styles.setValue}>{set.reps}</Text>
+                            <Text style={styles.setValue}>{set.rir ?? 0}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    ) : (
+                      <View style={styles.subEmptyCard}>
+                        <Text style={styles.subEmptyText}>
+                          Add set rows to capture changing weight and reps
+                          inside the latest workout. Historical graphing should
+                          come from session records, not from this flat set list
+                          alone.
+                        </Text>
+                      </View>
+                    )}
+
+                    <View style={styles.saveAndNoteRow}>
+                      {!!exercise.notes && (
+                        <View style={styles.noteRow}>
+                          <MaterialCommunityIcons
+                            name="notebook-outline"
+                            size={18}
+                            color={theme.primary}
+                          />
+                          <Text style={styles.noteText}>{exercise.notes}</Text>
+                        </View>
+                      )}
                     </View>
-                  )} */}
-                <View style={styles.saveAndNoteRow}>
-                  {!!exercise.notes && (
-                    <View style={styles.noteRow}>
-                      <MaterialCommunityIcons
-                        name="notebook-outline"
-                        size={18}
-                        color={theme.primary}
-                      />
-                      <Text style={styles.noteText}>{exercise.notes}</Text>
-                    </View>
-                  )}
-                </View>
                   </>
                 )}
               </ShadowGlowCard>

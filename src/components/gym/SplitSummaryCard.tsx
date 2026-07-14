@@ -5,7 +5,7 @@ import {
   ExerciseSessionDTO,
 } from "@/services/gymService";
 import React, { useMemo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 interface SplitSummaryCardProps {
   exercises: ExerciseProgressionDTO[];
@@ -90,7 +90,16 @@ export const SplitSummaryCard: React.FC<SplitSummaryCardProps> = ({
   }, splits[0]);
 
   return (
-    <ShadowGlowCard style={styles.exerciseCard}>
+    <ShadowGlowCard
+      style={[
+        styles.exerciseCard,
+        {
+          backgroundColor: theme.background,
+          borderColor: theme.primary + "20",
+          borderWidth: 1.5,
+        },
+      ]}
+    >
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Split overview</Text>
       </View>
@@ -111,13 +120,15 @@ export const SplitSummaryCard: React.FC<SplitSummaryCardProps> = ({
               style={{
                 flex: 1,
                 minWidth: "30%",
-                backgroundColor: theme.card,
+                backgroundColor: theme.background,
                 borderRadius: 12,
                 borderWidth: isNext ? 1.5 : 1,
                 borderColor: isNext ? SPLIT_COLORS[split] : theme.border,
                 padding: 10,
                 shadowColor: isNext ? SPLIT_COLORS[split] : "transparent",
-                shadowOffset: isNext ? { width: 0, height: 4 } : { width: 0, height: 0 },
+                shadowOffset: isNext
+                  ? { width: 0, height: 4 }
+                  : { width: 0, height: 0 },
                 shadowOpacity: isNext ? 0.15 : 0,
                 shadowRadius: isNext ? 6 : 0,
                 elevation: isNext ? 4 : 0,

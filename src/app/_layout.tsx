@@ -3,9 +3,12 @@ import { AlertProvider } from "@/context/AlertContext";
 import { DiaryProvider } from "@/context/DairyContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { usePatchNotes } from "@/hooks/usePatchNote";
+import {
+  hasAuthSession,
+  subscribeAuthState,
+} from "@/services/authSessionService";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, usePathname, useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
 import {
   useFonts,
   PlusJakartaSans_400Regular,
@@ -40,11 +43,11 @@ export default function RootLayout() {
     const syncAuthState = async () => {
       const currentPathname = pathname;
       setAuthSyncing(true);
-      const token = await SecureStore.getItemAsync("access_token");
+      const authenticated = await hasAuthSession();
 
       if (!isMounted) return;
 
-      setIsAuthenticated(Boolean(token));
+      setIsAuthenticated(authenticated);
       setCheckedPathname(currentPathname);
       setAuthChecked(true);
       setAuthSyncing(false);
@@ -56,6 +59,8 @@ export default function RootLayout() {
       isMounted = false;
     };
   }, [pathname]);
+
+  useEffect(() => subscribeAuthState(setIsAuthenticated), []);
 
   useEffect(() => {
     if (!authChecked || authSyncing) return;

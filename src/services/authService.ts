@@ -1,4 +1,10 @@
+import {
+  AuthTokenPair,
+  clearAuthSession,
+  getRefreshToken,
+} from "@/services/authSessionService";
 import { api } from "@/utils/api";
+import { isAxiosError } from "axios";
 
 interface LoginRequest {
   email: string;
@@ -10,31 +16,47 @@ interface SignInRequest {
   password: string;
 }
 
-export const login = async ({ email, password }: LoginRequest) => {
-  try {
-    const response = await api.post("/auth/login", { email, password });
-    return response.data;
-  } catch (error: any) {
-    console.log("ERROR DATA:", error.response?.data);
-    console.log("STATUS:", error.response?.status);
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (isAxiosError(error)) {
+    return error.response?.data?.message || fallback;
+  }
+  return error instanceof Error ? error.message : fallback;
+};
 
-    throw new Error(error.response?.data?.message || "Login failed");
+export const login = async ({
+  email,
+  password,
+}: LoginRequest): Promise<AuthTokenPair> => {
+  try {
+    const response = await api.post<AuthTokenPair>("/auth/login", {
+      email,
+      password,
+    });
+    return response.data;
+  } catch (error: unknown) {
+    throw new Error(getErrorMessage(error, "Login failed"));
   }
 };
 export const signIn = async ({ name, email, password }: SignInRequest) => {
   try {
-    const role = "ROLE_ADMIN";
     const response = await api.post("/auth/register", {
       name,
       email,
       password,
-      role,
     });
     return response.data;
-  } catch (error: any) {
-    console.log("ERROR DATA:", error.response?.data);
-    console.log("STATUS:", error.response?.status);
+  } catch (error: unknown) {
+    throw new Error(getErrorMessage(error, "Register failed"));
+  }
+};
 
-    throw new Error(error.response?.data?.message || "Register failed");
+export const logout = async () => {
+  const refreshToken = await getRefreshToken();
+  try {
+    if (refreshToken) {
+      await api.post("/auth/logout", { refresh_token: refreshToken });
+    }
+  } finally {
+    await clearAuthSession();
   }
 };

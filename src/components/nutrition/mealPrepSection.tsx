@@ -1,4 +1,5 @@
 import { gymStyles } from "@/assets/styles/gym.style";
+import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
 import { ThemeType } from "@/constants/colors";
 import { useAlert } from "@/context/AlertContext";
 import { useDiaryContext } from "@/context/DairyContext";
@@ -420,6 +421,11 @@ export function MealPrepSection() {
   const style = gymStyles(theme);
   const { alert } = useAlert();
   const { selectedDate, setSelectedDate } = useDiaryContext();
+  const foodDiaryCardStyle = {
+    backgroundColor: theme.background,
+    borderColor: theme.primary + "20",
+    borderWidth: 1.5,
+  };
 
   const { data: mealPrepsPage, isLoading } = useMealPreps();
   const mealPreps = mealPrepsPage?.data ?? [];
@@ -558,10 +564,14 @@ export function MealPrepSection() {
       return alert("Name required", "Give your meal prep a name.");
     if (draftItems.length === 0)
       return alert("Add foods", "Add at least one food item.");
+
+    // Strip the client-side 'key' property to avoid backend Jackson deserialization errors
+    const cleanedItems = draftItems.map(({ key, ...item }) => item);
+
     const dto = {
       name: prepName.trim(),
       description: prepDesc.trim() || undefined,
-      items: draftItems,
+      items: cleanedItems,
     };
     if (editingPrep)
       updateMutation.mutate(
@@ -618,15 +628,7 @@ export function MealPrepSection() {
       <View style={[style.sectionHeader, { marginBottom: 8 }]}>
         <Text style={style.sectionTitle}>Meal Preps</Text>
         <TouchableOpacity
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 4,
-            backgroundColor: theme.primary + "15",
-            borderRadius: 20,
-            paddingHorizontal: 12,
-            paddingVertical: 5,
-          }}
+          style={style.inlineAction}
           onPress={formOpen ? closeForm : openCreate}
         >
           <MaterialIcons
@@ -634,16 +636,14 @@ export function MealPrepSection() {
             size={14}
             color={theme.primary}
           />
-          <Text
-            style={{ fontSize: 12, color: theme.primary, fontWeight: "600" }}
-          >
+          <Text style={style.inlineActionText}>
             {formOpen ? "Cancel" : "New Prep"}
           </Text>
         </TouchableOpacity>
       </View>
 
       {formOpen && (
-        <View style={style.exerciseCard}>
+        <ShadowGlowCard style={foodDiaryCardStyle}>
           <Text style={style.sectionTitle}>
             {editingPrep ? `Editing: ${editingPrep.name}` : "New Meal Prep"}
           </Text>
@@ -655,21 +655,23 @@ export function MealPrepSection() {
             onChangeText={setPrepName}
           />
           <TextInput
-            style={style.input}
+            style={[style.input, { marginTop: 8 }]}
             placeholder="Description (optional)"
             placeholderTextColor={theme.textLight}
             value={prepDesc}
             onChangeText={setPrepDesc}
           />
           {draftItems.length > 0 && (
-            <View style={{ gap: 8, marginTop: 4 }}>
+            <View style={{ gap: 8, marginTop: 8 }}>
               {draftItems.map((item, index) => (
                 <View
                   key={item.key}
                   style={{
                     backgroundColor: theme.background,
-                    borderRadius: 10,
-                    borderLeftWidth: 3,
+                    borderRadius: 12,
+                    borderWidth: 0.5,
+                    borderColor: theme.border ?? "#eee",
+                    borderLeftWidth: 3.5,
                     borderLeftColor:
                       ACCENT_COLORS[index % ACCENT_COLORS.length],
                     padding: 12,
@@ -763,8 +765,10 @@ export function MealPrepSection() {
                 flexWrap: "wrap",
                 marginTop: 10,
                 padding: 10,
-                backgroundColor: theme.background,
+                backgroundColor: theme.card,
                 borderRadius: 10,
+                borderWidth: 0.5,
+                borderColor: theme.border ?? "#eee",
               }}
             >
               <MacroPill
@@ -820,25 +824,23 @@ export function MealPrepSection() {
               </Text>
             )}
           </TouchableOpacity>
-        </View>
+        </ShadowGlowCard>
       )}
 
       {isLoading ? (
         <ActivityIndicator color={theme.primary} style={{ marginTop: 16 }} />
       ) : mealPreps.length === 0 && !formOpen ? (
-        <View style={style.subEmptyCard}>
+        <ShadowGlowCard style={foodDiaryCardStyle}>
           <Text style={style.subEmptyText}>
             No meal preps yet. Create one to save your go-to meals.
           </Text>
-        </View>
+        </ShadowGlowCard>
       ) : (
         !formOpen && (
-          <View
+          <ShadowGlowCard
             style={{
-              backgroundColor: theme.card,
-              borderRadius: 14,
-              borderWidth: 0.5,
-              borderColor: theme.border ?? "#eee",
+              ...foodDiaryCardStyle,
+              padding: 0,
               overflow: "hidden",
             }}
           >
@@ -854,7 +856,7 @@ export function MealPrepSection() {
                 }}
               />
             ))}
-          </View>
+          </ShadowGlowCard>
         )
       )}
 
@@ -897,58 +899,148 @@ export function MealPrepSection() {
         onRequestClose={() => setShowLogModal(false)}
       >
         <View style={style.modalBackdrop}>
-          <View style={style.modalCard}>
+          <View style={[style.modalCard, { paddingBottom: 24 }]}>
             <View style={style.modalHeader}>
-              <Text style={style.modalTitle}>Log to Diary</Text>
-              <TouchableOpacity onPress={() => setShowLogModal(false)}>
-                <MaterialIcons name="close" size={22} color={theme.textBlack} />
+              <Text
+                style={[
+                  style.modalTitle,
+                  { fontFamily: "PlusJakartaSans_800ExtraBold" },
+                ]}
+              >
+                Log to Diary
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowLogModal(false)}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 16,
+                  backgroundColor: theme.background,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderWidth: 0.5,
+                  borderColor: theme.border ?? "#eee",
+                }}
+              >
+                <MaterialIcons name="close" size={18} color={theme.textBlack} />
               </TouchableOpacity>
             </View>
             <Text
-              style={[style.listMeta, { marginBottom: 8, fontWeight: "700" }]}
+              style={{
+                fontSize: 12,
+                fontWeight: "700",
+                color: theme.textLight,
+                textTransform: "uppercase",
+                letterSpacing: 0.8,
+                marginTop: 4,
+                marginBottom: 2,
+                fontFamily: "PlusJakartaSans_500Medium",
+              }}
             >
-              Meal type
+              Select Meal Type
             </Text>
-            <View style={style.chipRow}>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
               {MEAL_OPTIONS.map((m) => {
                 const active = logMealType === m.value;
+                const mealColor =
+                  m.value === "BREAKFAST"
+                    ? "#f69f1d"
+                    : m.value === "LUNCH"
+                      ? "#0090FF"
+                      : m.value === "DINNER"
+                        ? "#7F77DD"
+                        : "#1D9E75";
                 return (
                   <TouchableOpacity
                     key={m.value}
-                    style={[style.filterChip, active && style.filterChipActive]}
+                    style={{
+                      flex: 1,
+                      minWidth: "45%",
+                      backgroundColor: active
+                        ? mealColor + "15"
+                        : theme.background,
+                      borderRadius: 12,
+                      borderWidth: 1.5,
+                      borderColor: active
+                        ? mealColor
+                        : (theme.border ?? "#eee"),
+                      paddingVertical: 16,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
                     onPress={() => setLogMealType(m.value)}
                   >
                     <Text
-                      style={[
-                        style.filterChipText,
-                        active && style.filterChipTextActive,
-                      ]}
+                      style={{
+                        fontSize: 13,
+                        fontWeight: "700",
+                        color: active ? mealColor : theme.textBlack,
+                        fontFamily: active
+                          ? "PlusJakartaSans_700Bold"
+                          : "PlusJakartaSans_500Medium",
+                      }}
                     >
-                      {m.emoji} {m.label}
+                      {m.label}
                     </Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
-            <View style={{ flexDirection: "row", gap: 8, marginTop: 16 }}>
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 18 }}>
               <TouchableOpacity
-                style={[
-                  style.filterChip,
-                  { flex: 1, justifyContent: "center" },
-                ]}
+                style={{
+                  flex: 1,
+                  backgroundColor: theme.background,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: theme.border ?? "#eee",
+                  paddingVertical: 13,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
                 onPress={() => setShowLogModal(false)}
               >
-                <Text style={style.filterChipText}>Cancel</Text>
+                <Text
+                  style={{
+                    color: theme.textLight,
+                    fontSize: 13,
+                    fontWeight: "700",
+                    fontFamily: "PlusJakartaSans_500Medium",
+                  }}
+                >
+                  Cancel
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[style.primaryButton, { flex: 2 }]}
+                style={{
+                  flex: 2,
+                  backgroundColor: theme.primary,
+                  borderRadius: 12,
+                  paddingVertical: 13,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  shadowColor: theme.primary,
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.2,
+                  shadowRadius: 8,
+                  elevation: 3,
+                }}
                 onPress={logPrep}
                 disabled={logMutation.isPending}
               >
                 {logMutation.isPending ? (
                   <ActivityIndicator color={theme.white} />
                 ) : (
-                  <Text style={style.primaryButtonText}>Log to Diary ✓</Text>
+                  <Text
+                    style={{
+                      color: theme.white ?? "#fff",
+                      fontSize: 13,
+                      fontWeight: "800",
+                      fontFamily: "PlusJakartaSans_800ExtraBold",
+                    }}
+                  >
+                    Log to Diary ✓
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -958,10 +1050,13 @@ export function MealPrepSection() {
 
       <FoodSearchModal
         visible={showFoodPicker}
-        onClose={() => setShowFoodPicker(false)}
+        onClose={() => {
+          setShowFoodPicker(false);
+          setEditingItemKey(null);
+        }}
         onFoodSelected={(food: SelectedFoodResult) => {
           const newItem: DraftItem = {
-            key: Date.now().toString(),
+            key: editingItemKey || Date.now().toString(),
             food_id: food.food_id,
             food_name: food.food_name,
             serving_id: food.serving_id,
@@ -972,7 +1067,17 @@ export function MealPrepSection() {
             fat: food.fat,
             carbohydrate: food.carbohydrate,
           };
-          setDraftItems((prev) => [...prev, newItem]);
+          if (editingItemKey) {
+            setDraftItems((prev) =>
+              prev.map((item) =>
+                item.key === editingItemKey ? newItem : item,
+              ),
+            );
+            setEditingItemKey(null);
+          } else {
+            setDraftItems((prev) => [...prev, newItem]);
+          }
+          setShowFoodPicker(false);
         }}
       />
     </>

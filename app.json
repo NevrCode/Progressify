@@ -2,7 +2,7 @@
   "expo": {
     "name": "Progressify",
     "slug": "progressify",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "progressify",
@@ -31,6 +31,14 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Progressify to access your camera",
+          "barcodeScannerEnabled": true,
+          "recordAudioAndroid": false
+        }
+      ],
       [
         "expo-splash-screen",
         {

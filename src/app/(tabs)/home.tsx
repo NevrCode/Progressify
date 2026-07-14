@@ -2,25 +2,25 @@ import { gymStyles } from "@/assets/styles/gym.style";
 import { FadeSlideIn } from "@/components/animations/fade-slide-in";
 import { SectionLabel } from "@/components/base/SectionLabel";
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
+import { SyncStatusBadge } from "@/components/base/SyncStatusBadge";
 import { SplitSummaryCard } from "@/components/gym/SplitSummaryCard";
 import { WeekStreak } from "@/components/gym/WeekStreak";
-import { useDiaryContext } from "@/context/DairyContext";
+import { MacroDonutChart } from "@/components/nutrition/macroDonutChart";
+import { WaterTracker } from "@/components/nutrition/WaterTracker";
 import { useTheme } from "@/context/ThemeContext";
-import { useGymDashboard } from "@/hooks/useGymDashboard";
 import { useActiveSession } from "@/hooks/useActiveSession";
+import { useGymDashboard } from "@/hooks/useGymDashboard";
 import {
   useNutritionGoals,
   useNutritionProfile,
   useTodayDiarySummary,
 } from "@/hooks/useNutrition";
 import { useProfile } from "@/hooks/useProfile";
-import { MacroDonutChart } from "@/components/nutrition/macroDonutChart";
 import {
   ExerciseProgressionDTO,
   ExerciseSessionDTO,
 } from "@/services/gymService";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
@@ -157,7 +157,11 @@ export default function HomeScreen() {
   const { theme } = useTheme();
   const styles = gymStyles(theme);
   const router = useRouter();
-  const { selectedDate } = useDiaryContext();
+  const homeCardStyle = {
+    backgroundColor: theme.background,
+    borderColor: theme.primary + "20",
+    borderWidth: 1.5,
+  };
 
   const {
     data: profile,
@@ -276,9 +280,9 @@ export default function HomeScreen() {
   const getGreeting = () => {
     const hours = new Date().getHours();
     const name = profileData?.name ? `, ${profileData.name}` : "";
-    if (hours < 12) return `Good morning${name} 🌅`;
-    if (hours < 17) return `Good afternoon${name} ☀️`;
-    return `Good evening${name} 🌙`;
+    if (hours < 12) return `Good morning${name}`;
+    if (hours < 17) return `Good afternoon${name}`;
+    return `Good evening${name}`;
   };
 
   return (
@@ -324,25 +328,28 @@ export default function HomeScreen() {
               Progressify
             </Text>
           </View>
-          <TouchableOpacity
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 14,
-              backgroundColor: theme.primary + "15",
-              borderWidth: 1.5,
-              borderColor: theme.primary + "30",
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-            onPress={() => router.push("/profile")}
-          >
-            <MaterialCommunityIcons
-              name="account"
-              size={24}
-              color={theme.primary}
-            />
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <SyncStatusBadge />
+            <TouchableOpacity
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 14,
+                backgroundColor: theme.primary + "15",
+                borderWidth: 1.5,
+                borderColor: theme.primary + "30",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+              onPress={() => router.push("/profile")}
+            >
+              <MaterialCommunityIcons
+                name="account"
+                size={24}
+                color={theme.primary}
+              />
+            </TouchableOpacity>
+          </View>
         </FadeSlideIn>
 
         {/* ── Quick actions ── */}
@@ -375,9 +382,20 @@ export default function HomeScreen() {
                 borderColor: theme.primary + "30",
               }}
             >
-              <MaterialCommunityIcons name="plus" size={24} color={theme.primary} />
+              <MaterialCommunityIcons
+                name="plus"
+                size={24}
+                color={theme.primary}
+              />
             </View>
-            <Text style={{ fontSize: 11, fontWeight: "700", fontFamily: "PlusJakartaSans_700Bold", color: theme.textLight }}>
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: "700",
+                fontFamily: "PlusJakartaSans_700Bold",
+                color: theme.textLight,
+              }}
+            >
               Log Food
             </Text>
           </TouchableOpacity>
@@ -401,9 +419,20 @@ export default function HomeScreen() {
                 borderColor: "#3498db30",
               }}
             >
-              <MaterialCommunityIcons name="dumbbell" size={22} color="#3498db" />
+              <MaterialCommunityIcons
+                name="dumbbell"
+                size={22}
+                color="#3498db"
+              />
             </View>
-            <Text style={{ fontSize: 11, fontWeight: "700", fontFamily: "PlusJakartaSans_700Bold", color: theme.textLight }}>
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: "700",
+                fontFamily: "PlusJakartaSans_700Bold",
+                color: theme.textLight,
+              }}
+            >
               Workout
             </Text>
           </TouchableOpacity>
@@ -429,7 +458,14 @@ export default function HomeScreen() {
             >
               <MaterialCommunityIcons name="target" size={22} color="#2ecc71" />
             </View>
-            <Text style={{ fontSize: 11, fontWeight: "700", fontFamily: "PlusJakartaSans_700Bold", color: theme.textLight }}>
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: "700",
+                fontFamily: "PlusJakartaSans_700Bold",
+                color: theme.textLight,
+              }}
+            >
               Goals
             </Text>
           </TouchableOpacity>
@@ -453,9 +489,20 @@ export default function HomeScreen() {
                 borderColor: "#e74c3c30",
               }}
             >
-              <MaterialCommunityIcons name="trending-up" size={22} color="#e74c3c" />
+              <MaterialCommunityIcons
+                name="trending-up"
+                size={22}
+                color="#e74c3c"
+              />
             </View>
-            <Text style={{ fontSize: 11, fontWeight: "700", fontFamily: "PlusJakartaSans_700Bold", color: theme.textLight }}>
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: "700",
+                fontFamily: "PlusJakartaSans_700Bold",
+                color: theme.textLight,
+              }}
+            >
               Progress
             </Text>
           </TouchableOpacity>
@@ -492,7 +539,7 @@ export default function HomeScreen() {
                 marginRight: 2,
               }}
             />
-             <Text
+            <Text
               style={{
                 flex: 1,
                 color: theme.primary,
@@ -543,10 +590,14 @@ export default function HomeScreen() {
               paddingVertical: 10,
               borderRadius: 20,
               backgroundColor:
-                activeTab === "NUTRITION" ? theme.primary + "15" : "transparent",
+                activeTab === "NUTRITION"
+                  ? theme.primary + "15"
+                  : "transparent",
               borderWidth: 1.5,
               borderColor:
-                activeTab === "NUTRITION" ? theme.primary + "30" : "transparent",
+                activeTab === "NUTRITION"
+                  ? theme.primary + "30"
+                  : "transparent",
             }}
             activeOpacity={0.8}
             onPress={() => setActiveTab("NUTRITION")}
@@ -614,7 +665,7 @@ export default function HomeScreen() {
             <SectionLabel>Today&apos;s Fuel</SectionLabel>
 
             <FadeSlideIn delay={80}>
-              <ShadowGlowCard>
+              <ShadowGlowCard style={homeCardStyle}>
                 <View style={[styles.sectionHeader, { marginBottom: 12 }]}>
                   <View
                     style={{
@@ -696,7 +747,8 @@ export default function HomeScreen() {
                         { textAlign: "center", marginBottom: 16 },
                       ]}
                     >
-                      No food logged today. Start track your calories and macros!
+                      No food logged today. Start track your calories and
+                      macros!
                     </Text>
                     <TouchableOpacity
                       style={styles.primaryButton}
@@ -710,6 +762,9 @@ export default function HomeScreen() {
                 )}
               </ShadowGlowCard>
             </FadeSlideIn>
+            <FadeSlideIn delay={120}>
+              <WaterTracker />
+            </FadeSlideIn>
 
             {profile && (
               <FadeSlideIn delay={100}>
@@ -717,7 +772,7 @@ export default function HomeScreen() {
                   activeOpacity={0.85}
                   onPress={() => router.push("/nutritionProfile")}
                 >
-                  <ShadowGlowCard>
+                  <ShadowGlowCard style={homeCardStyle}>
                     <View style={[styles.sectionHeader, { marginBottom: 14 }]}>
                       <View
                         style={{
@@ -866,11 +921,11 @@ export default function HomeScreen() {
                   style={{
                     flexDirection: "row",
                     alignItems: "center",
-                    backgroundColor: theme.card,
+                    backgroundColor: theme.primary + "06",
                     borderRadius: 16,
                     padding: 16,
                     borderWidth: 1.5,
-                    borderColor: theme.primary + "30",
+                    borderColor: theme.primary + "20",
                     shadowColor: theme.shadow,
                     shadowOffset: { width: 0, height: 4 },
                     shadowOpacity: 0.03,
@@ -926,9 +981,7 @@ export default function HomeScreen() {
             </FadeSlideIn>
 
             <FadeSlideIn delay={120}>
-              <ShadowGlowCard
-                glowColor={workoutDaysThisWeek >= 4 ? theme.income : null}
-              >
+              <ShadowGlowCard style={homeCardStyle}>
                 <View style={[styles.sectionHeader, { marginBottom: 12 }]}>
                   <View
                     style={{
@@ -947,8 +1000,9 @@ export default function HomeScreen() {
                   <View
                     style={{
                       backgroundColor:
-                        (workoutDaysThisWeek >= 4 ? theme.income : theme.primary) +
-                        "15",
+                        (workoutDaysThisWeek >= 4
+                          ? theme.income
+                          : theme.primary) + "15",
                       borderRadius: 8,
                       paddingHorizontal: 8,
                       paddingVertical: 4,
@@ -959,7 +1013,9 @@ export default function HomeScreen() {
                         fontSize: 11,
                         fontWeight: "800",
                         color:
-                          workoutDaysThisWeek >= 4 ? theme.income : theme.primary,
+                          workoutDaysThisWeek >= 4
+                            ? theme.income
+                            : theme.primary,
                       }}
                     >
                       {workoutDaysThisWeek} workout
@@ -972,7 +1028,7 @@ export default function HomeScreen() {
             </FadeSlideIn>
 
             <FadeSlideIn delay={140}>
-              <ShadowGlowCard>
+              <ShadowGlowCard style={homeCardStyle}>
                 <View style={[styles.sectionHeader, { marginBottom: 14 }]}>
                   <View
                     style={{

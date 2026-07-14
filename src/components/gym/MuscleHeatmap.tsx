@@ -18,7 +18,6 @@ export const MuscleHeatmap: React.FC<MuscleHeatmapProps> = ({ exercises }) => {
     sets: number;
   } | null>(null);
 
-  // 1. Aggregate sets per muscle group for the last 7 days
   const muscleSets = useMemo(() => {
     const counts: Record<string, number> = {
       chest: 0,
@@ -158,7 +157,16 @@ export const MuscleHeatmap: React.FC<MuscleHeatmapProps> = ({ exercises }) => {
   const intensityColors = ["#F2994A", "#27AE60", "#219653"];
 
   return (
-    <ShadowGlowCard style={styles.container}>
+    <ShadowGlowCard
+      style={[
+        styles.container,
+        {
+          backgroundColor: theme.primary + "06",
+          borderColor: theme.primary + "20",
+          borderWidth: 1.5,
+        },
+      ]}
+    >
       <View style={styles.header}>
         <Text style={styles.title}>Weekly Volume Heatmap</Text>
         <Text style={styles.subtitle}>Set count totals over last 7 days</Text>

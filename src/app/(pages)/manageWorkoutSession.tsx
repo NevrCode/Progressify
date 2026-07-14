@@ -1,4 +1,5 @@
 import { gymStyles } from "@/assets/styles/gym.style";
+import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
@@ -235,9 +236,9 @@ export default function ManageWorkoutSession() {
       return "Keep at least one set in the session.";
     }
 
-    const sets = editableSets.map((set) => ({
+    const sets = editableSets.map((set, index) => ({
       id: set.id,
-      set_number: Number(set.set_number),
+      set_number: index + 1,
       weight: Number(set.weight),
       reps: Number(set.reps),
       rir: Number(set.rir || 0),
@@ -550,116 +551,446 @@ export default function ManageWorkoutSession() {
         onRequestClose={closeEditModal}
       >
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Edit Session</Text>
-              <TouchableOpacity onPress={closeEditModal}>
-                <MaterialIcons name="close" size={22} color={theme.textLight} />
+          <ShadowGlowCard
+            style={{
+              width: "92%",
+              maxHeight: "82%",
+              padding: 16,
+              borderRadius: 24,
+              backgroundColor: theme.card,
+            }}
+          >
+            {/* Header */}
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 14,
+              }}
+            >
+              <View>
+                <Text
+                  style={{
+                    fontSize: 20,
+                    fontWeight: "900",
+                    fontFamily: "PlusJakartaSans_800ExtraBold",
+                    color: theme.textBlack,
+                    letterSpacing: -0.5,
+                  }}
+                >
+                  Edit Session
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontWeight: "700",
+                    fontFamily: "PlusJakartaSans_700Bold",
+                    color: theme.textLight,
+                    marginTop: 2,
+                  }}
+                >
+                  Adjust stats and details below
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={closeEditModal}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 16,
+                  backgroundColor: theme.primary + "12",
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
+                <MaterialIcons name="close" size={18} color={theme.primary} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={{ gap: 12 }}>
-              <TextInput
-                style={styles.input}
-                placeholder="Session date (YYYY-MM-DD)"
-                value={sessionDate}
-                onChangeText={setSessionDate}
-              />
-              <TextInput
-                style={[styles.input, styles.textarea]}
-                placeholder="Notes"
-                multiline
-                value={notes}
-                onChangeText={setNotes}
-              />
+            <ScrollView contentContainerStyle={{ gap: 12 }} showsVerticalScrollIndicator={false}>
+              {/* Date Input */}
+              <View>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontWeight: "800",
+                    fontFamily: "PlusJakartaSans_800ExtraBold",
+                    color: theme.textLight,
+                    textTransform: "uppercase",
+                    letterSpacing: 1,
+                    marginBottom: 6,
+                  }}
+                >
+                  Session Date
+                </Text>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    backgroundColor: theme.background,
+                    borderRadius: 14,
+                    borderWidth: 1.5,
+                    borderColor: theme.border,
+                    paddingHorizontal: 12,
+                  }}
+                >
+                  <MaterialCommunityIcons
+                    name="calendar-month"
+                    size={18}
+                    color={theme.primary}
+                    style={{ marginRight: 8 }}
+                  />
+                  <TextInput
+                    style={{
+                      flex: 1,
+                      color: theme.textBlack,
+                      fontSize: 14,
+                      paddingVertical: 10,
+                      fontWeight: "600",
+                    }}
+                    placeholder="YYYY-MM-DD"
+                    value={sessionDate}
+                    onChangeText={setSessionDate}
+                  />
+                </View>
+              </View>
 
-              <View style={styles.subsectionHeader}>
-                <Text style={styles.subsectionTitle}>Sets</Text>
+              {/* Notes Input */}
+              <View>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontWeight: "800",
+                    fontFamily: "PlusJakartaSans_800ExtraBold",
+                    color: theme.textLight,
+                    textTransform: "uppercase",
+                    letterSpacing: 1,
+                    marginBottom: 6,
+                  }}
+                >
+                  Notes
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    styles.textarea,
+                    {
+                      backgroundColor: theme.background,
+                      borderRadius: 14,
+                      borderWidth: 1.5,
+                      borderColor: theme.border,
+                      padding: 12,
+                      color: theme.textBlack,
+                      minHeight: 60,
+                      textAlignVertical: "top",
+                    },
+                  ]}
+                  placeholder="How did it feel?"
+                  placeholderTextColor={theme.textLight}
+                  multiline
+                  value={notes}
+                  onChangeText={setNotes}
+                />
+              </View>
+
+              {/* Sub-Header for Sets */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginTop: 8,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: "800",
+                    fontFamily: "PlusJakartaSans_800ExtraBold",
+                    color: theme.textBlack,
+                  }}
+                >
+                  Logged Sets
+                </Text>
                 <TouchableOpacity
-                  style={styles.inlineAction}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 4,
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    borderRadius: 10,
+                    backgroundColor: theme.primary + "12",
+                  }}
                   onPress={addEditableSet}
                 >
-                  <MaterialIcons name="add" size={16} color={theme.primary} />
-                  <Text style={styles.inlineActionText}>Add set</Text>
+                  <MaterialIcons name="add" size={14} color={theme.primary} />
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: "800",
+                      fontFamily: "PlusJakartaSans_800ExtraBold",
+                      color: theme.primary,
+                    }}
+                  >
+                    Add Set
+                  </Text>
                 </TouchableOpacity>
               </View>
 
-              {editableSets.map((set) => (
-                <View key={set.localId} style={styles.setTable}>
-                  <View style={styles.cardActionRow}>
-                    <Text style={styles.subsectionTitle}>
-                      Set #{set.set_number}
+              {/* Spreadsheet-like Table Grid */}
+              <View
+                style={{
+                  borderWidth: 1.5,
+                  borderColor: theme.border,
+                  borderRadius: 16,
+                  backgroundColor: theme.background,
+                  overflow: "hidden",
+                }}
+              >
+                {/* Table Header Row */}
+                <View
+                  style={{
+                    flexDirection: "row",
+                    backgroundColor: theme.card,
+                    borderBottomWidth: 1.5,
+                    borderBottomColor: theme.border,
+                    paddingVertical: 8,
+                    paddingHorizontal: 8,
+                  }}
+                >
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 10,
+                      fontWeight: "800",
+                      fontFamily: "PlusJakartaSans_800ExtraBold",
+                      color: theme.textLight,
+                      textAlign: "center",
+                    }}
+                  >
+                    SET
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 2.2,
+                      fontSize: 10,
+                      fontWeight: "800",
+                      fontFamily: "PlusJakartaSans_800ExtraBold",
+                      color: theme.textLight,
+                      textAlign: "center",
+                    }}
+                  >
+                    WEIGHT
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 1.8,
+                      fontSize: 10,
+                      fontWeight: "800",
+                      fontFamily: "PlusJakartaSans_800ExtraBold",
+                      color: theme.textLight,
+                      textAlign: "center",
+                    }}
+                  >
+                    REPS
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 1.8,
+                      fontSize: 10,
+                      fontWeight: "800",
+                      fontFamily: "PlusJakartaSans_800ExtraBold",
+                      color: theme.textLight,
+                      textAlign: "center",
+                    }}
+                  >
+                    RIR
+                  </Text>
+                  <View style={{ flex: 1 }} />
+                </View>
+
+                {/* Table Rows */}
+                {editableSets.map((set, idx) => (
+                  <View
+                    key={set.localId}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      borderBottomWidth: idx === editableSets.length - 1 ? 0 : 1,
+                      borderBottomColor: theme.border + "50",
+                      paddingVertical: 6,
+                      paddingHorizontal: 8,
+                    }}
+                  >
+                    {/* Set Number */}
+                    <Text
+                      style={{
+                        flex: 1,
+                        fontSize: 13,
+                        fontWeight: "900",
+                        fontFamily: "PlusJakartaSans_800ExtraBold",
+                        color: theme.textBlack,
+                        textAlign: "center",
+                      }}
+                    >
+                      {idx + 1}
                     </Text>
+
+                    {/* Weight Input */}
+                    <View style={{ flex: 2.2, paddingHorizontal: 4 }}>
+                      <TextInput
+                        style={{
+                          backgroundColor: theme.card,
+                          borderRadius: 8,
+                          borderWidth: 1,
+                          borderColor: theme.border,
+                          color: theme.textBlack,
+                          fontSize: 13,
+                          fontWeight: "600",
+                          paddingVertical: 6,
+                          textAlign: "center",
+                        }}
+                        keyboardType="decimal-pad"
+                        placeholder="kg"
+                        placeholderTextColor={theme.textLight}
+                        value={set.weight}
+                        onChangeText={(value) =>
+                          updateSetField(set.localId, "weight", value)
+                        }
+                      />
+                    </View>
+
+                    {/* Reps Input */}
+                    <View style={{ flex: 1.8, paddingHorizontal: 4 }}>
+                      <TextInput
+                        style={{
+                          backgroundColor: theme.card,
+                          borderRadius: 8,
+                          borderWidth: 1,
+                          borderColor: theme.border,
+                          color: theme.textBlack,
+                          fontSize: 13,
+                          fontWeight: "600",
+                          paddingVertical: 6,
+                          textAlign: "center",
+                        }}
+                        keyboardType="number-pad"
+                        placeholder="reps"
+                        placeholderTextColor={theme.textLight}
+                        value={set.reps}
+                        onChangeText={(value) =>
+                          updateSetField(set.localId, "reps", value)
+                        }
+                      />
+                    </View>
+
+                    {/* RIR Input */}
+                    <View style={{ flex: 1.8, paddingHorizontal: 4 }}>
+                      <TextInput
+                        style={{
+                          backgroundColor: theme.card,
+                          borderRadius: 8,
+                          borderWidth: 1,
+                          borderColor: theme.border,
+                          color: theme.textBlack,
+                          fontSize: 13,
+                          fontWeight: "600",
+                          paddingVertical: 6,
+                          textAlign: "center",
+                        }}
+                        keyboardType="number-pad"
+                        placeholder="RIR"
+                        placeholderTextColor={theme.textLight}
+                        value={set.rir}
+                        onChangeText={(value) =>
+                          updateSetField(set.localId, "rir", value)
+                        }
+                      />
+                    </View>
+
+                    {/* Delete Action */}
                     <TouchableOpacity
                       onPress={() => removeEditableSet(set.localId)}
+                      style={{
+                        flex: 1,
+                        justifyContent: "center",
+                        alignItems: "center",
+                      }}
                     >
                       <MaterialIcons
                         name="remove-circle-outline"
-                        size={20}
+                        size={18}
                         color={theme.expense}
                       />
                     </TouchableOpacity>
                   </View>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Set number"
-                    keyboardType="numeric"
-                    value={set.set_number}
-                    onChangeText={(value) =>
-                      updateSetField(set.localId, "set_number", value)
-                    }
-                  />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Weight"
-                    keyboardType="numeric"
-                    value={set.weight}
-                    onChangeText={(value) =>
-                      updateSetField(set.localId, "weight", value)
-                    }
-                  />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Reps"
-                    keyboardType="numeric"
-                    value={set.reps}
-                    onChangeText={(value) =>
-                      updateSetField(set.localId, "reps", value)
-                    }
-                  />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="RIR"
-                    keyboardType="numeric"
-                    value={set.rir}
-                    onChangeText={(value) =>
-                      updateSetField(set.localId, "rir", value)
-                    }
-                  />
-                </View>
-              ))}
+                ))}
+              </View>
             </ScrollView>
 
-            <View style={styles.modalActions}>
+            {/* Actions */}
+            <View
+              style={{
+                flexDirection: "row",
+                gap: 8,
+                marginTop: 14,
+              }}
+            >
               <TouchableOpacity
-                style={styles.secondaryButton}
+                style={{
+                  flex: 1,
+                  paddingVertical: 12,
+                  borderRadius: 14,
+                  borderWidth: 1.5,
+                  borderColor: theme.border,
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
                 onPress={closeEditModal}
               >
-                <Text style={styles.secondaryButtonText}>Cancel</Text>
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: "800",
+                    fontFamily: "PlusJakartaSans_800ExtraBold",
+                    color: theme.textLight,
+                  }}
+                >
+                  Cancel
+                </Text>
               </TouchableOpacity>
+
               <TouchableOpacity
-                style={styles.primaryButton}
+                style={{
+                  flex: 1,
+                  backgroundColor: theme.primary,
+                  paddingVertical: 12,
+                  borderRadius: 14,
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
                 onPress={saveSession}
                 disabled={updateSessionMutation.isPending}
               >
                 {updateSessionMutation.isPending ? (
                   <ActivityIndicator color={theme.white} />
                 ) : (
-                  <Text style={styles.primaryButtonText}>Save</Text>
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontWeight: "800",
+                      fontFamily: "PlusJakartaSans_800ExtraBold",
+                      color: theme.white,
+                    }}
+                  >
+                    Save Changes
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>
-          </View>
+          </ShadowGlowCard>
         </View>
       </Modal>
     </SafeAreaView>

@@ -1,4 +1,5 @@
 import { profileStyles } from "@/assets/styles/profile.style";
+import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
 import { MenuButton } from "@/components/profile/menuButton";
 import { useDiaryContext } from "@/context/DairyContext";
 import { useTheme } from "@/context/ThemeContext";
@@ -10,6 +11,7 @@ import {
 } from "@/hooks/useNutrition";
 import { useProfile } from "@/hooks/useProfile";
 import { AccountResponse } from "@/services/accountService";
+import { logout } from "@/services/authService";
 import {
   Feather,
   MaterialCommunityIcons,
@@ -17,7 +19,7 @@ import {
 } from "@expo/vector-icons";
 import Constants from "expo-constants";
 import { useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
+import { useQueryClient } from "@tanstack/react-query";
 import { ComponentProps, useMemo } from "react";
 import {
   RefreshControl,
@@ -85,12 +87,14 @@ const statusColor = (status?: string, theme?: any) => {
 
 export default function Profile() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { theme } = useTheme();
   const profileStyless = profileStyles(theme);
   const { selectedDate, setSelectedDate } = useDiaryContext();
 
   const handleLogout = async () => {
-    await SecureStore.deleteItemAsync("access_token");
+    await logout();
+    queryClient.clear();
     router.replace("/login");
   };
 
@@ -180,7 +184,7 @@ export default function Profile() {
       meta: nutritionProfile
         ? `Goal: ${todaySummary?.goals?.calories_goal?.toFixed(0) ?? "—"} kcal/day`
         : "Set up your nutrition profile",
-      onPress: () => router.push("/nutritionProfile"),
+      onPress: () => router.push("/(tabs)/foodDiary"),
     },
     {
       icon: "palette",
@@ -208,12 +212,52 @@ export default function Profile() {
         }
       >
         {/* Header */}
-        <View style={profileStyless.header}>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 8,
+          }}
+        >
           <View>
-            <Text style={profileStyless.eyebrow}>Account</Text>
-            <Text style={profileStyless.title}>Profile</Text>
+            <Text
+              style={{
+                color: theme.textLight,
+                fontSize: 12,
+                fontWeight: "800",
+                fontFamily: "PlusJakartaSans_800ExtraBold",
+                textTransform: "uppercase",
+                letterSpacing: 1.5,
+                marginBottom: 2,
+              }}
+            >
+              Account
+            </Text>
+            <Text
+              style={{
+                color: theme.textBlack,
+                fontSize: 28,
+                fontWeight: "900",
+                fontFamily: "PlusJakartaSans_800ExtraBold",
+                letterSpacing: -0.8,
+              }}
+            >
+              Profile
+            </Text>
           </View>
-          <TouchableOpacity style={profileStyless.headerButton}>
+          <TouchableOpacity
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 14,
+              backgroundColor: theme.primary + "15",
+              borderWidth: 1.5,
+              borderColor: theme.primary + "30",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
             <Feather name="edit-2" size={18} color={theme.primary} />
           </TouchableOpacity>
         </View>
@@ -459,8 +503,10 @@ export default function Profile() {
           </View> */}
 
         {/* Preferences section */}
-        <View style={profileStyless.section}>
-          <Text style={profileStyless.sectionTitle}>Preferences</Text>
+        <ShadowGlowCard style={{ padding: 16 }}>
+          <Text style={[profileStyless.sectionTitle, { marginBottom: 12 }]}>
+            Preferences
+          </Text>
           {menuSections[0].items.map((item) => (
             <MenuButton
               key={item.label}
@@ -471,7 +517,7 @@ export default function Profile() {
               }}
             />
           ))}
-        </View>
+        </ShadowGlowCard>
 
         {/* Logout */}
         <TouchableOpacity

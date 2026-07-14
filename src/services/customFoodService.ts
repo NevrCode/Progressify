@@ -29,6 +29,7 @@ export const searchCustomFoods = async (
   query?: string,
 ): Promise<CustomFoodResponse[]> => {
   const res = await api.get("/v1/custom-foods", { params: { search: query } });
+  console.log("searchCustomFoods res.data from customFoodService: ", res.data);
   return res.data;
 };
 

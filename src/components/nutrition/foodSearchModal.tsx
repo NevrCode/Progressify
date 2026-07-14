@@ -368,6 +368,7 @@ export function FoodSearchModal({
 
   const hasCustomResults = (customFoodQuery.data?.length ?? 0) > 0;
   // const hasFatSecretResults = (fatSecretQuery.data?.length ?? 0) > 0;
+  console.log("customFoodQuery.data", customFoodQuery.data);
   const isSearching = customFoodQuery.isFetching;
 
   return (
@@ -560,7 +561,7 @@ export function FoodSearchModal({
                   onPress={() => setShowManual(true)}
                 >
                   <MaterialIcons name="add" size={15} color={theme.primary} />
-                   <Text
+                  <Text
                     style={[style.filterChipText, { color: theme.primary }]}
                   >
                     Can&apos;t find it? Add manually

@@ -130,7 +130,7 @@ export function MacroDonutChart({
   );
 
   return (
-    <View>
+    <>
       {/* Donut chart centered */}
       <View style={{ alignItems: "center", marginVertical: 12 }}>
         <PieChart
@@ -153,7 +153,7 @@ export function MacroDonutChart({
           flexDirection: "row",
           justifyContent: "space-between",
           marginTop: 8,
-          paddingHorizontal: 8,
+          // paddingHorizontal: 8,
         }}
       >
         <LegendItem
@@ -197,55 +197,53 @@ export function MacroDonutChart({
       </View>
 
       {/* Calorie progress bar below */}
-      <View style={{ marginTop: 16 }}>
-        <View
-          style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            marginBottom: 4,
-          }}
-        >
-          <Text style={style.listMeta}>Calorie goal</Text>
-          <Text style={style.listMeta}>
-            {progress.calories.remaining.toFixed(0)} kcal remaining
-          </Text>
-        </View>
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          marginBottom: 4,
+        }}
+      >
+        <Text style={style.listMeta}>Calorie goal</Text>
+        <Text style={style.listMeta}>
+          {progress.calories.remaining.toFixed(0)} kcal remaining
+        </Text>
+      </View>
+      <View
+        style={{
+          height: 8,
+          borderRadius: 4,
+          backgroundColor: theme.border ?? "#eee",
+        }}
+      >
         <View
           style={{
             height: 8,
             borderRadius: 4,
-            backgroundColor: theme.border ?? "#eee",
+            width: `${Math.min(progress.calories.percentage, 100)}%`,
+            backgroundColor:
+              progress.calories.percentage > 110
+                ? "#e74c3c"
+                : progress.calories.percentage >= 85
+                  ? "#2ecc71"
+                  : theme.primary,
           }}
-        >
-          <View
-            style={{
-              height: 8,
-              borderRadius: 4,
-              width: `${Math.min(progress.calories.percentage, 100)}%`,
-              backgroundColor:
-                progress.calories.percentage > 110
-                  ? "#e74c3c"
-                  : progress.calories.percentage >= 85
-                    ? "#2ecc71"
-                    : theme.primary,
-            }}
-          />
-        </View>
-        <View
-          style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            marginTop: 4,
-          }}
-        >
-          <Text style={[style.listMeta, { fontSize: 11 }]}>
-            {progress.calories.consumed.toFixed(0)} kcal eaten
-          </Text>
-          <Text style={[style.listMeta, { fontSize: 11 }]}>
-            {progress.calories.goal.toFixed(0)} kcal goal
-          </Text>
-        </View>
+        />
       </View>
-    </View>
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          marginTop: 4,
+        }}
+      >
+        <Text style={[style.listMeta, { fontSize: 11 }]}>
+          {progress.calories.consumed.toFixed(0)} kcal eaten
+        </Text>
+        <Text style={[style.listMeta, { fontSize: 11 }]}>
+          {progress.calories.goal.toFixed(0)} kcal goal
+        </Text>
+      </View>
+    </>
   );
 }

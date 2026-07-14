@@ -1,9 +1,9 @@
 import { authStyles } from "@/assets/styles/auth.style";
 import { useTheme } from "@/context/ThemeContext";
+import { saveAuthSession } from "@/services/authSessionService";
 import { login } from "@/services/authService";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -16,8 +16,8 @@ import {
 } from "react-native";
 
 export default function Login() {
-  const [email, setEmail] = useState("kevin12keval@gmail.com");
-  const [password, setPassword] = useState("mypassword");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState("");
@@ -47,8 +47,7 @@ export default function Login() {
     try {
       setLoading(true);
       const data = await login({ email, password });
-      await SecureStore.setItemAsync("access_token", data.access_token);
-      await SecureStore.setItemAsync("refresh_token", data.refresh_token);
+      await saveAuthSession(data);
       router.replace("/gymProgression");
     } catch (err) {
       if (err instanceof Error) {

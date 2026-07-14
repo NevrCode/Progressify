@@ -1,5 +1,5 @@
 import { api } from "@/utils/api";
-import * as SecureStore from "expo-secure-store";
+import { getAccessToken } from "@/services/authSessionService";
 
 export type SplitType = "PUSH" | "PULL" | "LEGS";
 
@@ -95,7 +95,7 @@ export interface GymProgressPointRequestDTO {
 }
 
 const getAuthHeaders = async () => {
-  const token = await SecureStore.getItemAsync("access_token");
+  const token = await getAccessToken();
 
   return {
     Authorization: `Bearer ${token}`,

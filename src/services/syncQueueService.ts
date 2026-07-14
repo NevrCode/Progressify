@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getAccessToken } from "@/services/authSessionService";
 import axios from "axios";
-import * as SecureStore from "expo-secure-store";
 import Constants from "expo-constants";
 
 const CACHE_PREFIX = "@progressify_cache:";
@@ -95,7 +95,7 @@ export const processSyncQueue = async (): Promise<void> => {
     console.log(`[Offline Sync] Processing queue with ${queue.length} items...`);
 
     const baseURL = getBaseURL();
-    const token = await SecureStore.getItemAsync("access_token");
+    const token = await getAccessToken();
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",

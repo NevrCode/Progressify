@@ -600,6 +600,7 @@ export const gymStyles = (theme: ThemeType) =>
       borderRadius: 10,
       paddingHorizontal: 14,
       paddingVertical: 12,
+      marginBottom: 8,
       color: theme.text,
       fontSize: 14,
       borderWidth: 1,

@@ -10,7 +10,6 @@ export const getProfile = async () => {
     const res = await api.get<ProfileResponse>("/v1/user/me");
     return res;
   } catch (error) {
-    console.error("Error fetching profile:", error);
     throw error;
   }
 };

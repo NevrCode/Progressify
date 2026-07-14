@@ -1,4 +1,5 @@
 import { authStyles } from "@/assets/styles/auth.style";
+import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { signIn } from "@/services/authService";
 import { MaterialIcons } from "@expo/vector-icons";
@@ -6,7 +7,6 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   ScrollView,
   Text,
   TextInput,
@@ -21,6 +21,7 @@ export default function SignIn() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const { alert } = useAlert();
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState<{
     name?: string;
@@ -66,25 +67,24 @@ export default function SignIn() {
 
   const handleSignin = async () => {
     if (!validateForm()) {
-      Alert.alert("Validation Error", "Please fix the errors and try again");
+      alert("Validation Error", "Please fix the errors and try again");
       return;
     }
 
     try {
       setLoading(true);
       await signIn({ name, email, password });
-      Alert.alert(
+      alert(
         "Success",
         "Account created successfully! Please log in with your new credentials.",
       );
       router.replace("/login");
     } catch (error) {
       if (error instanceof Error) {
-        Alert.alert("Registration Failed", error.message);
+        alert("Registration Failed", error.message);
       } else {
-        Alert.alert("Error", "Something went wrong during registration");
+        alert("Error", "Something went wrong during registration");
       }
-      console.log(error);
     } finally {
       setLoading(false);
     }

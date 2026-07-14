@@ -29,20 +29,17 @@ export const createAccount = async ({
     const data = response.data;
     return data;
   } catch (error: any) {
-    console.log("ERROR DATA:", error.response?.data);
-    console.log("STATUS:", error.response?.status);
     throw new Error(error.response?.data?.message || "Create account failed");
   }
 };
 
 export const getAccount = async () => {
   try {
-    const response = await api.get<PageResponse<AccountResponse>>("/v1/account");
+    const response =
+      await api.get<PageResponse<AccountResponse>>("/v1/account");
     const data = response.data;
     return data;
   } catch (error: any) {
-    console.log("ERROR DATA:", error.response?.data);
-    console.log("STATUS:", error.response?.status);
     throw new Error(error.response?.data?.message || "read account failed");
   }
 };

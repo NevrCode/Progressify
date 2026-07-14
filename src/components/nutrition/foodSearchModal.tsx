@@ -367,8 +367,6 @@ export function FoodSearchModal({
   };
 
   const hasCustomResults = (customFoodQuery.data?.length ?? 0) > 0;
-  // const hasFatSecretResults = (fatSecretQuery.data?.length ?? 0) > 0;
-  console.log("customFoodQuery.data", customFoodQuery.data);
   const isSearching = customFoodQuery.isFetching;
 
   return (

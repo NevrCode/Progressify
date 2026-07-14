@@ -1,13 +1,13 @@
 import { authStyles } from "@/assets/styles/auth.style";
+import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
-import { saveAuthSession } from "@/services/authSessionService";
 import { login } from "@/services/authService";
+import { saveAuthSession } from "@/services/authSessionService";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   ScrollView,
   Text,
   TextInput,
@@ -23,6 +23,7 @@ export default function Login() {
   const [emailError, setEmailError] = useState("");
   const router = useRouter();
   const { theme } = useTheme();
+  const { alert } = useAlert();
   const style = authStyles(theme);
 
   const validateEmail = (text: string) => {
@@ -41,19 +42,19 @@ export default function Login() {
 
   const handleLogin = async () => {
     if (!validateEmail(email) || !password) {
-      Alert.alert("Validation Error", "Please fill in all fields correctly");
+      alert("Validation Error", "Please fill in all fields correctly");
       return;
     }
     try {
       setLoading(true);
       const data = await login({ email, password });
       await saveAuthSession(data);
-      router.replace("/gymProgression");
+      router.replace("/(tabs)/home");
     } catch (err) {
       if (err instanceof Error) {
-        Alert.alert("Login Failed", err.message);
+        alert("Login Failed", err.message);
       } else {
-        Alert.alert("Error", "Something went wrong");
+        alert("Error", "Something went wrong");
       }
     } finally {
       setLoading(false);
@@ -206,9 +207,7 @@ export default function Login() {
         {/* Forgot Password Link */}
         <TouchableOpacity
           style={{ marginBottom: 10, alignItems: "flex-end" }}
-          onPress={() =>
-            Alert.alert("Forgot Password", "Malas Buat BROK hehhe...")
-          }
+          onPress={() => alert("Forgot Password", "Malas Buat BROK hehhe...")}
         >
           <Text
             style={{

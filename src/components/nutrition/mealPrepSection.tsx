@@ -46,11 +46,11 @@ const ACCENT_COLORS = [
   "#D4537E",
 ];
 
-const MEAL_OPTIONS: { value: MealType; label: string; emoji: string }[] = [
-  { value: "BREAKFAST", label: "Breakfast", emoji: "🌅" },
-  { value: "LUNCH", label: "Lunch", emoji: "☀️" },
-  { value: "DINNER", label: "Dinner", emoji: "🌙" },
-  { value: "SNACK", label: "Snack", emoji: "🍎" },
+const MEAL_OPTIONS: { value: MealType; label: string }[] = [
+  { value: "BREAKFAST", label: "Breakfast" },
+  { value: "LUNCH", label: "Lunch" },
+  { value: "DINNER", label: "Dinner" },
+  { value: "SNACK", label: "Snack" },
 ];
 
 const parseNumber = (v?: string | number) => {
@@ -603,10 +603,6 @@ export function MealPrepSection() {
 
   const logPrep = () => {
     if (!selectedPrep) return;
-    console.log({
-      id: selectedPrep.id,
-      dto: { date: selectedDate, meal_type: logMealType },
-    });
     logMutation.mutate(
       {
         id: selectedPrep.id,
@@ -955,7 +951,6 @@ export function MealPrepSection() {
                     key={m.value}
                     style={{
                       flex: 1,
-                      minWidth: "45%",
                       backgroundColor: active
                         ? mealColor + "15"
                         : theme.background,

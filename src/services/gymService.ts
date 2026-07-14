@@ -1,5 +1,5 @@
-import { api } from "@/utils/api";
 import { getAccessToken } from "@/services/authSessionService";
+import { api } from "@/utils/api";
 
 export type SplitType = "PUSH" | "PULL" | "LEGS";
 
@@ -137,8 +137,6 @@ const getApiErrorMessage = (error: any, fallbackMessage: string) => {
 
 const handleApiError = (error: any, fallbackMessage: string) => {
   const message = getApiErrorMessage(error, fallbackMessage);
-  console.log("ERROR DATA:", error.response?.data ?? error.message ?? error);
-  console.log("STATUS:", error.response?.status);
   throw new Error(message);
 };
 

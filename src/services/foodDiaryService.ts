@@ -1,3 +1,4 @@
+import { useAlert } from "@/context/AlertContext";
 import { api } from "@/utils/api";
 import axios from "axios";
 
@@ -220,7 +221,10 @@ export const deleteFoodEntry = async (id: number) => {
   }
 };
 
-export const findFoodByBarcode = async (barcode: string): Promise<FatSecretFoodDetail> => {
+export const findFoodByBarcode = async (
+  barcode: string,
+): Promise<FatSecretFoodDetail> => {
+  const { alert } = useAlert();
   const cleanBarcode = barcode.trim();
   if (!cleanBarcode) {
     throw new Error("Barcode is empty.");
@@ -228,19 +232,24 @@ export const findFoodByBarcode = async (barcode: string): Promise<FatSecretFoodD
 
   // 1. Try Open Food Facts first (Free, open database)
   try {
-    console.log(`[Barcode Scanner] Querying Open Food Facts for barcode: ${cleanBarcode}`);
-    const response = await axios.get(`https://world.openfoodfacts.org/api/v2/product/${cleanBarcode}.json`, {
-      timeout: 5000,
-    });
+    const response = await axios.get(
+      `https://world.openfoodfacts.org/api/v2/product/${cleanBarcode}.json`,
+      {
+        timeout: 5000,
+      },
+    );
 
     if (response.data && response.data.status === 1 && response.data.product) {
       const product = response.data.product;
       const nutriments = product.nutriments || {};
 
       // Map Open Food Facts to FatSecretFoodDetail format
-      const calories = nutriments["energy-kcal_100g"] !== undefined 
-        ? nutriments["energy-kcal_100g"] 
-        : (nutriments["energy-kcal"] !== undefined ? nutriments["energy-kcal"] : 0);
+      const calories =
+        nutriments["energy-kcal_100g"] !== undefined
+          ? nutriments["energy-kcal_100g"]
+          : nutriments["energy-kcal"] !== undefined
+            ? nutriments["energy-kcal"]
+            : 0;
 
       return {
         food_id: `OFF_${cleanBarcode}`,
@@ -259,13 +268,10 @@ export const findFoodByBarcode = async (barcode: string): Promise<FatSecretFoodD
         },
       };
     }
-  } catch (offError: any) {
-    console.log("[Barcode Scanner] Open Food Facts lookup failed, trying FatSecret fallback...", offError.message);
-  }
+  } catch (offError: any) {}
 
   // 2. Fallback to FatSecret barcode lookup
   try {
-    console.log(`[Barcode Scanner] Querying FatSecret fallback for barcode: ${cleanBarcode}`);
     // First, look up the food_id for this barcode
     const searchResponse = await api.get<any>("/v1/fatsecret", {
       params: {
@@ -274,15 +280,19 @@ export const findFoodByBarcode = async (barcode: string): Promise<FatSecretFoodD
       },
     });
 
-    const foodId = searchResponse.data?.results?.food_id || searchResponse.data?.food?.food_id;
+    const foodId =
+      searchResponse.data?.results?.food_id ||
+      searchResponse.data?.food?.food_id;
     if (foodId) {
       // Then, get the full food details
       return await getFatSecretFood(foodId);
     }
   } catch (fsError: any) {
-    console.log("[Barcode Scanner] FatSecret fallback lookup failed:", fsError.message);
+    alert(
+      "[Barcode Scanner] FatSecret fallback lookup failed:",
+      fsError.message,
+    );
   }
 
   throw new Error("Product not found. Please log manually or search by name.");
 };
-

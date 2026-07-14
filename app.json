@@ -59,7 +59,7 @@
       "reactCompiler": true
     },
     "extra": {
-      "displayedVersion": "1.0.2",
+      "displayedVersion": "1.0.4",
       "router": {},
       "apiUrl": "https://progressify-tracker.onrender.com",
       "eas": {

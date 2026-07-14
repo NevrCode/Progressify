@@ -581,9 +581,6 @@ export default function GymProgression() {
         return copy;
       });
     } catch (finishError: any) {
-      console.log("API error status:", finishError.response?.status);
-      console.log("API error body:", finishError.response?.data);
-
       alert(
         finishError.response?.data?.code ?? "Request failed",
         finishError.response?.data?.message ?? finishError.message,

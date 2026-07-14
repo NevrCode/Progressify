@@ -1,4 +1,7 @@
-import React, { useCallback, useEffect, useState } from "react";
+import { useTheme } from "@/context/ThemeContext";
+import { MaterialIcons } from "@expo/vector-icons";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -9,9 +12,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { CameraView, useCameraPermissions } from "expo-camera";
-import { MaterialIcons } from "@expo/vector-icons";
-import { useTheme } from "@/context/ThemeContext";
 
 interface BarcodeScannerModalProps {
   visible: boolean;
@@ -47,7 +47,7 @@ export function BarcodeScannerModal({
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
-      ])
+      ]),
     ).start();
   }, [laserAnim]);
 
@@ -64,7 +64,12 @@ export function BarcodeScannerModal({
 
   // Request camera permission if visible and not determined yet
   useEffect(() => {
-    if (visible && permission && !permission.granted && permission.canAskAgain) {
+    if (
+      visible &&
+      permission &&
+      !permission.granted &&
+      permission.canAskAgain
+    ) {
       requestPermission();
     }
   }, [visible, permission, requestPermission]);
@@ -72,7 +77,6 @@ export function BarcodeScannerModal({
   const handleBarcodeScanned = ({ data }: { data: string }) => {
     if (scanned || isLoading) return;
     setScanned(true);
-    console.log(`[Barcode Scanner] Code scanned: ${data}`);
     onScanned(data);
   };
 
@@ -90,7 +94,10 @@ export function BarcodeScannerModal({
         <View style={[styles.header, { backgroundColor: "rgba(0,0,0,0.7)" }]}>
           <Text style={styles.headerTitle}>Barcode Scanner</Text>
           <TouchableOpacity
-            style={[styles.closeButton, { backgroundColor: "rgba(255,255,255,0.15)" }]}
+            style={[
+              styles.closeButton,
+              { backgroundColor: "rgba(255,255,255,0.15)" },
+            ]}
             onPress={onClose}
           >
             <MaterialIcons name="close" size={20} color="#fff" />
@@ -104,8 +111,15 @@ export function BarcodeScannerModal({
           </View>
         ) : !permission.granted ? (
           <View style={[styles.fallbackContainer, { backgroundColor: "#000" }]}>
-            <MaterialIcons name="videocam-off" size={48} color="#aaa" style={{ marginBottom: 16 }} />
-            <Text style={styles.fallbackText}>Camera permission is required to scan barcodes.</Text>
+            <MaterialIcons
+              name="videocam-off"
+              size={48}
+              color="#aaa"
+              style={{ marginBottom: 16 }}
+            />
+            <Text style={styles.fallbackText}>
+              Camera permission is required to scan barcodes.
+            </Text>
             <TouchableOpacity
               style={[styles.permissionBtn, { backgroundColor: theme.primary }]}
               onPress={requestPermission}
@@ -117,7 +131,9 @@ export function BarcodeScannerModal({
           <CameraView
             style={styles.camera}
             facing="back"
-            onBarcodeScanned={scanned || isLoading ? undefined : handleBarcodeScanned}
+            onBarcodeScanned={
+              scanned || isLoading ? undefined : handleBarcodeScanned
+            }
             barcodeScannerSettings={{
               barcodeTypes: ["ean13", "ean8", "upc_a", "upc_e", "code128"],
             }}
@@ -125,10 +141,10 @@ export function BarcodeScannerModal({
             {/* Overlay View Finder Mask */}
             <View style={styles.overlay}>
               <View style={styles.unfocusedRow} />
-              
+
               <View style={styles.focusedRow}>
                 <View style={styles.unfocusedCol} />
-                
+
                 {/* The Scanning Box */}
                 <View style={[styles.scanBox, { borderColor: theme.primary }]}>
                   {/* Laser line */}
@@ -142,28 +158,62 @@ export function BarcodeScannerModal({
                     ]}
                   />
                   {/* Box Corners to look premium */}
-                  <View style={[styles.corner, styles.cornerTL, { borderColor: theme.primary }]} />
-                  <View style={[styles.corner, styles.cornerTR, { borderColor: theme.primary }]} />
-                  <View style={[styles.corner, styles.cornerBL, { borderColor: theme.primary }]} />
-                  <View style={[styles.corner, styles.cornerBR, { borderColor: theme.primary }]} />
+                  <View
+                    style={[
+                      styles.corner,
+                      styles.cornerTL,
+                      { borderColor: theme.primary },
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.corner,
+                      styles.cornerTR,
+                      { borderColor: theme.primary },
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.corner,
+                      styles.cornerBL,
+                      { borderColor: theme.primary },
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.corner,
+                      styles.cornerBR,
+                      { borderColor: theme.primary },
+                    ]}
+                  />
                 </View>
-                
+
                 <View style={styles.unfocusedCol} />
               </View>
-              
+
               <View style={styles.unfocusedRow}>
                 {isLoading ? (
                   <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="small" color="#fff" style={{ marginBottom: 8 }} />
+                    <ActivityIndicator
+                      size="small"
+                      color="#fff"
+                      style={{ marginBottom: 8 }}
+                    />
                     <Text style={styles.statusText}>Searching product...</Text>
                   </View>
                 ) : scanned ? (
                   <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="small" color="#fff" style={{ marginBottom: 8 }} />
+                    <ActivityIndicator
+                      size="small"
+                      color="#fff"
+                      style={{ marginBottom: 8 }}
+                    />
                     <Text style={styles.statusText}>Processing barcode...</Text>
                   </View>
                 ) : (
-                  <Text style={styles.statusText}>Align barcode inside the box</Text>
+                  <Text style={styles.statusText}>
+                    Align barcode inside the box
+                  </Text>
                 )}
               </View>
             </View>

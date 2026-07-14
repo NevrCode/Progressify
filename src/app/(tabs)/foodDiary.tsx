@@ -428,19 +428,11 @@ function FoodEntriesByMeal({
     (a, b) => mealOrder.indexOf(a) - mealOrder.indexOf(b),
   );
 
-  const MEAL_EMOJIS: Record<string, string> = {
-    BREAKFAST: "🌅",
-    LUNCH: "☀️",
-    DINNER: "🌙",
-    SNACK: "🍎",
-  };
-
   return (
     <>
       {sortedMeals.map((meal) => {
         const mealEntries = grouped[meal];
         const totalCal = mealEntries.reduce((s, e) => s + (e.calories ?? 0), 0);
-        const emoji = MEAL_EMOJIS[meal] ?? "🍴";
 
         return (
           <View key={meal} style={{ marginBottom: 14 }}>
@@ -463,7 +455,7 @@ function FoodEntriesByMeal({
                   },
                 ]}
               >
-                {emoji} {meal.charAt(0) + meal.slice(1).toLowerCase()}
+                {meal.charAt(0) + meal.slice(1).toLowerCase()}
               </Text>
               <View
                 style={{
@@ -607,14 +599,6 @@ export default function FoodDiary() {
       a = parseInt(age);
     if (!w || !h || !a)
       return alert("Missing info", "Fill in weight, height, and age.");
-    console.log({
-      weight_kg: w,
-      height_cm: h,
-      age: a,
-      gender,
-      activity_level: activity,
-      goal_type: goal,
-    });
     saveMutation.mutate(
       {
         weight_kg: w,

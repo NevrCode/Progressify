@@ -14,7 +14,7 @@ export const savePrograms = async (programs: WorkoutProgram[]) => {
   try {
     await AsyncStorage.setItem(PROGRAMS_KEY, JSON.stringify(programs));
   } catch (error) {
-    console.warn("Failed to save programs:", error);
+    alert("failed to save program ! : ");
   }
 };
 

@@ -1,0 +1,14 @@
+appId: com.nevrcode.progressify
+name: Restore an authenticated session after app restart
+tags:
+  - critical
+env:
+  E2E_EMAIL: ${E2E_EMAIL}
+  E2E_PASSWORD: ${E2E_PASSWORD}
+---
+- runFlow: login.yaml
+- stopApp
+- launchApp
+- assertVisible: "Workout"
+- tapOn: "Food"
+- assertVisible: "Food Diary"

@@ -1,0 +1,28 @@
+appId: com.nevrcode.progressify
+name: Permanently delete disposable account
+tags:
+  - critical
+  - destructive
+env:
+  E2E_DELETE_EMAIL: ${E2E_DELETE_EMAIL}
+  E2E_DELETE_PASSWORD: ${E2E_DELETE_PASSWORD}
+---
+- runFlow:
+    file: login.yaml
+    env:
+      E2E_EMAIL: ${E2E_DELETE_EMAIL}
+      E2E_PASSWORD: ${E2E_DELETE_PASSWORD}
+- tapOn: "Profile"
+- scrollUntilVisible:
+    element:
+      text: "Delete account"
+    direction: DOWN
+- tapOn: "Delete account"
+- assertVisible: "Type DELETE to confirm"
+- tapOn: "Enter your password"
+- inputText: ${E2E_DELETE_PASSWORD}
+- tapOn: "DELETE"
+- inputText: "DELETE"
+- tapOn: "Delete permanently"
+- tapOn: "Delete permanently"
+- assertVisible: "Welcome Back"

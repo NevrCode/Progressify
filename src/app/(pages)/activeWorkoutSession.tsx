@@ -1176,6 +1176,7 @@ export default function ActiveWorkoutSession() {
                               {/* Weight Input */}
                               <View style={{ flex: 2.2, paddingHorizontal: 4 }}>
                                 <TextInput
+                                  accessibilityLabel={`Set ${set.set_number} weight`}
                                   style={{
                                     backgroundColor: theme.card,
                                     borderRadius: 8,
@@ -1203,6 +1204,7 @@ export default function ActiveWorkoutSession() {
                               {/* Reps Input */}
                               <View style={{ flex: 1.8, paddingHorizontal: 4 }}>
                                 <TextInput
+                                  accessibilityLabel={`Set ${set.set_number} reps`}
                                   style={{
                                     backgroundColor: theme.card,
                                     borderRadius: 8,
@@ -1230,6 +1232,7 @@ export default function ActiveWorkoutSession() {
                               {/* RIR Input */}
                               <View style={{ flex: 1.8, paddingHorizontal: 4 }}>
                                 <TextInput
+                                  accessibilityLabel={`Set ${set.set_number} RIR`}
                                   style={{
                                     backgroundColor: theme.card,
                                     borderRadius: 8,

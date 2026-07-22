@@ -1,0 +1,25 @@
+appId: com.nevrcode.progressify
+name: Register disposable account
+tags:
+  - critical
+  - destructive
+env:
+  E2E_NEW_NAME: ${E2E_NEW_NAME}
+  E2E_NEW_EMAIL: ${E2E_NEW_EMAIL}
+  E2E_NEW_PASSWORD: ${E2E_NEW_PASSWORD}
+---
+- launchApp:
+    clearState: true
+- tapOn: "Create Account"
+- assertVisible: "Create your account"
+- tapOn: "John Doe"
+- inputText: ${E2E_NEW_NAME}
+- tapOn: "your@email.com"
+- inputText: ${E2E_NEW_EMAIL}
+- tapOn: "Min. 8 characters"
+- inputText: ${E2E_NEW_PASSWORD}
+- tapOn: "Re-enter your password"
+- inputText: ${E2E_NEW_PASSWORD}
+- tapOn: "I accept the Terms of Service and acknowledge the Privacy Policy."
+- tapOn: "Create Account"
+- assertVisible: "Workout"

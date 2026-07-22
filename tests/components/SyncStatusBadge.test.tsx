@@ -41,6 +41,12 @@ describe("SyncStatusBadge", () => {
     expect(screen.getByLabelText("3 pending offline")).toBeTruthy();
   });
 
+  it("communicates active synchronization", async () => {
+    mockUseSyncStatus.mockReturnValue({ pending: 2, failed: 0, isSyncing: true, isOnline: true });
+    const screen = await render(<SyncStatusBadge />);
+    expect(screen.getByLabelText("Syncing 2")).toBeTruthy();
+  });
+
   it("requires an explicit retry or discard decision for failed changes", async () => {
     mockUseSyncStatus.mockReturnValue({ pending: 1, failed: 2, isSyncing: false, isOnline: true });
     const screen = await render(<SyncStatusBadge />);

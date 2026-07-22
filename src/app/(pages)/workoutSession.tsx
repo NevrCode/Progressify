@@ -1,4 +1,5 @@
 import { gymStyles } from "@/assets/styles/gym.style";
+import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
@@ -11,14 +12,15 @@ import {
 } from "@/services/programStorage";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
@@ -51,6 +53,22 @@ export default function WorkoutSession() {
   const { alert } = useAlert();
 
   const [selectedSplit, setSelectedSplit] = useState<SplitType>("PUSH");
+  const [splitTranslateX] = useState(() => new Animated.Value(0));
+  const [switcherWidth, setSwitcherWidth] = useState(0);
+
+  useEffect(() => {
+    const toVal =
+      selectedSplit === "PUSH"
+        ? 0
+        : selectedSplit === "PULL"
+          ? 1
+          : 2;
+    Animated.timing(splitTranslateX, {
+      toValue: toVal,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  }, [selectedSplit, splitTranslateX]);
   const [selectedExerciseIds, setSelectedExerciseIds] = useState<Set<number>>(
     new Set(),
   );
@@ -62,11 +80,6 @@ export default function WorkoutSession() {
 
   useEffect(() => {
     loadPrograms().then(setPrograms);
-  }, []);
-
-  const refreshPrograms = useCallback(async () => {
-    const loaded = await loadPrograms();
-    setPrograms(loaded);
   }, []);
 
   const handleDeleteProgram = (program: WorkoutProgram) => {
@@ -117,7 +130,6 @@ export default function WorkoutSession() {
     isLoading,
     error,
     refetch,
-    isFetching,
   } = useGymDashboard();
 
   const exerciseProgressions = useMemo(
@@ -240,32 +252,86 @@ export default function WorkoutSession() {
     <SafeAreaProvider>
       <SafeAreaView style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.container}>
-          <View style={styles.header}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 8,
+            }}
+          >
             <View>
-              <Text style={styles.eyebrow}>Workout</Text>
-              <Text style={styles.title}>Setup Session</Text>
+              <Text
+                style={{
+                  color: theme.textLight,
+                  fontSize: 12,
+                  fontWeight: "800",
+                  fontFamily: "PlusJakartaSans_800ExtraBold",
+                  textTransform: "uppercase",
+                  letterSpacing: 1.5,
+                  marginBottom: 2,
+                }}
+              >
+                Workout
+              </Text>
+              <Text
+                style={{
+                  color: theme.textBlack,
+                  fontSize: 28,
+                  fontWeight: "900",
+                  fontFamily: "PlusJakartaSans_800ExtraBold",
+                  letterSpacing: -0.8,
+                }}
+              >
+                Setup Session
+              </Text>
             </View>
             <TouchableOpacity
-              style={styles.headerBadge}
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 14,
+                backgroundColor: theme.primary + "15",
+                borderWidth: 1.5,
+                borderColor: theme.primary + "30",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
               onPress={() => router.back()}
             >
-              <MaterialIcons name="close" size={22} color={theme.white} />
+              <MaterialIcons name="close" size={22} color={theme.primary} />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.heroCard}>
-            <View style={styles.heroTopRow}>
+          <ShadowGlowCard>
+            <View style={[styles.heroTopRow, { marginBottom: 12 }]}>
               <View>
                 <Text style={styles.heroLabel}>Today&apos;s focus</Text>
-                <Text style={styles.heroTitle}>
+                <Text
+                  style={{
+                    fontSize: 20,
+                    fontWeight: "900",
+                    fontFamily: "PlusJakartaSans_800ExtraBold",
+                    color: theme.textBlack,
+                  }}
+                >
                   {displaySplit(selectedSplit)} Day
                 </Text>
               </View>
-              <View style={styles.heroIconWrap}>
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 12,
+                  backgroundColor: theme.primary + "15",
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
                 <MaterialCommunityIcons
                   name="dumbbell"
-                  size={22}
-                  color={theme.white}
+                  size={20}
+                  color={theme.primary}
                 />
               </View>
             </View>
@@ -284,29 +350,79 @@ export default function WorkoutSession() {
                 </Text>
               </View>
             </View>
-          </View>
+          </ShadowGlowCard>
 
-          <View style={styles.sectionHeader}>
+          <View style={[styles.sectionHeader, { marginTop: 14 }]}>
             <Text style={styles.sectionTitle}>1. Pick your split</Text>
           </View>
 
-          <View style={styles.chipRow}>
+          <View
+            onLayout={(e) => setSwitcherWidth(e.nativeEvent.layout.width)}
+            style={{
+              flexDirection: "row",
+              backgroundColor: theme.card,
+              borderRadius: 24,
+              padding: 4,
+              borderWidth: 1.5,
+              borderColor: theme.border,
+              marginBottom: 16,
+              position: "relative",
+            }}
+          >
+            {switcherWidth > 0 && (
+              <Animated.View
+                style={{
+                  position: "absolute",
+                  top: 4,
+                  bottom: 4,
+                  left: 4,
+                  width: (switcherWidth - 8) / 3,
+                  backgroundColor: theme.primary + "12",
+                  borderWidth: 1.5,
+                  borderColor: theme.primary + "30",
+                  borderRadius: 20,
+                  transform: [
+                    {
+                      translateX: splitTranslateX.interpolate({
+                        inputRange: [0, 1, 2],
+                        outputRange: [
+                          0,
+                          (switcherWidth - 8) / 3,
+                          ((switcherWidth - 8) / 3) * 2,
+                        ],
+                      }),
+                    },
+                  ],
+                }}
+              />
+            )}
+
             {splitOptions.map((option) => {
               const active = selectedSplit === option;
               return (
                 <TouchableOpacity
                   key={option}
-                  style={[styles.filterChip, active && styles.filterChipActive]}
+                  style={{
+                    flex: 1,
+                    flexDirection: "row",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    paddingVertical: 10,
+                    borderRadius: 20,
+                  }}
+                  activeOpacity={0.8}
                   onPress={() => {
                     setSelectedSplit(option);
                     setSelectedExerciseIds(new Set());
                   }}
                 >
                   <Text
-                    style={[
-                      styles.filterChipText,
-                      active && styles.filterChipTextActive,
-                    ]}
+                    style={{
+                      fontSize: 13,
+                      fontWeight: "800",
+                      fontFamily: "PlusJakartaSans_800ExtraBold",
+                      color: active ? theme.primary : theme.textLight,
+                    }}
                   >
                     {displaySplit(option)}
                   </Text>

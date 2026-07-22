@@ -1,4 +1,7 @@
+import { logger } from "@/utils/logger";
 import { api } from "@/utils/api";
+import axios from "axios";
+import { getErrorMessage } from "@/utils/apiError";
 
 export type MealType = "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK";
 
@@ -12,7 +15,7 @@ export type FoodEntryCreateRequestDTO = {
   protein?: number;
   fat?: number;
   carbohydrate?: number;
-  date: number;
+  date: string;
   meal_type: MealType;
 };
 
@@ -109,13 +112,8 @@ const toArray = <T>(value?: T[] | T): T[] => {
   return Array.isArray(value) ? value : [value];
 };
 
-const getApiErrorMessage = (error: any, fallback: string) => {
-  const data = error.response?.data;
-  if (typeof data === "string") return data;
-  if (typeof data?.message === "string") return data.message;
-  if (typeof data?.error === "string") return data.error;
-  return error.message || fallback;
-};
+const getApiErrorMessage = (error: unknown, fallback: string) =>
+  getErrorMessage(error, fallback);
 
 export const searchFatSecretFoods = async (expression: string) => {
   if (!expression.trim()) return [];
@@ -217,4 +215,78 @@ export const deleteFoodEntry = async (id: number) => {
   } catch (error: any) {
     throw new Error(getApiErrorMessage(error, "Delete food entry failed"));
   }
+};
+
+export const findFoodByBarcode = async (
+  barcode: string,
+): Promise<FatSecretFoodDetail> => {
+  const cleanBarcode = barcode.trim();
+  if (!cleanBarcode) {
+    throw new Error("Barcode is empty.");
+  }
+
+  // 1. Try Open Food Facts first (Free, open database)
+  try {
+    const response = await axios.get(
+      `https://world.openfoodfacts.org/api/v2/product/${cleanBarcode}.json`,
+      {
+        timeout: 5000,
+      },
+    );
+
+    if (response.data && response.data.status === 1 && response.data.product) {
+      const product = response.data.product;
+      const nutriments = product.nutriments || {};
+
+      // Map Open Food Facts to FatSecretFoodDetail format
+      const calories =
+        nutriments["energy-kcal_100g"] !== undefined
+          ? nutriments["energy-kcal_100g"]
+          : nutriments["energy-kcal"] !== undefined
+            ? nutriments["energy-kcal"]
+            : 0;
+
+      return {
+        food_id: `OFF_${cleanBarcode}`,
+        food_name: product.product_name || `Product ${cleanBarcode}`,
+        brand_name: product.brands || "Unknown Brand",
+        food_type: "Barcode Scanned",
+        serving: {
+          serving_id: "1",
+          serving_description: "100g",
+          metric_serving_amount: "100",
+          metric_serving_unit: "g",
+          calories: String(calories),
+          protein: String(nutriments.proteins_100g || 0),
+          carbohydrate: String(nutriments.carbohydrates_100g || 0),
+          fat: String(nutriments.fat_100g || 0),
+        },
+      };
+    }
+  } catch {
+    logger.warn("barcode_open_food_facts_lookup_failed");
+  }
+
+  // 2. Fallback to FatSecret barcode lookup
+  try {
+    // First, look up the food_id for this barcode
+    const searchResponse = await api.get<any>("/v1/fatsecret", {
+      params: {
+        method: "food.find_id_for_barcode",
+        barcode: cleanBarcode,
+      },
+    });
+
+    const foodId =
+      searchResponse.data?.results?.food_id ||
+      searchResponse.data?.food?.food_id;
+    if (foodId) {
+      // Then, get the full food details
+      return await getFatSecretFood(foodId);
+    }
+  } catch {
+    logger.warn("barcode_fatsecret_lookup_failed");
+  }
+
+  throw new Error("Product not found. Please log manually or search by name.");
 };

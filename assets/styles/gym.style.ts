@@ -1,8 +1,8 @@
 import { ThemeType } from "@/constants/colors";
-import { StyleSheet } from "react-native";
+import { createWithFont } from "./fontHelper";
 
 export const gymStyles = (theme: ThemeType) =>
-  StyleSheet.create({
+  createWithFont({
     safeArea: {
       flex: 1,
       backgroundColor: theme.background,
@@ -344,6 +344,8 @@ export const gymStyles = (theme: ThemeType) =>
     exerciseName: {
       color: theme.textBlack,
       fontSize: 16,
+
+      textTransform: "capitalize",
       fontWeight: "800",
     },
     exerciseMeta: {
@@ -359,11 +361,11 @@ export const gymStyles = (theme: ThemeType) =>
       marginTop: 4,
     },
     chartBlock: {
-      backgroundColor: theme.card,
+      backgroundColor: theme.background,
       borderRadius: 14,
       overflow: "hidden",
       borderWidth: 1,
-      borderColor: theme.border,
+      borderColor: theme.background,
     },
     chart: {
       borderRadius: 14,
@@ -600,6 +602,7 @@ export const gymStyles = (theme: ThemeType) =>
       borderRadius: 10,
       paddingHorizontal: 14,
       paddingVertical: 12,
+      marginBottom: 8,
       color: theme.text,
       fontSize: 14,
       borderWidth: 1,

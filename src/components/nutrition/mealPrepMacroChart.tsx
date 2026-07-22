@@ -54,15 +54,11 @@ function MacroSegmentedBar({
     );
   }
 
-  const SegmentLabel = ({
-    pct,
-    value,
-    label,
-  }: {
-    pct: number;
-    value: number;
-    label: string;
-  }) =>
+  const renderSegmentLabel = (
+    pct: number,
+    value: number,
+    label: string,
+  ) =>
     pct >= MIN_PCT_FOR_LABEL ? (
       <View style={{ alignItems: "center", flexDirection: "row" }}>
         <Text
@@ -108,9 +104,9 @@ function MacroSegmentedBar({
           overflow: "hidden",
         }}
       >
-        <SegmentLabel pct={proteinPct} value={protein} label="Protein" />
+        {renderSegmentLabel(proteinPct, protein, "Protein")}
       </View>
-
+ 
       <View
         style={{
           flex: carbPct,
@@ -121,9 +117,9 @@ function MacroSegmentedBar({
           overflow: "hidden",
         }}
       >
-        <SegmentLabel pct={carbPct} value={carbohydrate} label="Carbs" />
+        {renderSegmentLabel(carbPct, carbohydrate, "Carbs")}
       </View>
-
+ 
       <View
         style={{
           flex: fatPct,
@@ -136,7 +132,7 @@ function MacroSegmentedBar({
           overflow: "hidden",
         }}
       >
-        <SegmentLabel pct={fatPct} value={fat} label="Fat" />
+        {renderSegmentLabel(fatPct, fat, "Fat")}
       </View>
     </View>
   );

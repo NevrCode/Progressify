@@ -16,6 +16,7 @@ import {
 } from "@/services/sessionStorage";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -28,6 +29,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  Vibration,
   View
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -123,6 +125,66 @@ export default function ActiveWorkoutSession() {
 
   const [restoredIds, setRestoredIds] = useState<number[]>([]);
   const [restoredSplit, setRestoredSplit] = useState<SplitType | null>(null);
+
+  // Rest Timer State
+  const [restTime, setRestTime] = useState<number>(0);
+  const [isRestPaused, setIsRestPaused] = useState<boolean>(false);
+  const [initialRestDuration, setInitialRestDuration] = useState<number>(90);
+  const [isRestActive, setIsRestActive] = useState<boolean>(false);
+
+  const startRestTimer = (seconds: number) => {
+    setRestTime(seconds);
+    setInitialRestDuration(seconds);
+    setIsRestPaused(false);
+    setIsRestActive(true);
+  };
+
+  const adjustRestTime = (seconds: number) => {
+    setRestTime((prev) => Math.max(0, prev + seconds));
+  };
+
+  const toggleRestPause = () => {
+    setIsRestPaused((prev) => !prev);
+  };
+
+  const stopRestTimer = () => {
+    setRestTime(0);
+    setIsRestPaused(false);
+    setIsRestActive(false);
+  };
+
+  const formatRestTime = (totalSeconds: number) => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  useEffect(() => {
+    let interval: any = null;
+    if (isRestActive && restTime > 0 && !isRestPaused) {
+      interval = setInterval(() => {
+        setRestTime((prev) => {
+          if (prev <= 1) {
+            clearInterval(interval);
+            if (Platform.OS !== "web") {
+              try {
+                Vibration.vibrate([0, 500, 200, 500]);
+              } catch {
+                // ignore
+              }
+            }
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      if (interval) clearInterval(interval);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isRestActive, restTime, isRestPaused]);
 
   const selectedSplit = restoredSplit ?? normalizeSplit(split);
   const selectedIds = useMemo(
@@ -691,13 +753,54 @@ export default function ActiveWorkoutSession() {
     <SafeAreaProvider>
       <SafeAreaView style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.container}>
-          <View style={styles.header}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 8,
+            }}
+          >
             <View>
-              <Text style={styles.eyebrow}>{displaySplit(selectedSplit)}</Text>
-              <Text style={styles.title}>Active Session</Text>
+              <Text
+                style={{
+                  color: theme.textLight,
+                  fontSize: 12,
+                  fontWeight: "800",
+                  fontFamily: "PlusJakartaSans_800ExtraBold",
+                  textTransform: "uppercase",
+                  letterSpacing: 1.5,
+                  marginBottom: 2,
+                }}
+              >
+                {displaySplit(selectedSplit)} Day
+              </Text>
+              <Text
+                style={{
+                  color: theme.textBlack,
+                  fontSize: 28,
+                  fontWeight: "900",
+                  fontFamily: "PlusJakartaSans_800ExtraBold",
+                  letterSpacing: -0.8,
+                }}
+              >
+                Active Session
+              </Text>
             </View>
-            <TouchableOpacity style={styles.headerBadge} onPress={confirmExit}>
-              <MaterialIcons name="close" size={22} color={theme.white} />
+            <TouchableOpacity
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 14,
+                backgroundColor: theme.primary + "15",
+                borderWidth: 1.5,
+                borderColor: theme.primary + "30",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+              onPress={confirmExit}
+            >
+              <MaterialIcons name="close" size={22} color={theme.primary} />
             </TouchableOpacity>
           </View>
 
@@ -705,59 +808,61 @@ export default function ActiveWorkoutSession() {
             style={{
               flexDirection: "row",
               alignItems: "center",
-              backgroundColor: theme.primary + "12",
-              borderRadius: 999,
-              paddingVertical: 8,
-              paddingHorizontal: 14,
-              gap: 10,
-              borderWidth: 1,
-              borderColor: theme.primary + "30",
+              backgroundColor: theme.primary + "06",
+              borderRadius: 16,
+              padding: 12,
+              borderWidth: 1.5,
+              borderColor: theme.primary + "20",
+              marginBottom: 8,
             }}
           >
-            <MaterialCommunityIcons
-              name="timer-outline"
-              size={16}
-              color={theme.primary}
-            />
+            <View
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 10,
+                backgroundColor: theme.primary + "15",
+                justifyContent: "center",
+                alignItems: "center",
+                marginRight: 10,
+              }}
+            >
+              <MaterialCommunityIcons
+                name="timer-outline"
+                size={18}
+                color={theme.primary}
+              />
+            </View>
             <Text
               style={{
-                color: theme.primary,
-                fontSize: 13,
-                fontWeight: "800",
+                color: theme.textBlack,
+                fontSize: 16,
+                fontWeight: "900",
+                fontFamily: "PlusJakartaSans_800ExtraBold",
+                flex: 1,
               }}
             >
               {elapsed}
             </Text>
             <View
               style={{
-                width: 1,
-                height: 16,
-                backgroundColor: theme.primary + "30",
-              }}
-            />
-            <Text
-              style={{
-                color: theme.primary,
-                fontSize: 13,
-                fontWeight: "700",
-                flex: 1,
+                backgroundColor: theme.primary + "15",
+                borderRadius: 10,
+                paddingHorizontal: 8,
+                paddingVertical: 4,
               }}
             >
-              {completedIds.size}/{selectedExercises.length} exercises
-            </Text>
-            <Text
-              style={{
-                color: theme.primary,
-                fontSize: 12,
-                fontWeight: "800",
-              }}
-            >
-              {restoredIds.length > 0 && selectedIds.length === 0
-                ? "Resumed"
-                : completedIds.size === selectedExercises.length
-                  ? "Done"
-                  : "Active"}
-            </Text>
+              <Text
+                style={{
+                  color: theme.primary,
+                  fontSize: 11,
+                  fontWeight: "800",
+                  fontFamily: "PlusJakartaSans_800ExtraBold",
+                }}
+              >
+                {completedIds.size}/{selectedExercises.length} EXERCISES
+              </Text>
+            </View>
           </View>
 
           <View style={styles.sectionHeader}>
@@ -920,87 +1025,290 @@ export default function ActiveWorkoutSession() {
                     behavior={Platform.OS === "ios" ? "padding" : "height"}
                     style={{ flex: 1 }}
                   >
-                    <View style={styles.setTable}>
-                      <View style={styles.setTableHeader}>
-                        <Text style={styles.setHeaderText}>Set</Text>
-                        <Text style={styles.setHeaderText}>Weight</Text>
-                        <Text style={styles.setHeaderText}>Reps</Text>
-                        <Text style={styles.setHeaderText}>RIR</Text>
-                        {!isCompleted && (
-                          <Text style={styles.setHeaderText}>Act</Text>
-                        )}
+                    <View
+                      style={{
+                        borderWidth: 1.5,
+                        borderColor: theme.border,
+                        borderRadius: 16,
+                        backgroundColor: theme.background,
+                        overflow: "hidden",
+                        marginTop: 10,
+                      }}
+                    >
+                      {/* Table Header */}
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          backgroundColor: theme.card,
+                          borderBottomWidth: 1.5,
+                          borderBottomColor: theme.border,
+                          paddingVertical: 8,
+                          paddingHorizontal: 8,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            flex: 1,
+                            fontSize: 10,
+                            fontWeight: "800",
+                            fontFamily: "PlusJakartaSans_800ExtraBold",
+                            color: theme.textLight,
+                            textAlign: "center",
+                          }}
+                        >
+                          SET
+                        </Text>
+                        <Text
+                          style={{
+                            flex: 2.2,
+                            fontSize: 10,
+                            fontWeight: "800",
+                            fontFamily: "PlusJakartaSans_800ExtraBold",
+                            color: theme.textLight,
+                            textAlign: "center",
+                          }}
+                        >
+                          WEIGHT
+                        </Text>
+                        <Text
+                          style={{
+                            flex: 1.8,
+                            fontSize: 10,
+                            fontWeight: "800",
+                            fontFamily: "PlusJakartaSans_800ExtraBold",
+                            color: theme.textLight,
+                            textAlign: "center",
+                          }}
+                        >
+                          REPS
+                        </Text>
+                        <Text
+                          style={{
+                            flex: 1.8,
+                            fontSize: 10,
+                            fontWeight: "800",
+                            fontFamily: "PlusJakartaSans_800ExtraBold",
+                            color: theme.textLight,
+                            textAlign: "center",
+                          }}
+                        >
+                          RIR
+                        </Text>
+                        <Text
+                          style={{
+                            flex: 1.6,
+                            fontSize: 10,
+                            fontWeight: "800",
+                            fontFamily: "PlusJakartaSans_800ExtraBold",
+                            color: theme.textLight,
+                            textAlign: "center",
+                          }}
+                        >
+                          ACT
+                        </Text>
                       </View>
-                      {sets.map((set) => (
-                        <View key={set.localId} style={styles.setRow}>
-                          <Text style={styles.setValue}>#{set.set_number}</Text>
+
+                      {/* Table Rows */}
+                      {sets.map((set, idx) => (
+                        <View
+                          key={set.localId}
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            borderBottomWidth: idx === sets.length - 1 ? 0 : 1,
+                            borderBottomColor: theme.border + "50",
+                            paddingVertical: 6,
+                            paddingHorizontal: 8,
+                          }}
+                        >
+                          <Text
+                            style={{
+                              flex: 1,
+                              fontSize: 13,
+                              fontWeight: "900",
+                              fontFamily: "PlusJakartaSans_800ExtraBold",
+                              color: theme.textBlack,
+                              textAlign: "center",
+                            }}
+                          >
+                            {set.set_number}
+                          </Text>
+
                           {isCompleted ? (
                             <>
-                              <Text style={styles.setValue}>
+                              <Text
+                                style={{
+                                  flex: 2.2,
+                                  fontSize: 13,
+                                  fontWeight: "700",
+                                  color: theme.textBlack,
+                                  textAlign: "center",
+                                }}
+                              >
                                 {set.weight}kg
                               </Text>
-                              <Text style={styles.setValue}>{set.reps}</Text>
-                              <Text style={styles.setValue}>{set.rir}</Text>
+                              <Text
+                                style={{
+                                  flex: 1.8,
+                                  fontSize: 13,
+                                  fontWeight: "700",
+                                  color: theme.textBlack,
+                                  textAlign: "center",
+                                }}
+                              >
+                                {set.reps}
+                              </Text>
+                              <Text
+                                style={{
+                                  flex: 1.8,
+                                  fontSize: 13,
+                                  fontWeight: "700",
+                                  color: theme.textBlack,
+                                  textAlign: "center",
+                                }}
+                              >
+                                {set.rir}
+                              </Text>
+                              <View style={{ flex: 1.6 }} />
                             </>
                           ) : (
                             <>
-                              <TextInput
-                                style={styles.setValue}
-                                keyboardType="numeric"
-                                value={set.weight}
-                                onChangeText={(v) =>
-                                  updateDraftSet(
-                                    exercise.id,
-                                    set.localId,
-                                    "weight",
-                                    v,
-                                  )
-                                }
-                              />
-                              <TextInput
-                                style={styles.setValue}
-                                keyboardType="numeric"
-                                value={set.reps}
-                                onChangeText={(v) =>
-                                  updateDraftSet(
-                                    exercise.id,
-                                    set.localId,
-                                    "reps",
-                                    v,
-                                  )
-                                }
-                              />
-                              <TextInput
-                                style={styles.setValue}
-                                keyboardType="numeric"
-                                value={set.rir}
-                                onChangeText={(v) =>
-                                  updateDraftSet(
-                                    exercise.id,
-                                    set.localId,
-                                    "rir",
-                                    v,
-                                  )
-                                }
-                              />
-                              <TouchableOpacity
-                                onPress={() =>
-                                  deleteDraftSet(exercise.id, set.localId)
-                                }
-                                disabled={deletingSetKey === set.localId}
+                              {/* Weight Input */}
+                              <View style={{ flex: 2.2, paddingHorizontal: 4 }}>
+                                <TextInput
+                                  style={{
+                                    backgroundColor: theme.card,
+                                    borderRadius: 8,
+                                    borderWidth: 1,
+                                    borderColor: theme.border,
+                                    color: theme.textBlack,
+                                    fontSize: 13,
+                                    fontWeight: "600",
+                                    paddingVertical: 6,
+                                    textAlign: "center",
+                                  }}
+                                  keyboardType="numeric"
+                                  value={set.weight}
+                                  onChangeText={(v) =>
+                                    updateDraftSet(
+                                      exercise.id,
+                                      set.localId,
+                                      "weight",
+                                      v,
+                                    )
+                                  }
+                                />
+                              </View>
+
+                              {/* Reps Input */}
+                              <View style={{ flex: 1.8, paddingHorizontal: 4 }}>
+                                <TextInput
+                                  style={{
+                                    backgroundColor: theme.card,
+                                    borderRadius: 8,
+                                    borderWidth: 1,
+                                    borderColor: theme.border,
+                                    color: theme.textBlack,
+                                    fontSize: 13,
+                                    fontWeight: "600",
+                                    paddingVertical: 6,
+                                    textAlign: "center",
+                                  }}
+                                  keyboardType="numeric"
+                                  value={set.reps}
+                                  onChangeText={(v) =>
+                                    updateDraftSet(
+                                      exercise.id,
+                                      set.localId,
+                                      "reps",
+                                      v,
+                                    )
+                                  }
+                                />
+                              </View>
+
+                              {/* RIR Input */}
+                              <View style={{ flex: 1.8, paddingHorizontal: 4 }}>
+                                <TextInput
+                                  style={{
+                                    backgroundColor: theme.card,
+                                    borderRadius: 8,
+                                    borderWidth: 1,
+                                    borderColor: theme.border,
+                                    color: theme.textBlack,
+                                    fontSize: 13,
+                                    fontWeight: "600",
+                                    paddingVertical: 6,
+                                    textAlign: "center",
+                                  }}
+                                  keyboardType="numeric"
+                                  value={set.rir}
+                                  onChangeText={(v) =>
+                                    updateDraftSet(
+                                      exercise.id,
+                                      set.localId,
+                                      "rir",
+                                      v,
+                                    )
+                                  }
+                                />
+                              </View>
+
+                              {/* Actions */}
+                              <View
+                                style={{
+                                  flex: 1.6,
+                                  flexDirection: "row",
+                                  justifyContent: "center",
+                                  alignItems: "center",
+                                  gap: 6,
+                                }}
                               >
-                                {deletingSetKey === set.localId ? (
-                                  <ActivityIndicator
-                                    size="small"
-                                    color={theme.expense}
+                                <TouchableOpacity
+                                  onPress={() => startRestTimer(90)}
+                                  style={{
+                                    width: 26,
+                                    height: 26,
+                                    borderRadius: 6,
+                                    backgroundColor: theme.primary + "12",
+                                    justifyContent: "center",
+                                    alignItems: "center",
+                                  }}
+                                >
+                                  <MaterialCommunityIcons
+                                    name="timer-play-outline"
+                                    size={15}
+                                    color={theme.primary}
                                   />
-                                ) : (
-                                  <MaterialIcons
-                                    name="delete"
-                                    size={16}
-                                    color={theme.expense}
-                                  />
-                                )}
-                              </TouchableOpacity>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  onPress={() =>
+                                    deleteDraftSet(exercise.id, set.localId)
+                                  }
+                                  disabled={deletingSetKey === set.localId}
+                                  style={{
+                                    width: 26,
+                                    height: 26,
+                                    borderRadius: 6,
+                                    backgroundColor: theme.expense + "12",
+                                    justifyContent: "center",
+                                    alignItems: "center",
+                                  }}
+                                >
+                                  {deletingSetKey === set.localId ? (
+                                    <ActivityIndicator
+                                      size="small"
+                                      color={theme.expense}
+                                    />
+                                  ) : (
+                                    <MaterialIcons
+                                      name="delete-outline"
+                                      size={15}
+                                      color={theme.expense}
+                                    />
+                                  )}
+                                </TouchableOpacity>
+                              </View>
                             </>
                           )}
                         </View>
@@ -1034,6 +1342,163 @@ export default function ActiveWorkoutSession() {
           {/* Bottom spacer */}
           <View style={{ height: 20 }} />
         </ScrollView>
+
+        {/* Floating Rest Timer Overlay */}
+        {isRestActive && (
+          <LinearGradient
+            colors={
+              restTime === 0
+                ? [theme.income + "F2", theme.income]
+                : [theme.primary + "E6", theme.primary + "FF"]
+            }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{
+              marginHorizontal: 20,
+              marginBottom: 10,
+              borderRadius: 16,
+              paddingVertical: 12,
+              paddingHorizontal: 16,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              shadowColor: theme.shadow,
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.25,
+              shadowRadius: 10,
+              elevation: 8,
+              borderWidth: 1,
+              borderColor: restTime === 0 ? theme.income + "30" : theme.primary + "30",
+            }}
+          >
+            {/* Left section: Icon and Time */}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+              <MaterialCommunityIcons
+                name={
+                  restTime === 0
+                    ? "bell-ring-outline"
+                    : isRestPaused
+                      ? "timer-off-outline"
+                      : "timer-sand"
+                }
+                size={26}
+                color={theme.background}
+              />
+              <View>
+                <Text
+                  style={{
+                    color: theme.background,
+                    fontSize: 10,
+                    fontWeight: "800",
+                    textTransform: "uppercase",
+                    letterSpacing: 0.8,
+                    opacity: 0.9,
+                  }}
+                >
+                  {restTime === 0 ? "Rest Finished" : "Rest Timer"}
+                </Text>
+                <Text
+                  style={{
+                    color: theme.background,
+                    fontSize: 22,
+                    fontWeight: "900",
+                    letterSpacing: -0.5,
+                    marginTop: 1,
+                  }}
+                >
+                  {restTime === 0 ? "Go Lift!" : formatRestTime(restTime)}
+                </Text>
+              </View>
+            </View>
+
+            {/* Middle section: Action Controls */}
+            {restTime > 0 ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <TouchableOpacity
+                  onPress={() => adjustRestTime(-30)}
+                  style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    borderRadius: 8,
+                    backgroundColor: theme.background + "20",
+                    justifyContent: "center",
+                    alignItems: "center",
+                  }}
+                >
+                  <Text style={{ color: theme.background, fontSize: 11, fontWeight: "900" }}>-30s</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => adjustRestTime(30)}
+                  style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    borderRadius: 8,
+                    backgroundColor: theme.background + "20",
+                    justifyContent: "center",
+                    alignItems: "center",
+                  }}
+                >
+                  <Text style={{ color: theme.background, fontSize: 11, fontWeight: "900" }}>+30s</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <TouchableOpacity
+                  onPress={() => startRestTimer(initialRestDuration)}
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
+                    borderRadius: 8,
+                    backgroundColor: theme.background,
+                    justifyContent: "center",
+                    alignItems: "center",
+                    flexDirection: "row",
+                    gap: 4,
+                  }}
+                >
+                  <MaterialIcons name="replay" size={14} color={theme.income} />
+                  <Text style={{ color: theme.income, fontSize: 11, fontWeight: "900" }}>Restart</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Right section: Play/Pause/Dismiss */}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              {restTime > 0 && (
+                <TouchableOpacity
+                  onPress={toggleRestPause}
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    backgroundColor: theme.background,
+                    justifyContent: "center",
+                    alignItems: "center",
+                  }}
+                >
+                  <MaterialCommunityIcons
+                    name={isRestPaused ? "play" : "pause"}
+                    size={20}
+                    color={theme.primary}
+                  />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                onPress={stopRestTimer}
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  backgroundColor: theme.background + "20",
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
+                <MaterialCommunityIcons name="close" size={20} color={theme.background} />
+              </TouchableOpacity>
+            </View>
+          </LinearGradient>
+        )}
 
         {/* Bottom bar */}
         <View

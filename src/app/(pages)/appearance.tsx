@@ -1,4 +1,4 @@
-import { THEMES, ThemeType } from "@/constants/colors";
+import { THEMES } from "@/constants/colors";
 import { useTheme } from "@/context/ThemeContext";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -103,7 +103,6 @@ export default function AppearanceSettings() {
           {Object.keys(THEMES).map((key) => {
             const currentTheme = THEMES[key as keyof typeof THEMES];
             const isActive = themeName === key;
-            const isDark = isDarkTheme(currentTheme);
 
             return (
               <TouchableOpacity
@@ -194,12 +193,4 @@ export default function AppearanceSettings() {
       </SafeAreaView>
     </SafeAreaProvider>
   );
-}
-
-function isDarkTheme(t: ThemeType): boolean {
-  const bg = t.background.replace("#", "");
-  const r = parseInt(bg.substring(0, 2), 16);
-  const g = parseInt(bg.substring(2, 4), 16);
-  const b = parseInt(bg.substring(4, 6), 16);
-  return (r + g + b) / 3 < 128;
 }

@@ -1,6 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getUserScopedKey } from "@/services/userScopedStorage";
+import { logger } from "@/utils/logger";
 
-const ACTIVE_SESSION_KEY = "@progressify_active_session";
+const ACTIVE_SESSION_NAMESPACE = "@progressify_active_session";
+const LEGACY_ACTIVE_SESSION_KEY = "@progressify_active_session";
 
 export type StoredDraftSet = {
   localId: string;
@@ -26,28 +29,42 @@ export type ActiveSessionData = {
 
 export const saveActiveSession = async (data: ActiveSessionData) => {
   try {
-    await AsyncStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(data));
+    const key = await getUserScopedKey(ACTIVE_SESSION_NAMESPACE);
+    if (!key) return;
+    await AsyncStorage.multiRemove([LEGACY_ACTIVE_SESSION_KEY]);
+    await AsyncStorage.setItem(key, JSON.stringify(data));
   } catch (error) {
-    console.warn("Failed to save active session:", error);
+    logger.warn("active_session_save_failed", {
+      error_type: error instanceof Error ? error.name : "unknown",
+    });
   }
 };
 
 export const loadActiveSession =
   async (): Promise<ActiveSessionData | null> => {
     try {
-      const raw = await AsyncStorage.getItem(ACTIVE_SESSION_KEY);
+      const key = await getUserScopedKey(ACTIVE_SESSION_NAMESPACE);
+      if (!key) return null;
+      await AsyncStorage.multiRemove([LEGACY_ACTIVE_SESSION_KEY]);
+      const raw = await AsyncStorage.getItem(key);
       if (!raw) return null;
       return JSON.parse(raw) as ActiveSessionData;
     } catch (error) {
-      console.warn("Failed to load active session:", error);
+      logger.warn("active_session_load_failed", {
+        error_type: error instanceof Error ? error.name : "unknown",
+      });
       return null;
     }
   };
 
 export const clearActiveSession = async () => {
   try {
-    await AsyncStorage.removeItem(ACTIVE_SESSION_KEY);
+    const key = await getUserScopedKey(ACTIVE_SESSION_NAMESPACE);
+    if (key) await AsyncStorage.removeItem(key);
+    await AsyncStorage.removeItem(LEGACY_ACTIVE_SESSION_KEY);
   } catch (error) {
-    console.warn("Failed to clear active session:", error);
+    logger.warn("active_session_clear_failed", {
+      error_type: error instanceof Error ? error.name : "unknown",
+    });
   }
 };

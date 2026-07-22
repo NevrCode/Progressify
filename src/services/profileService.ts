@@ -1,5 +1,4 @@
 import { api } from "@/utils/api";
-import * as SecureToken from "expo-secure-store";
 interface ProfileResponse {
   name: string;
   email: string;
@@ -8,15 +7,9 @@ interface ProfileResponse {
 
 export const getProfile = async () => {
   try {
-    const token = await SecureToken.getItemAsync("access_token");
-    const res = await api.get<ProfileResponse>("/v1/user/me", {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    const res = await api.get<ProfileResponse>("/v1/user/me");
     return res;
   } catch (error) {
-    console.error("Error fetching profile:", error);
     throw error;
   }
 };

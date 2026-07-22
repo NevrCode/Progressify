@@ -1,10 +1,11 @@
 import { ThemeType } from "@/constants/colors";
-import { Dimensions, StyleSheet } from "react-native";
+import { Dimensions } from "react-native";
+import { createWithFont } from "./fontHelper";
 
 const h = Dimensions.get("window").height;
 const w = Dimensions.get("window").width;
 export const baseStyles = (theme: ThemeType) =>
-  StyleSheet.create({
+  createWithFont({
     container: {
       backgroundColor: theme.background,
       height: h,

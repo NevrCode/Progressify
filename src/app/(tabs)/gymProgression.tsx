@@ -1,17 +1,22 @@
 import { gymStyles } from "@/assets/styles/gym.style";
+import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
+import { SyncStatusBadge } from "@/components/base/SyncStatusBadge";
+import { MuscleHeatmap } from "@/components/gym/MuscleHeatmap";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useActiveSession } from "@/hooks/useActiveSession";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
+import {
+  calculateEstimatedOneRepMax,
+  calculateWorkoutVolume,
+} from "@/utils/workoutMetrics";
 
 import {
   createExerciseProgression,
-  createExerciseSession,
   deleteExerciseProgression,
   ExerciseProgressionDTO,
   ExerciseSessionDTO,
   GymExerciseProgressionRequestDTO,
-  GymExerciseSessionRequestDTO,
   SplitType,
   updateExerciseProgression,
 } from "@/services/gymService";
@@ -19,9 +24,10 @@ import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -30,7 +36,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import { LineChart } from "react-native-gifted-charts";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -42,25 +48,6 @@ type SessionProgressionPoint = {
   estimated1RM: number;
   totalVolume: number;
   totalSets: number;
-};
-type ActiveWorkoutDraft = {
-  exerciseId: number;
-
-  startedAt: string;
-
-  sets: DraftWorkoutSet[];
-};
-
-type DraftWorkoutSet = {
-  localId: string;
-
-  set_number: number;
-
-  weight: number;
-
-  reps: number;
-
-  rir: number;
 };
 type SplitFilter = "ALL" | SplitType;
 type ModalKind = "exercise" | "set";
@@ -98,9 +85,6 @@ const displaySplit = (split?: string) => {
 
 const getExerciseName = (exercise: ExerciseProgressionDTO) =>
   exercise.name ?? "Exercise";
-
-const getWorkoutSets = (exercise: ExerciseProgressionDTO) =>
-  exercise.workout_sets ?? exercise.last_workout_sets ?? [];
 
 const getExerciseSessions = (exercise: ExerciseProgressionDTO) =>
   exercise.exercise_sessions ?? [];
@@ -219,7 +203,10 @@ const buildSessionProgression = (
         0,
       );
 
-      const estimated1RM = topSet.weight * (1 + topSet.reps / 30);
+      const estimated1RM = calculateEstimatedOneRepMax(
+        topSet.weight,
+        topSet.reps,
+      );
 
       return {
         key: `${session.id}-${sessionDate}`,
@@ -246,6 +233,26 @@ const buildSessionProgression = (
   );
 };
 
+const get1RMTrend = (
+  points: SessionProgressionPoint[],
+): { value: string; isPositive: boolean } | null => {
+  if (points.length < 2) return null;
+  const latest = points[points.length - 1];
+  const previous = points[points.length - 2];
+
+  if (previous.estimated1RM <= 0) return null;
+
+  const diff = latest.estimated1RM - previous.estimated1RM;
+  const pct = (diff / previous.estimated1RM) * 100;
+
+  if (Math.abs(diff) < 0.1) return null;
+
+  return {
+    value: `${diff > 0 ? "+" : ""}${diff.toFixed(1)}kg (${diff > 0 ? "+" : ""}${pct.toFixed(0)}%)`,
+    isPositive: diff > 0,
+  };
+};
+
 export default function GymProgression() {
   const router = useRouter();
   const { theme } = useTheme();
@@ -261,18 +268,31 @@ export default function GymProgression() {
   );
   const [date, setDate] = useState(new Date());
   const [openDate, setOpenDate] = useState(false);
-  const [tableDetail, setTableDetail] = useState(false);
-  const [activeSplit, setActiveSplit] = useState<SplitFilter>("ALL");
-  const [activeWorkoutDrafts, setActiveWorkoutDrafts] = useState<
-    Record<number, ActiveWorkoutDraft>
-  >({});
-  const [finishingExerciseId, setFinishingExerciseId] = useState<number | null>(
+  const [expandedExerciseId, setExpandedExerciseId] = useState<number | null>(
     null,
   );
+  const [activeSplit, setActiveSplit] = useState<SplitFilter>("ALL");
+  const [splitTranslateX] = useState(() => new Animated.Value(0));
+  const [switcherWidth, setSwitcherWidth] = useState(0);
+
+  useEffect(() => {
+    const toVal =
+      activeSplit === "ALL"
+        ? 0
+        : activeSplit === "PUSH"
+          ? 1
+          : activeSplit === "PULL"
+            ? 2
+            : 3;
+    Animated.timing(splitTranslateX, {
+      toValue: toVal,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  }, [activeSplit, splitTranslateX]);
   const [deletingExerciseId, setDeletingExerciseId] = useState<number | null>(
     null,
   );
-  const [deletingSetId, setDeletingSetId] = useState<string | null>(null);
   const [modalState, setModalState] = useState<ModalState>({
     visible: false,
     kind: null,
@@ -342,7 +362,7 @@ export default function GymProgression() {
       for (const session of sessions) {
         const sets = getSessionSets(session);
         for (const set of sets) {
-          volume += set.weight * set.reps;
+          volume += calculateWorkoutVolume(set.weight, set.reps);
         }
       }
     }
@@ -357,210 +377,10 @@ export default function GymProgression() {
     });
   };
 
-  const getRandomInt = (): number => {
-    return Math.floor(Math.random() * 100);
-  };
-  const startWorkout = (exercise: ExerciseProgressionDTO) => {
-    const draft: ActiveWorkoutDraft = {
-      exerciseId: exercise.id,
-
-      startedAt: new Date().toISOString(),
-
-      sets: [
-        {
-          localId: `${Date.now() + getRandomInt()}`,
-
-          set_number: 1,
-
-          weight: 0,
-
-          reps: 0,
-
-          rir: 0,
-        },
-      ],
-    };
-
-    setActiveWorkoutDrafts((current) => ({
-      ...current,
-
-      [exercise.id]: draft,
-    }));
-  };
-  const updateDraftSet = (
-    exerciseId: number,
-    localId: string,
-    field: keyof DraftWorkoutSet,
-    value: number,
-  ) => {
-    setActiveWorkoutDrafts((current) => {
-      const draft = current[exerciseId];
-
-      if (!draft) return current;
-
-      return {
-        ...current,
-
-        [exerciseId]: {
-          ...draft,
-
-          sets: draft.sets.map((set) =>
-            set.localId === localId
-              ? {
-                  ...set,
-                  [field]: value,
-                }
-              : set,
-          ),
-        },
-      };
-    });
-  };
-  const addDraftSet = (exerciseId: number) => {
-    setActiveWorkoutDrafts((current) => {
-      const draft = current[exerciseId];
-
-      if (!draft) return current;
-
-      return {
-        ...current,
-
-        [exerciseId]: {
-          ...draft,
-
-          sets: [
-            ...draft.sets,
-
-            {
-              localId: new Date() + getRandomInt().toString(),
-
-              set_number: draft.sets.length + 1,
-
-              weight: 0,
-              reps: 0,
-              rir: 0,
-            },
-          ],
-        },
-      };
-    });
-  };
-  const validateDraftWorkout = (draft: ActiveWorkoutDraft) => {
-    if (!draft.sets.length) {
-      return "Add at least one set before finishing the workout.";
-    }
-
-    const invalidSet = draft.sets.find(
-      (set) => set.weight <= 0 || set.reps <= 0 || set.rir < 0,
-    );
-
-    if (!invalidSet) return null;
-
-    return `Set #${invalidSet.set_number} needs weight and reps above 0, and RIR cannot be negative.`;
-  };
-  const deleteDraftSet = (exerciseId: number, localId: string) => {
-    if (deletingSetId) return;
-
-    setDeletingSetId(localId);
-
-    setTimeout(() => {
-      setActiveWorkoutDrafts((current) => {
-        const draft = current[exerciseId];
-
-        if (!draft) return current;
-
-        const nextSets = draft.sets.filter((s) => s.localId !== localId);
-
-        // if no sets remain, remove the draft entirely
-        if (!nextSets.length) {
-          const copy = { ...current };
-          delete copy[exerciseId];
-          return copy;
-        }
-
-        // reindex set_number sequentially
-        const reindexed = nextSets.map((s, idx) => ({
-          ...s,
-          set_number: idx + 1,
-        }));
-
-        return {
-          ...current,
-          [exerciseId]: {
-            ...draft,
-            sets: reindexed,
-          },
-        };
-      });
-      setDeletingSetId(null);
-    }, 350);
-  };
-  const finishWorkout = async (exercise: ExerciseProgressionDTO) => {
-    const draft = activeWorkoutDrafts[exercise.id];
-
-    if (!draft) return;
-    const validationMessage = validateDraftWorkout(draft);
-
-    if (validationMessage) {
-      alert("Workout not ready", validationMessage);
-      return;
-    }
-
-    setFinishingExerciseId(exercise.id);
-    try {
-      const sessionDate = formatDateForApi(draft.startedAt);
-
-      const sessionPayload: GymExerciseSessionRequestDTO = {
-        session_date: sessionDate,
-        notes: "",
-        sets: draft.sets.map((set) => ({
-          set_number: set.set_number,
-          weight: set.weight,
-          reps: set.reps,
-          rir: set.rir,
-        })),
-      };
-
-      await sessionMutation.mutateAsync({
-        exerciseProgressionId: exercise.id,
-        payload: sessionPayload,
-      });
-
-      setActiveWorkoutDrafts((current) => {
-        const copy = { ...current };
-
-        delete copy[exercise.id];
-
-        return copy;
-      });
-    } catch (finishError: any) {
-      console.log("API error status:", finishError.response?.status);
-      console.log("API error body:", finishError.response?.data);
-
-      alert(
-        finishError.response?.data?.code ?? "Request failed",
-        finishError.response?.data?.message ?? finishError.message,
-      );
-    } finally {
-      setFinishingExerciseId(null);
-    }
-  };
-
   const invalidateGym = async () => {
     await queryClient.invalidateQueries({ queryKey: ["gym"] });
   };
 
-  const sessionMutation = useMutation({
-    mutationFn: async ({
-      exerciseProgressionId,
-      payload,
-    }: {
-      exerciseProgressionId: number;
-      payload: GymExerciseSessionRequestDTO;
-    }) => createExerciseSession(exerciseProgressionId, payload),
-
-    onSuccess: invalidateGym,
-  });
   const exerciseMutation = useMutation({
     mutationFn: async ({
       id,
@@ -834,172 +654,424 @@ export default function GymProgression() {
           <RefreshControl refreshing={isFetching} onRefresh={() => refetch()} />
         }
       >
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.eyebrow}>Progressify</Text>
-            <Text style={styles.title}>Progressive Overload</Text>
-          </View>
-          <View style={styles.headerBadge}>
-            <MaterialCommunityIcons
-              name="gymnastics"
-              size={22}
-              color={theme.white}
-            />
-          </View>
-        </View>
-        <View style={styles.heroCard}>
-          <Text style={styles.heroTitle}>Progress</Text>
-          <View style={styles.heroStats}>
-            <View style={styles.heroStatChip}>
-              <Text style={styles.heroStatValue}>
-                {exerciseProgressions.length}
-              </Text>
-              <Text style={styles.heroStatLabel}>exercises</Text>
-            </View>
-            <View style={styles.heroStatChip}>
-              <Text style={styles.heroStatValue}>
-                {best1RM > 0 ? `${best1RM.toFixed(0)}` : "-"}
-              </Text>
-              <Text style={styles.heroStatLabel}>best 1RM</Text>
-              {best1RM > 0 && bestMuscleName ? (
-                <Text
-                  style={{
-                    color: theme.primary,
-                    fontSize: 9,
-                    fontWeight: "700",
-                    marginTop: 2,
-                  }}
-                  numberOfLines={1}
-                >
-                  {bestMuscleName}
-                </Text>
-              ) : null}
-            </View>
-            <View style={styles.heroStatChip}>
-              <Text style={styles.heroStatValue}>
-                {totalVolume > 0
-                  ? totalVolume >= 1000
-                    ? `${(totalVolume / 1000).toFixed(1)}k`
-                    : totalVolume.toFixed(0)
-                  : "-"}
-              </Text>
-              <Text style={styles.heroStatLabel}>volume</Text>
-            </View>
-          </View>
-        </View>
-        <TouchableOpacity
-          style={styles.startWorkoutCard}
-          onPress={() => router.push("/(pages)/workoutSession")}
-          activeOpacity={0.7}
+        {/* ── Header ── */}
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 8,
+          }}
         >
-          <View style={styles.startWorkoutIconWrap}>
-            <MaterialCommunityIcons
-              name="dumbbell"
+          <View>
+            <Text
+              style={{
+                color: theme.textLight,
+                fontSize: 12,
+                fontWeight: "800",
+                fontFamily: "PlusJakartaSans_800ExtraBold",
+                textTransform: "uppercase",
+                letterSpacing: 1.5,
+                marginBottom: 2,
+              }}
+            >
+              Progressify
+            </Text>
+            <Text
+              style={{
+                color: theme.textBlack,
+                fontSize: 28,
+                fontWeight: "900",
+                fontFamily: "PlusJakartaSans_800ExtraBold",
+                letterSpacing: -0.8,
+              }}
+            >
+              Progression
+            </Text>
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <SyncStatusBadge />
+            <View
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 14,
+                backgroundColor: theme.primary + "15",
+                borderWidth: 1.5,
+                borderColor: theme.primary + "30",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <MaterialCommunityIcons
+                name="dumbbell"
+                size={24}
+                color={theme.primary}
+              />
+            </View>
+          </View>
+        </View>
+
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            backgroundColor: theme.primary + "06",
+            borderRadius: 14,
+            padding: 14,
+            borderWidth: 1.5,
+            borderColor: theme.primary + "20",
+          }}
+        >
+          <View style={{ flex: 1, alignItems: "center" }}>
+            <Text
+              style={{
+                fontSize: 10,
+                fontWeight: "700",
+                fontFamily: "PlusJakartaSans_700Bold",
+                color: theme.textLight,
+                textTransform: "uppercase",
+                marginBottom: 4,
+              }}
+            >
+              Exercises
+            </Text>
+            <Text
+              style={{
+                fontSize: 16,
+                fontWeight: "900",
+                fontFamily: "PlusJakartaSans_800ExtraBold",
+                color: theme.textBlack,
+              }}
+            >
+              {exerciseProgressions.length}
+            </Text>
+          </View>
+          <View
+            style={{
+              width: 1,
+              backgroundColor: theme.border + "50",
+            }}
+          />
+          <View style={{ flex: 1, alignItems: "center" }}>
+            <Text
+              style={{
+                fontSize: 10,
+                fontWeight: "700",
+                fontFamily: "PlusJakartaSans_700Bold",
+                color: theme.textLight,
+                textTransform: "uppercase",
+                marginBottom: 4,
+              }}
+            >
+              Best 1RM
+            </Text>
+            <Text
+              style={{
+                fontSize: 16,
+                fontWeight: "900",
+                fontFamily: "PlusJakartaSans_800ExtraBold",
+                color: theme.textBlack,
+              }}
+              numberOfLines={1}
+            >
+              {best1RM > 0 ? `${best1RM.toFixed(0)} kg` : "-"}
+            </Text>
+            {best1RM > 0 && bestMuscleName ? (
+              <Text
+                style={{
+                  color: theme.primary,
+                  fontSize: 8,
+                  fontWeight: "800",
+                  fontFamily: "PlusJakartaSans_800ExtraBold",
+                  marginTop: 2,
+                }}
+                numberOfLines={1}
+              >
+                {bestMuscleName}
+              </Text>
+            ) : null}
+          </View>
+          <View
+            style={{
+              width: 1,
+              backgroundColor: theme.border + "50",
+            }}
+          />
+          <View style={{ flex: 1, alignItems: "center" }}>
+            <Text
+              style={{
+                fontSize: 10,
+                fontWeight: "700",
+                fontFamily: "PlusJakartaSans_700Bold",
+                color: theme.textLight,
+                textTransform: "uppercase",
+                marginBottom: 4,
+              }}
+            >
+              Volume
+            </Text>
+            <Text
+              style={{
+                fontSize: 16,
+                fontWeight: "900",
+                fontFamily: "PlusJakartaSans_800ExtraBold",
+                color: theme.textBlack,
+              }}
+            >
+              {totalVolume > 0
+                ? totalVolume >= 1000
+                  ? `${(totalVolume / 1000).toFixed(1)}k `
+                  : `${totalVolume.toFixed(0)} `
+                : "-"}
+            </Text>
+          </View>
+        </View>
+
+        {/* ── Start Workout launcher card ── */}
+        <TouchableOpacity
+          onPress={() => router.push("/(pages)/workoutSession")}
+          activeOpacity={0.8}
+          style={{ marginBottom: 12 }}
+        >
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              backgroundColor: theme.card + "30",
+              borderRadius: 16,
+              padding: 16,
+              borderWidth: 1.5,
+              borderColor: theme.primary + "30",
+              shadowColor: theme.shadow,
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.03,
+              shadowRadius: 8,
+              elevation: 2,
+            }}
+          >
+            <View
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 10,
+                backgroundColor: theme.primary + "12",
+                justifyContent: "center",
+                alignItems: "center",
+                marginRight: 12,
+              }}
+            >
+              <MaterialCommunityIcons
+                name="dumbbell"
+                size={20}
+                color={theme.primary}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text
+                style={{
+                  color: theme.textBlack,
+                  fontSize: 15,
+                  fontWeight: "800",
+                }}
+              >
+                Start a Workout
+              </Text>
+              <Text
+                style={{
+                  color: theme.textLight,
+                  fontSize: 12,
+                  fontWeight: "600",
+                  marginTop: 2,
+                }}
+              >
+                Pick exercises and begin your session
+              </Text>
+            </View>
+            <MaterialIcons
+              name="arrow-forward"
               size={20}
               color={theme.primary}
             />
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.startWorkoutTitle}>Start Workout</Text>
-            <Text style={styles.startWorkoutMeta}>
-              Pick exercises and begin your session
-            </Text>
-          </View>
-          <MaterialIcons name="arrow-forward" size={20} color={theme.primary} />
         </TouchableOpacity>
+
         {!checking && hasActiveSession && storedSession && (
           <TouchableOpacity
-            style={styles.activeSessionBanner}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              backgroundColor: theme.primary + "15",
+              borderRadius: 16,
+              paddingVertical: 12,
+              paddingHorizontal: 16,
+              gap: 10,
+              borderWidth: 1.5,
+              borderColor: theme.primary + "40",
+              // shadowColor: theme.primary,
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.1,
+              shadowRadius: 6,
+              elevation: 3,
+              marginBottom: 12,
+            }}
             onPress={() => router.push("/(pages)/activeWorkoutSession")}
-            activeOpacity={0.7}
+            activeOpacity={0.75}
           >
-            <View style={styles.activeSessionDot} />
-            <Text style={styles.activeSessionBannerText}>
-              {storedSession.split.charAt(0) +
-                storedSession.split.slice(1).toLowerCase()}{" "}
-              session — {storedSession.completedIds.length}/
-              {storedSession.exerciseIds.length} done
+            <View
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 4,
+                marginRight: 2,
+              }}
+            />
+            <Text
+              style={{
+                flex: 1,
+                color: theme.primary,
+                fontSize: 14,
+                fontWeight: "800",
+              }}
+            >
+              Active {displaySplit(storedSession.split)} Session
             </Text>
-            <Text style={styles.activeSessionBannerAction}>Resume</Text>
+            <Text
+              style={{
+                color: theme.primary,
+                fontSize: 13,
+                fontWeight: "900",
+                marginRight: 6,
+              }}
+            >
+              Resume →
+            </Text>
             <TouchableOpacity
-              hitSlop={{ top: 10, bottom: 10, left: 6, right: 10 }}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               onPress={(e) => {
                 e.stopPropagation();
                 discard();
               }}
             >
-              <MaterialIcons name="close" size={16} color={theme.textLight} />
+              <MaterialIcons name="close" size={18} color={theme.primary} />
             </TouchableOpacity>
           </TouchableOpacity>
         )}
+
+        <MuscleHeatmap exercises={exerciseProgressions} />
+
+        {/* ── Search Input Bar ── */}
         <View
           style={{
-            backgroundColor: theme.card,
+            backgroundColor: theme.background,
             width: "100%",
-            borderWidth: 1,
+            borderWidth: 1.5,
             borderColor: theme.border,
             flexDirection: "row",
-            justifyContent: "space-between",
             alignItems: "center",
-            paddingHorizontal: 10,
-            borderRadius: 12,
-            marginBottom: 4,
+            paddingHorizontal: 14,
+            paddingVertical: 4,
+            borderRadius: 24,
+            marginBottom: 12,
+            shadowColor: theme.shadow,
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.03,
+            shadowRadius: 8,
+            elevation: 2,
           }}
         >
-          <TouchableOpacity>
-            <View
-              style={{
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <MaterialIcons name="search" size={20} color={theme.primary} />
-            </View>
-          </TouchableOpacity>
+          <MaterialIcons
+            name="search"
+            size={22}
+            color={theme.primary}
+            style={{ marginRight: 10 }}
+          />
           <TextInput
             style={{
-              color: theme.primary,
-              fontWeight: "500",
-              width: "85%",
+              color: theme.textBlack,
+              fontWeight: "600",
+              fontSize: 14,
+              flex: 1,
+              paddingVertical: 10,
             }}
-            placeholder="Search Exercise..."
-            placeholderTextColor={theme.textLight}
+            placeholder="Search exercise..."
+            placeholderTextColor={theme.textBlack + "80"}
             value={search}
             onChangeText={setSearch}
           />
-          <TouchableOpacity
-            onPress={() => {
-              if (search !== "") setSearch("");
-            }}
-          >
-            <View
-              style={{
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <MaterialIcons
-                name={search !== "" ? "close" : "filter-list"}
-                size={20}
-                color={theme.primary}
-              />
-            </View>
-          </TouchableOpacity>
+          {search !== "" && (
+            <TouchableOpacity onPress={() => setSearch("")}>
+              <MaterialIcons name="close" size={20} color={theme.textLight} />
+            </TouchableOpacity>
+          )}
         </View>
-        <View style={styles.filterBar}>
+
+        {/* ── Split Pill Switcher ── */}
+        <View
+          onLayout={(e) => setSwitcherWidth(e.nativeEvent.layout.width)}
+          style={{
+            flexDirection: "row",
+            backgroundColor: theme.background,
+            borderRadius: 24,
+            padding: 4,
+            borderWidth: 1.5,
+            borderColor: theme.border,
+            marginBottom: 16,
+            position: "relative",
+          }}
+        >
+          {switcherWidth > 0 && (
+            <Animated.View
+              style={{
+                position: "absolute",
+                top: 4,
+                bottom: 4,
+                left: 4,
+                width: (switcherWidth - 8) / 4,
+                backgroundColor: theme.primary + "12",
+                borderWidth: 1.5,
+                borderColor: theme.primary + "30",
+                borderRadius: 20,
+                transform: [
+                  {
+                    translateX: splitTranslateX.interpolate({
+                      inputRange: [0, 1, 2, 3],
+                      outputRange: [
+                        0,
+                        (switcherWidth - 8) * 0.25,
+                        (switcherWidth - 8) * 0.5,
+                        (switcherWidth - 8) * 0.75,
+                      ],
+                    }),
+                  },
+                ],
+              }}
+            />
+          )}
+
           {(["ALL", ...splitOptions] as SplitFilter[]).map((split) => {
             const active = split === activeSplit;
             return (
               <TouchableOpacity
                 key={split}
-                style={[styles.filterChip, active && styles.filterChipActive]}
+                style={{
+                  flex: 1,
+                  flexDirection: "row",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  paddingVertical: 10,
+                  borderRadius: 20,
+                }}
+                activeOpacity={0.8}
                 onPress={() => setActiveSplit(split)}
               >
                 <Text
-                  style={[
-                    styles.filterChipText,
-                    active && styles.filterChipTextActive,
-                  ]}
+                  style={{
+                    fontSize: 12,
+                    fontWeight: "800",
+                    fontFamily: "PlusJakartaSans_800ExtraBold",
+                    color: active ? theme.primary : theme.textLight,
+                  }}
                 >
                   {split === "ALL" ? "All" : displaySplit(split)}
                 </Text>
@@ -1007,6 +1079,7 @@ export default function GymProgression() {
             );
           })}
         </View>
+
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Exercise progression</Text>
           <TouchableOpacity
@@ -1017,10 +1090,9 @@ export default function GymProgression() {
             <Text style={styles.inlineActionText}>Add exercise</Text>
           </TouchableOpacity>
         </View>
+
         {filteredSearchWorkout.length ? (
           filteredSearchWorkout.map((exercise) => {
-            const activeDraft = activeWorkoutDrafts[exercise.id];
-            const currentWorkoutSets = activeDraft?.sets ?? [];
             const exerciseSessions = getExerciseSessions(exercise);
             const latestSession = [...exerciseSessions].sort(
               (a, b) =>
@@ -1032,26 +1104,168 @@ export default function GymProgression() {
             const sessionProgression =
               buildSessionProgression(exerciseSessions);
             const hasSessionHistory = sessionProgression.length > 0;
+            const trend = get1RMTrend(sessionProgression);
 
             return (
-              <View key={exercise.id} style={styles.exerciseCard}>
+              <ShadowGlowCard
+                key={exercise.id}
+                style={{
+                  backgroundColor: theme.background + "06",
+                  borderColor: theme.primary + "20",
+                  borderWidth: 1.5,
+                }}
+              >
                 <View style={styles.exerciseHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.exerciseName}>
-                      {getExerciseName(exercise)}
-                    </Text>
-                    <Text style={styles.exerciseMeta}>
-                      {displaySplit(exercise.split)} |{" "}
-                      {exercise.muscle_group ?? "-"} |{" "}
-                      {exercise.target_rep_range ?? "-"}
-                    </Text>
-                    <Text style={styles.exerciseSubMeta}>
-                      Last session:{" "}
-                      {latestSession
-                        ? getDayMonthYear(getSessionDate(latestSession))
-                        : "-"}
-                    </Text>
-                  </View>
+                  <TouchableOpacity
+                    style={{
+                      flex: 1,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
+                    activeOpacity={0.7}
+                    onPress={() =>
+                      setExpandedExerciseId(
+                        expandedExerciseId === exercise.id ? null : exercise.id,
+                      )
+                    }
+                  >
+                    <View style={{ flex: 1 }}>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 6,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <Text style={styles.exerciseName}>
+                          {getExerciseName(exercise)}
+                        </Text>
+                        {trend && (
+                          <View
+                            style={{
+                              backgroundColor: trend.isPositive
+                                ? theme.income + "15"
+                                : theme.expense + "15",
+                              borderRadius: 8,
+                              paddingHorizontal: 6,
+                              paddingVertical: 2,
+                              borderWidth: 1,
+                              borderColor: trend.isPositive
+                                ? theme.income + "30"
+                                : theme.expense + "30",
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 9,
+                                fontWeight: "800",
+                                color: trend.isPositive
+                                  ? theme.income
+                                  : theme.expense,
+                              }}
+                            >
+                              {trend.isPositive ? "▲" : "▼"} {trend.value}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          gap: 6,
+                          marginTop: 6,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <View
+                          style={{
+                            backgroundColor: theme.primary + "10",
+                            borderRadius: 8,
+                            paddingHorizontal: 6,
+                            paddingVertical: 2,
+                            borderWidth: 1,
+                            borderColor: theme.primary + "20",
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 9,
+                              fontWeight: "800",
+                              color: theme.primary,
+
+                              textTransform: "capitalize",
+                            }}
+                          >
+                            {displaySplit(exercise.split)}
+                          </Text>
+                        </View>
+                        {exercise.muscle_group && (
+                          <View
+                            style={{
+                              backgroundColor: theme.primary + "10",
+                              borderRadius: 8,
+                              paddingHorizontal: 6,
+                              paddingVertical: 2,
+                              borderWidth: 1,
+                              borderColor: theme.primary + "20",
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 9,
+                                fontWeight: "800",
+                                color: theme.primary,
+                              }}
+                            >
+                              {exercise.muscle_group}
+                            </Text>
+                          </View>
+                        )}
+                        {exercise.target_rep_range && (
+                          <View
+                            style={{
+                              backgroundColor: theme.primary + "10",
+                              borderRadius: 8,
+                              paddingHorizontal: 6,
+                              paddingVertical: 2,
+                              borderWidth: 1,
+                              borderColor: theme.primary + "20",
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 9,
+                                fontWeight: "800",
+                                color: theme.primary,
+                              }}
+                            >
+                              {exercise.target_rep_range} reps
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+
+                      <Text style={[styles.exerciseSubMeta, { marginTop: 6 }]}>
+                        Last session:{" "}
+                        {latestSession
+                          ? getDayMonthYear(getSessionDate(latestSession))
+                          : "-"}
+                      </Text>
+                    </View>
+                    <MaterialIcons
+                      name={
+                        expandedExerciseId === exercise.id
+                          ? "keyboard-arrow-up"
+                          : "keyboard-arrow-down"
+                      }
+                      size={24}
+                      color={theme.textLight}
+                      style={{ marginRight: 8 }}
+                    />
+                  </TouchableOpacity>
                   <View style={styles.cardActionIcons}>
                     <View
                       style={{
@@ -1120,398 +1334,198 @@ export default function GymProgression() {
                   </View>
                 </View>
 
-                <View style={styles.subsectionHeader}>
-                  <View>
-                    <Text style={styles.subsectionTitle}>
-                      Session progression
-                    </Text>
-                    <Text style={styles.sectionMeta}>
-                      One point per recorded workout session
-                    </Text>
-                  </View>
-                </View>
-
-                {hasSessionHistory ? (
+                {expandedExerciseId === exercise.id && (
                   <>
-                    <View style={styles.chartBlock}>
-                      <LineChart
-                        areaChart
-                        curved
-                        isAnimated
-                        data={[...sessionProgression].map((point) => ({
-                          value: Number(point.estimated1RM.toFixed(1)),
-                          label: getDayMonth(point.sessionDate),
-                          dataPointText: `${point.estimated1RM.toFixed(1)}`,
-                        }))}
-                        height={220}
-                        spacing={56}
-                        initialSpacing={18}
-                        endSpacing={18}
-                        thickness={4}
-                        color={theme.primary}
-                        startFillColor={theme.primary}
-                        endFillColor={theme.primary}
-                        startOpacity={0.35}
-                        endOpacity={0.02}
-                        hideRules={false}
-                        rulesColor={`${theme.border}55`}
-                        rulesType="dashed"
-                        yAxisColor="transparent"
-                        xAxisColor={`${theme.border}88`}
-                        hideYAxisText={false}
-                        yAxisTextStyle={{
-                          color: theme.textLight,
-                          fontSize: 11,
-                        }}
-                        xAxisLabelTextStyle={{
-                          color: theme.textLight,
-                          fontSize: 11,
-                          marginTop: 6,
-                        }}
-                        noOfSections={4}
-                        maxValue={
-                          Math.max(
-                            ...sessionProgression.map((p) => p.estimated1RM),
-                          ) + 5
-                        }
-                        dataPointsColor={theme.primary}
-                        dataPointsRadius={6}
-                        textColor={theme.text}
-                        textFontSize={11}
-                        textShiftY={-14}
-                        textShiftX={-10}
-                        focusedDataPointColor={theme.white}
-                        focusedDataPointRadius={8}
-                        showVerticalLines
-                        verticalLinesColor={`${theme.border}33`}
-                        pointerConfig={{
-                          pointerStripHeight: 160,
-                          pointerStripColor: `${theme.primary}66`,
-                          pointerStripWidth: 2,
-                          pointerColor: theme.primary,
-                          radius: 7,
-                          activatePointersOnLongPress: true,
-                          autoAdjustPointerLabelPosition: true,
-                          pointerLabelComponent: (items: any) => {
-                            const item = items[0];
-                            return (
-                              <View
-                                style={{
-                                  backgroundColor: theme.card,
-                                  paddingHorizontal: 12,
-                                  paddingVertical: 8,
-                                  borderRadius: 12,
-                                  borderWidth: 1,
-                                  borderColor: theme.border,
-                                }}
-                              >
-                                <Text
-                                  style={{
-                                    color: theme.text,
-                                    fontWeight: "700",
-                                  }}
-                                >
-                                  {item.value}
-                                </Text>
-                              </View>
-                            );
-                          },
-                        }}
-                      />
-                    </View>
-                    {/* <View style={styles.subsectionHeader}>
-                        <Text style={styles.subsectionTitle}>
-                          Session Detail
-                        </Text>
-                        <TouchableOpacity
-                          style={styles.inlineAction}
-                          onPress={() => {
-                            setTableDetail(!tableDetail);
-                          }}
+                    <View style={styles.subsectionHeader}>
+                      <View>
+                        <Text
+                          style={[styles.subsectionTitle, { marginBottom: 8 }]}
                         >
-                          <MaterialIcons
-                            name={
-                              tableDetail ? "arrow-drop-up" : "arrow-drop-down"
-                            }
-                            size={16}
-                            color={theme.primary}
-                          />
-                          <Text style={styles.inlineActionText}>
-                            Open Table
-                          </Text>
-                        </TouchableOpacity>
-                      </View> */}
+                          Session progression
+                        </Text>
+                      </View>
+                    </View>
 
-                    {tableDetail && (
-                      <View style={styles.sessionSummaryList}>
-                        {sessionProgression.length ? (
-                          <View style={styles.setTable}>
-                            <View style={styles.setTableHeader}>
-                              <Text style={styles.setHeaderText}>date</Text>
-                              <Text style={styles.setHeaderText}>sets</Text>
-                              <Text style={styles.setHeaderText}>1RM</Text>
-                              <Text style={styles.setHeaderText}>Volume</Text>
-                            </View>
-                            {sessionProgression.map((set) => (
-                              <View key={set.sessionDate} style={styles.setRow}>
-                                <Text style={styles.setValue}>
-                                  {getDayMonth(set.sessionDate)}
-                                </Text>
-                                <Text style={styles.setValue}>
-                                  {set.totalSets}
-                                </Text>
-                                <Text style={styles.setValue}>
-                                  {set.estimated1RM.toFixed(1)}kg
-                                </Text>
-                                <Text style={styles.setValue}>
-                                  {set.totalVolume}
-                                </Text>
-                              </View>
-                            ))}
-                          </View>
-                        ) : (
-                          <View style={styles.subEmptyCard}>
-                            <Text style={styles.subEmptyText}>
-                              Add set rows to capture changing weight and reps
-                              inside the latest workout. Historical graphing
-                              should come from session records, not from this
-                              flat set list alone.
-                            </Text>
-                          </View>
-                        )}
+                    {hasSessionHistory ? (
+                      <>
+                        <View
+                          style={[
+                            styles.chartBlock,
+                            {
+                              shadowColor: theme.shadow,
+                              shadowOffset: { width: 0, height: 3 },
+                              shadowOpacity: 0.04,
+                              shadowRadius: 6,
+                              elevation: 1,
+                            },
+                          ]}
+                        >
+                          <LineChart
+                            areaChart
+                            curved
+                            isAnimated
+                            data={[...sessionProgression].map((point) => ({
+                              value: Number(point.estimated1RM.toFixed(1)),
+                              label: getDayMonth(point.sessionDate),
+                              dataPointText: `${point.estimated1RM.toFixed(1)}`,
+                            }))}
+                            height={220}
+                            spacing={56}
+                            initialSpacing={18}
+                            endSpacing={18}
+                            thickness={4}
+                            color={theme.primary}
+                            startFillColor={theme.primary}
+                            endFillColor={theme.primary}
+                            startOpacity={0.25}
+                            endOpacity={0.02}
+                            hideRules={false}
+                            rulesColor={`${theme.background}`}
+                            rulesType="dashed"
+                            yAxisColor={theme.background}
+                            xAxisColor={theme.background}
+                            hideYAxisText={false}
+                            yAxisTextStyle={{
+                              color: theme.textLight,
+                              fontSize: 11,
+                            }}
+                            backgroundColor={theme.background}
+                            xAxisLabelTextStyle={{
+                              color: theme.textLight,
+                              fontSize: 11,
+                              marginTop: 6,
+                            }}
+                            noOfSections={4}
+                            maxValue={
+                              Math.max(
+                                ...sessionProgression.map(
+                                  (p) => p.estimated1RM,
+                                ),
+                              ) + 5
+                            }
+                            dataPointsColor={theme.primary}
+                            dataPointsRadius={6}
+                            textColor={theme.text}
+                            textFontSize={11}
+                            textShiftY={-14}
+                            textShiftX={-10}
+                            focusedDataPointColor={theme.white}
+                            focusedDataPointRadius={8}
+                            showVerticalLines
+                            verticalLinesColor={`${theme.border}33`}
+                            pointerConfig={{
+                              pointerStripHeight: 160,
+                              pointerStripColor: `${theme.primary}66`,
+                              pointerStripWidth: 2,
+                              pointerColor: theme.primary,
+                              radius: 7,
+                              activatePointersOnLongPress: true,
+                              autoAdjustPointerLabelPosition: true,
+                              pointerLabelComponent: (items: any) => {
+                                const item = items[0];
+                                return (
+                                  <View
+                                    style={{
+                                      backgroundColor: theme.card,
+                                      paddingHorizontal: 12,
+                                      paddingVertical: 8,
+                                      borderRadius: 12,
+                                      borderWidth: 1,
+                                      borderColor: theme.border,
+                                    }}
+                                  >
+                                    <Text
+                                      style={{
+                                        color: theme.text,
+                                        fontWeight: "700",
+                                      }}
+                                    >
+                                      {item.value}
+                                    </Text>
+                                  </View>
+                                );
+                              },
+                            }}
+                          />
+                        </View>
+                      </>
+                    ) : (
+                      <View style={styles.subEmptyCard}>
+                        <Text style={styles.subEmptyText}>
+                          Record exercise sessions with sets to see your
+                          progression graph over time.
+                        </Text>
                       </View>
                     )}
-                  </>
-                ) : (
-                  <View style={styles.subEmptyCard}>
-                    <Text style={styles.subEmptyText}>
-                      Record exercise sessions with sets to see your progression
-                      graph over time.
-                    </Text>
-                  </View>
-                )}
 
-                <View style={styles.subsectionHeader}>
-                  <Text style={styles.subsectionTitle}>
-                    Latest workout session
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.inlineAction}
-                    onPress={() => manageWorkoutSession(exercise)}
-                  >
-                    <MaterialIcons
-                      name="edit"
-                      size={16}
-                      color={theme.primary}
-                    />
-
-                    <Text style={styles.inlineActionText}>Manage</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {latestSessionSets.length ? (
-                  <View style={styles.setTable}>
-                    <View style={styles.setTableHeader}>
-                      <Text style={styles.setHeaderText}>Date</Text>
-                      <Text style={styles.setHeaderText}>Set</Text>
-                      <Text style={styles.setHeaderText}>Weight</Text>
-                      <Text style={styles.setHeaderText}>Reps</Text>
-                      <Text style={styles.setHeaderText}>RIR</Text>
-                    </View>
-                    {latestSessionSets.map((set) => (
-                      <View key={set.id} style={styles.setRow}>
-                        <Text style={styles.setValue}>
-                          {getDayMonth(getSessionDate(latestSession))}
-                        </Text>
-                        <Text style={styles.setValue}>#{set.set_number}</Text>
-                        <Text style={styles.setValue}>{set.weight}kg</Text>
-                        <Text style={styles.setValue}>{set.reps}</Text>
-                        <Text style={styles.setValue}>{set.rir ?? 0}</Text>
-                      </View>
-                    ))}
-                  </View>
-                ) : (
-                  <View style={styles.subEmptyCard}>
-                    <Text style={styles.subEmptyText}>
-                      Add set rows to capture changing weight and reps inside
-                      the latest workout. Historical graphing should come from
-                      session records, not from this flat set list alone.
-                    </Text>
-                  </View>
-                )}
-
-                {/* <View style={styles.subsectionHeader}>
-                    <Text style={styles.subsectionTitle}>Current workout</Text>
-
-                    {!activeDraft ? (
+                    <View
+                      style={[
+                        styles.subsectionHeader,
+                        { marginTop: 16, marginBottom: 8 },
+                      ]}
+                    >
+                      <Text style={styles.subsectionTitle}>
+                        Latest workout session
+                      </Text>
                       <TouchableOpacity
                         style={styles.inlineAction}
-                        onPress={() => startWorkout(exercise)}
+                        onPress={() => manageWorkoutSession(exercise)}
                       >
                         <MaterialIcons
-                          name="play-arrow"
+                          name="edit"
                           size={16}
                           color={theme.primary}
                         />
 
-                        <Text style={styles.inlineActionText}>
-                          Start workout
-                        </Text>
+                        <Text style={styles.inlineActionText}>Manage</Text>
                       </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        style={styles.inlineAction}
-                        onPress={() => addDraftSet(exercise.id)}
-                        disabled={finishingExerciseId === exercise.id}
-                      >
-                        <MaterialIcons
-                          name="add"
-                          size={16}
-                          color={
-                            finishingExerciseId === exercise.id
-                              ? theme.textLight
-                              : theme.primary
-                          }
-                        />
+                    </View>
 
-                        <Text
-                          style={[
-                            styles.inlineActionText,
-                            {
-                              color:
-                                finishingExerciseId === exercise.id
-                                  ? theme.textLight
-                                  : theme.primary,
-                            },
-                          ]}
-                        >
-                          Add set
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                  {activeDraft ? (
-                    <View style={styles.setTable}>
-                      <View style={styles.setTableHeader}>
-                        <Text style={styles.setHeaderText}>Set</Text>
-
-                        <Text style={styles.setHeaderText}>Weight</Text>
-
-                        <Text style={styles.setHeaderText}>Reps</Text>
-
-                        <Text style={styles.setHeaderText}>RIR</Text>
-
-                        <Text style={styles.setHeaderText}>Action</Text>
-                      </View>
-
-                      {currentWorkoutSets.map((set) => (
-                        <View key={set.localId} style={styles.setRow}>
-                          <Text style={styles.setValue}>#{set.set_number}</Text>
-
-                          <TextInput
-                            style={styles.setValue}
-                            keyboardType="numeric"
-                            value={String(set.weight)}
-                            onChangeText={(value) =>
-                              updateDraftSet(
-                                exercise.id,
-                                set.localId,
-                                "weight",
-                                Number(value),
-                              )
-                            }
-                          />
-
-                          <TextInput
-                            style={styles.setValue}
-                            keyboardType="numeric"
-                            value={String(set.reps)}
-                            onChangeText={(value) =>
-                              updateDraftSet(
-                                exercise.id,
-                                set.localId,
-                                "reps",
-                                Number(value),
-                              )
-                            }
-                          />
-
-                          <TextInput
-                            style={styles.setValue}
-                            keyboardType="numeric"
-                            value={String(set.rir)}
-                            onChangeText={(value) =>
-                              updateDraftSet(
-                                exercise.id,
-                                set.localId,
-                                "rir",
-                                Number(value),
-                              )
-                            }
-                          />
-                          <TouchableOpacity
-                            onPress={() =>
-                              deleteDraftSet(exercise.id, set.localId)
-                            }
-                            disabled={deletingSetId === set.localId}
-                          >
-                            {deletingSetId === set.localId ? (
-                              <ActivityIndicator
-                                size="small"
-                                color={theme.expense}
-                              />
-                            ) : (
-                              <MaterialIcons
-                                name="delete"
-                                size={16}
-                                color={theme.expense}
-                              />
-                            )}
-                          </TouchableOpacity>
+                    {latestSessionSets.length ? (
+                      <View style={[styles.setTable, { marginBottom: 12 }]}>
+                        <View style={styles.setTableHeader}>
+                          <Text style={styles.setHeaderText}>Set</Text>
+                          <Text style={styles.setHeaderText}>Weight</Text>
+                          <Text style={styles.setHeaderText}>Reps</Text>
+                          <Text style={styles.setHeaderText}>RIR</Text>
                         </View>
-                      ))}
+                        {latestSessionSets.map((set) => (
+                          <View key={set.id} style={styles.setRow}>
+                            <Text style={styles.setValue}>
+                              #{set.set_number}
+                            </Text>
+                            <Text style={styles.setValue}>{set.weight}kg</Text>
+                            <Text style={styles.setValue}>{set.reps}</Text>
+                            <Text style={styles.setValue}>{set.rir ?? 0}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    ) : (
+                      <View style={styles.subEmptyCard}>
+                        <Text style={styles.subEmptyText}>
+                          Add set rows to capture changing weight and reps
+                          inside the latest workout. Historical graphing should
+                          come from session records, not from this flat set list
+                          alone.
+                        </Text>
+                      </View>
+                    )}
 
-                      <TouchableOpacity
-                        style={[
-                          styles.saveSetButton,
-                          {
-                            opacity:
-                              finishingExerciseId === exercise.id ? 0.6 : 1,
-                            alignSelf: "flex-end",
-                          },
-                        ]}
-                        onPress={() => finishWorkout(exercise)}
-                        disabled={finishingExerciseId === exercise.id}
-                      >
-                        {finishingExerciseId === exercise.id ? (
-                          <ActivityIndicator size="small" color={theme.white} />
-                        ) : (
-                          <Text style={styles.saveSetButtonText}>
-                            Finish Workout
-                          </Text>
-                        )}
-                      </TouchableOpacity>
+                    <View style={styles.saveAndNoteRow}>
+                      {!!exercise.notes && (
+                        <View style={styles.noteRow}>
+                          <MaterialCommunityIcons
+                            name="notebook-outline"
+                            size={18}
+                            color={theme.primary}
+                          />
+                          <Text style={styles.noteText}>{exercise.notes}</Text>
+                        </View>
+                      )}
                     </View>
-                  ) : (
-                    <View style={styles.subEmptyCard}>
-                      <Text style={styles.subEmptyText}>
-                        Start a workout to begin tracking sets for this session.
-                      </Text>
-                    </View>
-                  )} */}
-                <View style={styles.saveAndNoteRow}>
-                  {!!exercise.notes && (
-                    <View style={styles.noteRow}>
-                      <MaterialCommunityIcons
-                        name="notebook-outline"
-                        size={18}
-                        color={theme.primary}
-                      />
-                      <Text style={styles.noteText}>{exercise.notes}</Text>
-                    </View>
-                  )}
-                </View>
-              </View>
+                  </>
+                )}
+              </ShadowGlowCard>
             );
           })
         ) : (

@@ -1,13 +1,13 @@
 import { authStyles } from "@/assets/styles/auth.style";
+import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { login } from "@/services/authService";
+import { saveAuthSession } from "@/services/authSessionService";
 import { MaterialIcons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
+import { Href, useRouter } from "expo-router";
 import { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   ScrollView,
   Text,
   TextInput,
@@ -16,13 +16,14 @@ import {
 } from "react-native";
 
 export default function Login() {
-  const [email, setEmail] = useState("kevin12keval@gmail.com");
-  const [password, setPassword] = useState("mypassword");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState("");
   const router = useRouter();
   const { theme } = useTheme();
+  const { alert } = useAlert();
   const style = authStyles(theme);
 
   const validateEmail = (text: string) => {
@@ -41,20 +42,19 @@ export default function Login() {
 
   const handleLogin = async () => {
     if (!validateEmail(email) || !password) {
-      Alert.alert("Validation Error", "Please fill in all fields correctly");
+      alert("Validation Error", "Please fill in all fields correctly");
       return;
     }
     try {
       setLoading(true);
       const data = await login({ email, password });
-      await SecureStore.setItemAsync("access_token", data.access_token);
-      await SecureStore.setItemAsync("refresh_token", data.refresh_token);
-      router.replace("/gymProgression");
+      await saveAuthSession(data);
+      router.replace("/(tabs)/home");
     } catch (err) {
       if (err instanceof Error) {
-        Alert.alert("Login Failed", err.message);
+        alert("Login Failed", err.message);
       } else {
-        Alert.alert("Error", "Something went wrong");
+        alert("Error", "Something went wrong");
       }
     } finally {
       setLoading(false);
@@ -119,7 +119,6 @@ export default function Login() {
           />
         </View>
 
-        {/* Email Input */}
         <View style={{ marginBottom: 8 }}>
           <Text
             style={{
@@ -156,7 +155,6 @@ export default function Login() {
           ) : null}
         </View>
 
-        {/* Password Input */}
         <View style={{ marginBottom: 12 }}>
           <Text
             style={{
@@ -209,9 +207,7 @@ export default function Login() {
         {/* Forgot Password Link */}
         <TouchableOpacity
           style={{ marginBottom: 10, alignItems: "flex-end" }}
-          onPress={() =>
-            Alert.alert("Forgot Password", "Malas Buat BROK hehhe...")
-          }
+          onPress={() => router.push("/forgot-password" as Href)}
         >
           <Text
             style={{
@@ -269,7 +265,7 @@ export default function Login() {
               fontSize: 12,
             }}
           >
-            Don't have an account?
+            Don&apos;t have an account?
           </Text>
           <View
             style={{

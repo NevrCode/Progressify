@@ -1,0 +1,15 @@
+appId: com.nevrcode.progressify
+env:
+  E2E_EMAIL: ${E2E_EMAIL}
+  E2E_PASSWORD: ${E2E_PASSWORD}
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    text: "your@email.com"
+- inputText: ${E2E_EMAIL}
+- tapOn:
+    text: "Enter your password"
+- inputText: ${E2E_PASSWORD}
+- tapOn: "Login"
+- assertVisible: "Workout"

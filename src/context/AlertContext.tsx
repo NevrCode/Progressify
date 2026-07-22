@@ -1,10 +1,8 @@
-import { gymStyles } from "@/assets/styles/gym.style";
 import { useTheme } from "@/context/ThemeContext";
 import {
     createContext,
     useCallback,
     useContext,
-    useRef,
     useState,
 } from "react";
 import { Animated, Modal, Text, TouchableOpacity, View } from "react-native";
@@ -37,12 +35,11 @@ const AlertContext = createContext<AlertContextType>({
 
 export function AlertProvider({ children }: { children: React.ReactNode }) {
   const { theme } = useTheme();
-  const style = gymStyles(theme);
 
   const [visible, setVisible] = useState(false);
   const [options, setOptions] = useState<AlertOptions>({ title: "" });
-  const scaleAnim = useRef(new Animated.Value(0.85)).current;
-  const opacityAnim = useRef(new Animated.Value(0)).current;
+  const [scaleAnim] = useState(() => new Animated.Value(0.85));
+  const [opacityAnim] = useState(() => new Animated.Value(0));
 
   const alert = useCallback(
     (title: string, message?: string, buttons?: AlertButton[]) => {

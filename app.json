@@ -2,13 +2,17 @@
   "expo": {
     "name": "Progressify",
     "slug": "progressify",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "progressify",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.nevrcode.progressify",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -28,6 +32,14 @@
     "plugins": [
       "expo-router",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Progressify to use the camera to scan food barcodes you choose to add to your nutrition diary.",
+          "barcodeScannerEnabled": true,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "backgroundColor": "#208AEF",
@@ -39,23 +51,25 @@
       ],
       "@react-native-community/datetimepicker",
       "expo-secure-store",
-      "expo-image"
+      "expo-image",
+      "expo-font",
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
     "extra": {
-      "displayedVersion": "1.0.2",
+      "displayedVersion": "1.1.0",
       "router": {},
-      "apiUrl": "https://ex-tracker-168551488309.asia-southeast2.run.app",
+      "apiUrl": "https://progressify-tracker.onrender.com",
       "eas": {
         "projectId": "b2090b27-3032-4529-a2d1-23f2944fc5a6"
       }
     },
     "owner": "nevrcode",
     "runtimeVersion": {
-      "policy": "fingerprint"
+      "policy": "appVersion"
     },
     "updates": {
       "url": "https://u.expo.dev/b2090b27-3032-4529-a2d1-23f2944fc5a6"

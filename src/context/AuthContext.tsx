@@ -4,6 +4,10 @@ import {
   subscribeAuthState,
 } from "@/services/authSessionService";
 import { refreshAuthSession } from "@/services/tokenRefreshService";
+import {
+  persistHomeQueryCache,
+  restoreHomeQueryCache,
+} from "@/services/home-query-cache";
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, ReactNode, useContext, useEffect, useState } from "react";
 
@@ -29,14 +33,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      try {
-        await refreshAuthSession();
-        if (active) setState("authenticated");
-      } catch {
-        // Authentication rejection emits session-expired. A network outage keeps
-        // the owner-scoped offline session available instead of forcing logout.
-        if (active && (await hasAuthSession())) setState("authenticated");
-      }
+      await restoreHomeQueryCache(queryClient);
+      if (active) setState("authenticated");
+
+      // Do not block startup on the network. A rejected refresh still emits
+      // session-expired; an outage keeps the owner-scoped cached session usable.
+      void refreshAuthSession().catch(() => undefined);
     };
 
     void initialize();
@@ -45,6 +47,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       unsubscribe();
     };
   }, [queryClient]);
+
+  useEffect(() => {
+    if (state !== "authenticated") return;
+
+    let persistTimer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = queryClient.getQueryCache().subscribe(() => {
+      if (persistTimer) clearTimeout(persistTimer);
+      persistTimer = setTimeout(() => {
+        void persistHomeQueryCache(queryClient);
+      }, 250);
+    });
+
+    return () => {
+      unsubscribe();
+      if (persistTimer) clearTimeout(persistTimer);
+    };
+  }, [queryClient, state]);
 
   return <AuthContext.Provider value={state}>{children}</AuthContext.Provider>;
 }

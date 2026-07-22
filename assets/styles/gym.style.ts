@@ -278,7 +278,7 @@ export const gymStyles = (theme: ThemeType) =>
     cardActionIcons: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 12,
+      gap: 8,
     },
     listCard: {
       backgroundColor: theme.card,
@@ -339,7 +339,7 @@ export const gymStyles = (theme: ThemeType) =>
       flexDirection: "row",
       alignItems: "flex-start",
       justifyContent: "space-between",
-      gap: 12,
+      gap: 8,
     },
     exerciseName: {
       color: theme.textBlack,

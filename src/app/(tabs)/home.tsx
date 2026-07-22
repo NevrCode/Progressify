@@ -2,16 +2,20 @@ import { gymStyles } from "@/assets/styles/gym.style";
 import { FadeSlideIn } from "@/components/animations/fade-slide-in";
 import { SectionLabel } from "@/components/base/SectionLabel";
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
-import { SyncStatusBadge } from "@/components/base/SyncStatusBadge";
+import { PageHeader } from "@/components/base/page-header";
+import { TabScreenScrollView } from "@/components/base/tab-screen-scroll-view";
 import { SplitSummaryCard } from "@/components/gym/SplitSummaryCard";
 import { WeekStreak } from "@/components/gym/WeekStreak";
+import {
+  NutritionSummarySkeleton,
+  RecentProgressSkeleton,
+} from "@/components/home/home-card-skeletons";
 import { MacroDonutChart } from "@/components/nutrition/macroDonutChart";
 import { WaterTracker } from "@/components/nutrition/WaterTracker";
 import { useTheme } from "@/context/ThemeContext";
 import { useActiveSession } from "@/hooks/useActiveSession";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
 import {
-  useNutritionGoals,
   useNutritionProfile,
   useTodayDiarySummary,
 } from "@/hooks/useNutrition";
@@ -24,9 +28,7 @@ import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   RefreshControl,
-  ScrollView,
   Text,
   TouchableOpacity,
   View,
@@ -169,9 +171,6 @@ export default function HomeScreen() {
     refetch: refetchProfile,
   } = useNutritionProfile();
 
-  const { isLoading: goalsLoading, refetch: refetchGoals } =
-    useNutritionGoals();
-
   const {
     data: summary,
     isLoading: summaryLoading,
@@ -182,6 +181,7 @@ export default function HomeScreen() {
     data: dashboard,
     isLoading: gymLoading,
     isFetching: gymFetching,
+    isError: gymError,
     refetch: refetchGym,
   } = useGymDashboard();
   const {
@@ -204,7 +204,6 @@ export default function HomeScreen() {
 
   const isRefreshing =
     profileLoading ||
-    goalsLoading ||
     summaryLoading ||
     gymLoading ||
     gymFetching ||
@@ -213,7 +212,6 @@ export default function HomeScreen() {
 
   const refresh = () => {
     refetchProfile();
-    refetchGoals();
     refetchSummary();
     refetchGym();
     refreshActiveSession();
@@ -283,69 +281,27 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView
+      <TabScreenScrollView
         contentContainerStyle={styles.container}
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={refresh} />
         }
       >
         {/* ── Header ── */}
-        <FadeSlideIn
-          style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 8,
-          }}
-        >
-          <View>
-            <Text
-              style={{
-                color: theme.textLight,
-                fontSize: 12,
-                fontWeight: "800",
-                fontFamily: "PlusJakartaSans_800ExtraBold",
-                textTransform: "uppercase",
-                letterSpacing: 1.5,
-                marginBottom: 2,
-              }}
-            >
-              {getGreeting()}
-            </Text>
-            <Text
-              style={{
-                color: theme.textBlack,
-                fontSize: 28,
-                fontWeight: "900",
-                fontFamily: "PlusJakartaSans_800ExtraBold",
-                letterSpacing: -0.8,
-              }}
-            >
-              Progressify
-            </Text>
-          </View>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-            <SyncStatusBadge />
-            <TouchableOpacity
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 14,
-                backgroundColor: theme.primary + "15",
-                borderWidth: 1.5,
-                borderColor: theme.primary + "30",
-                justifyContent: "center",
-                alignItems: "center",
-              }}
-              onPress={() => router.push("/profile")}
-            >
+        <FadeSlideIn>
+          <PageHeader
+            eyebrow={getGreeting()}
+            title="Progressify"
+            icon={
               <MaterialCommunityIcons
                 name="account"
                 size={24}
                 color={theme.primary}
               />
-            </TouchableOpacity>
-          </View>
+            }
+            iconAccessibilityLabel="Open profile"
+            onIconPress={() => router.push("/profile")}
+          />
         </FadeSlideIn>
 
         {/* ── Quick actions ── */}
@@ -703,7 +659,7 @@ export default function HomeScreen() {
                 </View>
 
                 {summaryLoading ? (
-                  <ActivityIndicator color={theme.primary} />
+                  <NutritionSummarySkeleton />
                 ) : prog ? (
                   <>
                     <MacroDonutChart
@@ -901,6 +857,7 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </FadeSlideIn>
             )}
+            <View style={{ marginBottom: 20 }}></View>
           </>
         )}
 
@@ -1061,7 +1018,24 @@ export default function HomeScreen() {
                 </View>
 
                 {gymLoading ? (
-                  <ActivityIndicator color={theme.primary} />
+                  <RecentProgressSkeleton />
+                ) : !dashboard && gymError ? (
+                  <View style={{ alignItems: "center", paddingVertical: 16 }}>
+                    <Text
+                      style={[
+                        styles.subEmptyText,
+                        { textAlign: "center", marginBottom: 12 },
+                      ]}
+                    >
+                      We couldn&apos;t load your training progress.
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.primaryButton}
+                      onPress={() => void refetchGym()}
+                    >
+                      <Text style={styles.primaryButtonText}>Try again</Text>
+                    </TouchableOpacity>
+                  </View>
                 ) : recentExercises.length ? (
                   <>
                     {recentExercises.map((exercise, idx) => {
@@ -1207,9 +1181,10 @@ export default function HomeScreen() {
                 <SplitSummaryCard exercises={exercises} styles={styles} />
               </FadeSlideIn>
             )}
+            <View style={{ marginBottom: 20 }}></View>
           </>
         )}
-      </ScrollView>
+      </TabScreenScrollView>
     </SafeAreaView>
   );
 }

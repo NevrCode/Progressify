@@ -1,6 +1,6 @@
 import { getAccessToken } from "@/services/authSessionService";
 import { api } from "@/utils/api";
-import { getErrorMessage } from "@/utils/apiError";
+import { getErrorMessage, toApiError } from "@/utils/apiError";
 
 export type SplitType = "PUSH" | "PULL" | "LEGS";
 
@@ -73,6 +73,13 @@ export interface GymDashboardResponseDTO {
   exercise_progressions?: ExerciseProgressionDTO[];
 }
 
+export interface ExerciseProgressionPageDTO {
+  data: ExerciseProgressionDTO[];
+  total_elements: number;
+  total_pages: number;
+  page: number;
+}
+
 export interface GymExerciseProgressionRequestDTO {
   split: SplitType;
   name: string;
@@ -121,7 +128,75 @@ export const getGymDashboard = async () => {
 
     return response.data;
   } catch (error: any) {
-    handleApiError(error, "Read gym dashboard failed");
+    throw toApiError(error);
+  }
+};
+
+export const getExerciseProgressionPage = async ({
+  page,
+  limit,
+  split,
+  search,
+}: {
+  page: number;
+  limit: number;
+  split?: SplitType;
+  search?: string;
+}): Promise<ExerciseProgressionPageDTO> => {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await api.get<
+      | ExerciseProgressionDTO[]
+      | {
+          data?: ExerciseProgressionDTO[];
+          content?: ExerciseProgressionDTO[];
+          total_elements?: number;
+          totalElements?: number;
+          total_pages?: number;
+          totalPages?: number;
+          number?: number;
+        }
+    >("/v1/gym/exercise-progressions", {
+      headers,
+      params: {
+        page,
+        limit,
+        ...(split ? { split } : {}),
+        ...(search ? { search } : {}),
+      },
+    });
+
+    const payload = response.data;
+    if (Array.isArray(payload)) {
+      const keyword = search?.toLowerCase();
+      const filtered = keyword
+        ? payload.filter((exercise) =>
+            [
+              exercise.name,
+              exercise.muscle_group,
+              exercise.notes,
+              exercise.split,
+            ].some((value) => value?.toLowerCase().includes(keyword)),
+          )
+        : payload;
+      const offset = page * limit;
+
+      return {
+        data: filtered.slice(offset, offset + limit),
+        total_elements: filtered.length,
+        total_pages: Math.ceil(filtered.length / limit),
+        page,
+      };
+    }
+
+    return {
+      data: payload.data ?? payload.content ?? [],
+      total_elements: payload.total_elements ?? payload.totalElements ?? 0,
+      total_pages: payload.total_pages ?? payload.totalPages ?? 0,
+      page: payload.number ?? page,
+    };
+  } catch (error: any) {
+    throw toApiError(error);
   }
 };
 

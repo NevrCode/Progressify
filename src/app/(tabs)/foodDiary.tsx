@@ -1,7 +1,18 @@
 import { gymStyles } from "@/assets/styles/gym.style";
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
-import { SyncStatusBadge } from "@/components/base/SyncStatusBadge";
+import { PageHeader } from "@/components/base/page-header";
+import { AppButton } from "@/components/base/app-button";
+import { FormField } from "@/components/base/form-field";
+import { IconButton } from "@/components/base/icon-button";
+import { DateNavigator } from "@/components/base/date-navigator";
+import { SegmentedControl } from "@/components/base/segmented-control";
+import { TabScreenScrollView } from "@/components/base/tab-screen-scroll-view";
 import { BarcodeScannerModal } from "@/components/nutrition/BarcodeScannerModal";
+import {
+  FoodDiaryInitialSkeleton,
+  FoodEntriesSkeleton,
+  IntakeSummarySkeleton,
+} from "@/components/nutrition/food-diary-skeletons";
 import { MealPrepSection } from "@/components/nutrition/mealPrepSection";
 import { ThemeType } from "@/constants/colors";
 import { useAlert } from "@/context/AlertContext";
@@ -41,10 +52,9 @@ import {
 } from "@/services/nutritionService";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Animated,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -337,23 +347,16 @@ function FoodEntryCard({
         </View>
       </View>
 
-      <TouchableOpacity
+      <IconButton
+        accessibilityLabel={`Delete ${entry.food_name || "food entry"}`}
+        variant="destructive"
         onPress={() => onDelete(entry)}
-        style={{
-          width: 32,
-          height: 32,
-          borderRadius: 8,
-          backgroundColor: (theme.expense ?? "#A32D2D") + "15",
-          justifyContent: "center",
-          alignItems: "center",
-        }}
-      >
-        <MaterialIcons
+        icon={<MaterialIcons
           name="delete-outline"
           size={17}
           color={theme.expense ?? "#A32D2D"}
-        />
-      </TouchableOpacity>
+        />}
+      />
     </View>
   );
 }
@@ -501,17 +504,7 @@ export default function FoodDiary() {
   const [oPotassium, setOPotassium] = useState(
     goals?.potassium_goal?.toString() ?? "",
   );
-  const [tabTranslateX] = useState(() => new Animated.Value(0));
-  const [containerWidth, setContainerWidth] = useState(0);
-
   const hasProfile = !!profile;
-  useEffect(() => {
-    Animated.timing(tabTranslateX, {
-      toValue: activeTab === "SINGLE" ? 0 : 1,
-      duration: 220,
-      useNativeDriver: true,
-    }).start();
-  }, [activeTab, tabTranslateX]);
 
   const openForm = () => {
     setWeight(profile?.weight_kg?.toString() ?? "");
@@ -773,7 +766,7 @@ export default function FoodDiary() {
   );
 
   const isRefreshing =
-    summaryLoading || entriesLoading || summaryFetching || entriesFetching;
+    !summaryLoading && !entriesLoading && (summaryFetching || entriesFetching);
 
   const refreshDiary = () => {
     refetchSummary();
@@ -836,7 +829,7 @@ export default function FoodDiary() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
       >
-        <ScrollView
+        <TabScreenScrollView
           contentContainerStyle={styles.container}
           refreshControl={
             <RefreshControl
@@ -845,150 +838,31 @@ export default function FoodDiary() {
             />
           }
         >
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 8,
-            }}
-          >
-            <View>
-              <Text
-                style={{
-                  color: theme.textLight,
-                  fontSize: 12,
-                  fontWeight: "800",
-                  fontFamily: "PlusJakartaSans_800ExtraBold",
-                  textTransform: "uppercase",
-                  letterSpacing: 1.5,
-                  marginBottom: 2,
-                }}
-              >
-                Nutrition
-              </Text>
-              <Text
-                style={{
-                  color: theme.textBlack,
-                  fontSize: 28,
-                  fontWeight: "900",
-                  fontFamily: "PlusJakartaSans_800ExtraBold",
-                  letterSpacing: -0.8,
-                }}
-              >
-                Food Diary
-              </Text>
-            </View>
-            <View
-              style={{ flexDirection: "row", alignItems: "center", gap: 12 }}
-            >
-              <SyncStatusBadge />
-              <View
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 14,
-                  backgroundColor: theme.primary + "15",
-                  borderWidth: 1.5,
-                  borderColor: theme.primary + "30",
-                  justifyContent: "center",
-                  alignItems: "center",
-                }}
-              >
-                <MaterialIcons
-                  name="restaurant"
-                  size={22}
-                  color={theme.primary}
-                />
-              </View>
-            </View>
-          </View>
-
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              backgroundColor: theme.background,
-              borderRadius: 16,
-              padding: 12,
-              borderWidth: 1.5,
-              borderColor: theme.primary + "20",
-              marginBottom: 8,
-            }}
-          >
-            <TouchableOpacity
-              onPress={() => setSelectedDate(addDays(selectedDate, -1))}
-              activeOpacity={0.7}
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                backgroundColor: theme.primary + "12",
-                justifyContent: "center",
-                alignItems: "center",
-              }}
-            >
+          <PageHeader
+            eyebrow="Nutrition"
+            title="Food Diary"
+            icon={
               <MaterialIcons
-                name="chevron-left"
-                size={20}
+                name="restaurant"
+                size={22}
                 color={theme.primary}
               />
-            </TouchableOpacity>
+            }
+          />
 
-            <TouchableOpacity
-              onPress={() => setSelectedDate(formatDateForApi(new Date()))}
-              activeOpacity={0.7}
-              style={{
-                flex: 1,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: 16,
-                  fontWeight: "900",
-                  fontFamily: "PlusJakartaSans_800ExtraBold",
-                  color: theme.textBlack,
-                }}
-              >
-                {selectedDate === formatDateForApi(new Date())
-                  ? "Today"
-                  : formatDateLabel(selectedDate)}
-              </Text>
-              <Text
-                style={{
-                  fontSize: 10,
-                  fontWeight: "700",
-                  fontFamily: "PlusJakartaSans_700Bold",
-                  color: theme.textLight,
-                  textTransform: "uppercase",
-                  marginTop: 2,
-                }}
-              >
-                Tap to reset date
-              </Text>
-            </TouchableOpacity>
+          <DateNavigator
+            label={
+              selectedDate === formatDateForApi(new Date())
+                ? "Today"
+                : formatDateLabel(selectedDate)
+            }
+            supportingLabel="Tap to reset date"
+            onPrevious={() => setSelectedDate(addDays(selectedDate, -1))}
+            onNext={() => setSelectedDate(addDays(selectedDate, 1))}
+            onLabelPress={() => setSelectedDate(formatDateForApi(new Date()))}
+          />
 
-            <TouchableOpacity
-              onPress={() => setSelectedDate(addDays(selectedDate, 1))}
-              activeOpacity={0.7}
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                backgroundColor: theme.primary + "12",
-                justifyContent: "center",
-                alignItems: "center",
-              }}
-            >
-              <MaterialIcons
-                name="chevron-right"
-                size={20}
-                color={theme.primary}
-              />
-            </TouchableOpacity>
-          </View>
+          {profileLoading && <FoodDiaryInitialSkeleton />}
 
           {hasProfile && (
             <View
@@ -1155,24 +1029,24 @@ export default function FoodDiary() {
                       </TouchableOpacity>
                     ))}
                   </View>
-                  <TextInput
-                    style={styles.input}
+                  <FormField
+                    label="Weight"
                     placeholder="Weight (kg)"
                     placeholderTextColor={theme.textLight}
                     keyboardType="decimal-pad"
                     value={weight}
                     onChangeText={setWeight}
                   />
-                  <TextInput
-                    style={styles.input}
+                  <FormField
+                    label="Height"
                     placeholder="Height (cm)"
                     placeholderTextColor={theme.textLight}
                     keyboardType="decimal-pad"
                     value={height}
                     onChangeText={setHeight}
                   />
-                  <TextInput
-                    style={styles.input}
+                  <FormField
+                    label="Age"
                     placeholder="Age"
                     placeholderTextColor={theme.textLight}
                     keyboardType="number-pad"
@@ -1352,9 +1226,9 @@ export default function FoodDiary() {
                   { label: "Carbs (g)", val: oCarbs, set: setOCarbs },
                   { label: "Fat (g)", val: oFat, set: setOFat },
                 ].map(({ label, val, set }) => (
-                  <TextInput
+                  <FormField
                     key={label}
-                    style={styles.input}
+                    label={label}
                     placeholder={label}
                     placeholderTextColor={theme.textLight}
                     keyboardType="decimal-pad"
@@ -1363,17 +1237,11 @@ export default function FoodDiary() {
                   />
                 ))}
               </View>
-              <TouchableOpacity
-                style={styles.primaryButton}
+              <AppButton
+                label="Save Goals"
                 onPress={saveOverride}
-                disabled={overrideMutation.isPending}
-              >
-                {overrideMutation.isPending ? (
-                  <ActivityIndicator color={theme.white} />
-                ) : (
-                  <Text style={styles.primaryButtonText}>Save Goals</Text>
-                )}
-              </TouchableOpacity>
+                loading={overrideMutation.isPending}
+              />
             </ShadowGlowCard>
           )}
 
@@ -1384,12 +1252,11 @@ export default function FoodDiary() {
                 Set up your body profile to get personalized calorie and macro
                 goals.
               </Text>
-              <TouchableOpacity
-                style={[styles.primaryButton, { marginTop: 12 }]}
+              <AppButton
+                label="Get Started"
+                style={{ marginTop: 12 }}
                 onPress={openForm}
-              >
-                <Text style={styles.primaryButtonText}>Get Started</Text>
-              </TouchableOpacity>
+              />
             </View>
           )}
 
@@ -1434,7 +1301,7 @@ export default function FoodDiary() {
                 </View>
 
                 {summaryLoading ? (
-                  <ActivityIndicator color={theme.primary} />
+                  <IntakeSummarySkeleton />
                 ) : prog ? (
                   <>
                     {/* Big calorie stats */}
@@ -1647,7 +1514,7 @@ export default function FoodDiary() {
                 </View>
 
                 {summaryDiaryLoading ? (
-                  <ActivityIndicator color={theme.primary} />
+                  <FoodEntriesSkeleton />
                 ) : todayDairySummary?.entries &&
                   todayDairySummary.entries.length > 0 ? (
                   <FoodEntriesByMeal
@@ -1667,107 +1534,15 @@ export default function FoodDiary() {
           {/* Segmented Selector for Add Food / Meal Prep */}
 
           {hasProfile && !formOpen && !overrideOpen && (
-            <View
-              onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
-              style={{
-                flexDirection: "row",
-                backgroundColor: theme.background,
-                borderRadius: 24,
-                padding: 4,
-                borderWidth: 1.5,
-                borderColor: theme.border,
-                marginVertical: 12,
-                position: "relative",
-              }}
-            >
-              {containerWidth > 0 && (
-                <Animated.View
-                  style={{
-                    position: "absolute",
-                    top: 4,
-                    bottom: 4,
-                    left: 4,
-                    width: (containerWidth - 8) / 2,
-                    backgroundColor: theme.primary + "12",
-                    borderWidth: 1.5,
-                    borderColor: theme.primary + "30",
-                    borderRadius: 20,
-                    transform: [
-                      {
-                        translateX: tabTranslateX.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0, (containerWidth - 8) / 2],
-                        }),
-                      },
-                    ],
-                  }}
-                />
-              )}
-
-              <TouchableOpacity
-                style={{
-                  flex: 1,
-                  flexDirection: "row",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  paddingVertical: 10,
-                  borderRadius: 20,
-                }}
-                activeOpacity={0.8}
-                onPress={() => setActiveTab("SINGLE")}
-              >
-                <MaterialCommunityIcons
-                  name="food-apple"
-                  size={18}
-                  color={
-                    activeTab === "SINGLE" ? theme.primary : theme.textLight
-                  }
-                  style={{ marginRight: 6 }}
-                />
-                <Text
-                  style={{
-                    fontSize: 13,
-                    fontWeight: "800",
-                    fontFamily: "PlusJakartaSans_800ExtraBold",
-                    color:
-                      activeTab === "SINGLE" ? theme.primary : theme.textLight,
-                  }}
-                >
-                  Single Food
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={{
-                  flex: 1,
-                  flexDirection: "row",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  paddingVertical: 10,
-                  borderRadius: 20,
-                }}
-                activeOpacity={0.8}
-                onPress={() => setActiveTab("PREP")}
-              >
-                <MaterialCommunityIcons
-                  name="food"
-                  size={18}
-                  color={activeTab === "PREP" ? theme.primary : theme.textLight}
-                  style={{ marginRight: 6 }}
-                />
-                <Text
-                  style={{
-                    fontSize: 13,
-                    fontWeight: "800",
-                    fontFamily: "PlusJakartaSans_800ExtraBold",
-                    color:
-                      activeTab === "PREP" ? theme.primary : theme.textLight,
-                  }}
-                >
-                  Prep Food
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <SegmentedControl
+              accessibilityLabel="Food logging mode"
+              value={activeTab}
+              options={[
+                { value: "SINGLE", label: "Single Food" },
+                { value: "PREP", label: "Prep Food" },
+              ]}
+              onChange={setActiveTab}
+            />
           )}
 
           {/* Conditional rendering based on activeTab */}
@@ -1926,7 +1701,7 @@ export default function FoodDiary() {
                 </ShadowGlowCard>
               </>
             )}
-        </ScrollView>
+        </TabScreenScrollView>
       </KeyboardAvoidingView>
 
       <Modal

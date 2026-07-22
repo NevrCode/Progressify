@@ -1,25 +1,22 @@
 import { profileStyles } from "@/assets/styles/profile.style";
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
+import { PageHeader } from "@/components/base/page-header";
+import { AppButton } from "@/components/base/app-button";
+import { TabScreenScrollView } from "@/components/base/tab-screen-scroll-view";
 import { MenuButton } from "@/components/profile/menuButton";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useProfile } from "@/hooks/useProfile";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
 import { logout } from "@/services/authService";
-import {
-  Feather,
-  MaterialCommunityIcons,
-  MaterialIcons,
-} from "@expo/vector-icons";
+import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useQueryClient } from "@tanstack/react-query";
 import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import { ComponentProps } from "react";
 import {
   RefreshControl,
-  ScrollView,
   Text,
-  TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -117,62 +114,24 @@ export default function Profile() {
 
   return (
     <SafeAreaView style={profileStyless.safeArea}>
-      <ScrollView
+      <TabScreenScrollView
         contentContainerStyle={profileStyless.container}
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={refetchAll} />
         }
       >
-        {/* Header */}
-        <View
-          style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 8,
-          }}
-        >
-          <View>
-            <Text
-              style={{
-                color: theme.textLight,
-                fontSize: 12,
-                fontWeight: "800",
-                fontFamily: "PlusJakartaSans_800ExtraBold",
-                textTransform: "uppercase",
-                letterSpacing: 1.5,
-                marginBottom: 2,
-              }}
-            >
-              Account
-            </Text>
-            <Text
-              style={{
-                color: theme.textBlack,
-                fontSize: 28,
-                fontWeight: "900",
-                fontFamily: "PlusJakartaSans_800ExtraBold",
-                letterSpacing: -0.8,
-              }}
-            >
-              Profile
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 14,
-              backgroundColor: theme.primary + "15",
-              borderWidth: 1.5,
-              borderColor: theme.primary + "30",
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            <Feather name="edit-2" size={18} color={theme.primary} />
-          </TouchableOpacity>
-        </View>
+        <PageHeader
+          eyebrow="Account"
+          title="Profile"
+          showSyncStatus={false}
+          icon={
+            <MaterialCommunityIcons
+              name="account"
+              size={22}
+              color={theme.primary}
+            />
+          }
+        />
 
         {/* Identity card */}
         <View style={profileStyless.identityCard}>
@@ -231,41 +190,29 @@ export default function Profile() {
         </ShadowGlowCard>
 
         {/* Logout */}
-        <TouchableOpacity
-          style={profileStyless.logoutButton}
+        <AppButton
+          label="Logout"
+          description="End this session on your device"
+          variant="secondary"
           onPress={handleLogout}
-          activeOpacity={0.82}
-        >
-          <View style={profileStyless.logoutIconWrap}>
-            <MaterialIcons name="logout" size={22} color={theme.expense} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={profileStyless.logoutText}>Logout</Text>
-            <Text style={profileStyless.logoutDescription}>
-              End this session on your device
-            </Text>
-          </View>
-        </TouchableOpacity>
+          leftIcon={<MaterialIcons name="logout" size={22} color={theme.primary} />}
+          style={{ justifyContent: "flex-start", paddingVertical: 13 }}
+        />
 
-        <TouchableOpacity
-          style={[profileStyless.logoutButton, { marginTop: 12 }]}
+        <AppButton
+          label="Delete account"
+          description="Permanently delete your account and private data"
+          variant="destructive"
           onPress={() => router.push("/delete-account")}
-          activeOpacity={0.82}
-        >
-          <View style={profileStyless.logoutIconWrap}>
+          leftIcon={
             <MaterialIcons
               name="delete-forever"
               size={22}
               color={theme.expense}
             />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={profileStyless.logoutText}>Delete account</Text>
-            <Text style={profileStyless.logoutDescription}>
-              Permanently delete your account and private data
-            </Text>
-          </View>
-        </TouchableOpacity>
+          }
+          style={{ justifyContent: "flex-start", paddingVertical: 13 }}
+        />
 
         <View style={{ alignItems: "center", paddingVertical: 24 }}>
           <Text
@@ -279,7 +226,7 @@ export default function Profile() {
             {Constants.expoConfig?.extra?.displayedVersion ?? "1.0.0"}
           </Text>
         </View>
-      </ScrollView>
+      </TabScreenScrollView>
     </SafeAreaView>
   );
 }

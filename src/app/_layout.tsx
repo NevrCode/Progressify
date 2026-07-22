@@ -1,8 +1,9 @@
 import { PatchNotesPopup } from "@/components/patchNotesPopUp";
+import { ShimmerSkeleton } from "@/components/base/shimmer-skeleton";
 import { AlertProvider, useAlert } from "@/context/AlertContext";
 import { AuthProvider, useAuthState } from "@/context/AuthContext";
 import { DiaryProvider } from "@/context/DairyContext";
-import { ThemeProvider } from "@/context/ThemeContext";
+import { ThemeProvider, useTheme } from "@/context/ThemeContext";
 import { usePatchNotes } from "@/hooks/usePatchNote";
 import { startOfflineSyncLifecycle } from "@/services/syncQueueService";
 import { shouldRetryApiError } from "@/utils/apiError";
@@ -17,7 +18,7 @@ import {
   PlusJakartaSans_800ExtraBold,
 } from "@expo-google-fonts/plus-jakarta-sans";
 import { useEffect, useMemo, useRef } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 export default function RootLayout() {
@@ -33,6 +34,9 @@ export default function RootLayout() {
       defaultOptions: {
         queries: {
           retry: shouldRetryApiError,
+          staleTime: 5 * 60 * 1000,
+          gcTime: 24 * 60 * 60 * 1000,
+          refetchOnWindowFocus: false,
         },
         mutations: {
           retry: false,
@@ -60,6 +64,7 @@ export default function RootLayout() {
 }
 
 function AppNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
+  const { theme } = useTheme();
   const authState = useAuthState();
   const pathname = usePathname();
   const router = useRouter();
@@ -106,10 +111,12 @@ function AppNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
           flex: 1,
           justifyContent: "center",
           alignItems: "center",
-          backgroundColor: "#FFFFFF",
+          backgroundColor: theme.background,
+          gap: 12,
         }}
       >
-        <ActivityIndicator size="large" color="#4CAF50" />
+        <ShimmerSkeleton width={52} height={52} borderRadius={16} />
+        <ShimmerSkeleton width={136} height={22} borderRadius={7} />
       </View>
     );
   }

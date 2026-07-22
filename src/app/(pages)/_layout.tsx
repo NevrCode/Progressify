@@ -1,9 +1,6 @@
-import { useTheme } from "@/context/ThemeContext";
 import { Stack } from "expo-router";
 
 export default function PagesLayout() {
-  const { theme } = useTheme();
-
   return (
     <Stack
       screenOptions={{

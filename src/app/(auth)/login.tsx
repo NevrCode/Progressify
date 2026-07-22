@@ -4,7 +4,7 @@ import { useTheme } from "@/context/ThemeContext";
 import { login } from "@/services/authService";
 import { saveAuthSession } from "@/services/authSessionService";
 import { MaterialIcons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { Href, useRouter } from "expo-router";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -207,7 +207,7 @@ export default function Login() {
         {/* Forgot Password Link */}
         <TouchableOpacity
           style={{ marginBottom: 10, alignItems: "flex-end" }}
-          onPress={() => alert("Forgot Password", "Malas Buat BROK hehhe...")}
+          onPress={() => router.push("/forgot-password" as Href)}
         >
           <Text
             style={{

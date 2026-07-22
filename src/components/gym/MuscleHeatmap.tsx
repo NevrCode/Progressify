@@ -74,7 +74,7 @@ export const MuscleHeatmap: React.FC<MuscleHeatmapProps> = ({ exercises }) => {
 
   // 2. Map sets count to intensity values (1, 2, 3) for the highlighter package
   const highlightedData = useMemo(() => {
-    const list: Array<{ slug: Slug; intensity: number }> = [];
+    const list: { slug: Slug; intensity: number }[] = [];
 
     const getIntensity = (sets: number) => {
       if (sets === 0) return 0;

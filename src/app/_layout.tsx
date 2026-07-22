@@ -1,12 +1,11 @@
 import { PatchNotesPopup } from "@/components/patchNotesPopUp";
-import { AlertProvider } from "@/context/AlertContext";
+import { AlertProvider, useAlert } from "@/context/AlertContext";
+import { AuthProvider, useAuthState } from "@/context/AuthContext";
 import { DiaryProvider } from "@/context/DairyContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { usePatchNotes } from "@/hooks/usePatchNote";
-import {
-  hasAuthSession,
-  subscribeAuthState,
-} from "@/services/authSessionService";
+import { startOfflineSyncLifecycle } from "@/services/syncQueueService";
+import { shouldRetryApiError } from "@/utils/apiError";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, usePathname, useRouter } from "expo-router";
 import {
@@ -17,7 +16,7 @@ import {
   PlusJakartaSans_700Bold,
   PlusJakartaSans_800ExtraBold,
 } from "@expo-google-fonts/plus-jakarta-sans";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
@@ -29,97 +28,100 @@ export default function RootLayout() {
     PlusJakartaSans_700Bold,
     PlusJakartaSans_800ExtraBold,
   });
-  const router = useRouter();
-  const pathname = usePathname();
-  const [authChecked, setAuthChecked] = useState(false);
-  const [authSyncing, setAuthSyncing] = useState(true);
-  const [checkedPathname, setCheckedPathname] = useState<string | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const queryClient = useMemo(() => new QueryClient(), []);
-  const { showPopup, latestPatch, markAsSeen } = usePatchNotes();
-  useEffect(() => {
-    let isMounted = true;
-
-    const syncAuthState = async () => {
-      const currentPathname = pathname;
-      setAuthSyncing(true);
-      const authenticated = await hasAuthSession();
-
-      if (!isMounted) return;
-
-      setIsAuthenticated(authenticated);
-      setCheckedPathname(currentPathname);
-      setAuthChecked(true);
-      setAuthSyncing(false);
-    };
-
-    void syncAuthState();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [pathname]);
-
-  useEffect(() => subscribeAuthState(setIsAuthenticated), []);
-
-  useEffect(() => {
-    if (!authChecked || authSyncing) return;
-    if (checkedPathname !== pathname) return;
-
-    const inAuthFlow = pathname === "/login" || pathname === "/signin";
-    const atRoot = pathname === "/";
-
-    if (!isAuthenticated && !inAuthFlow) {
-      router.replace("/login");
-      return;
-    }
-
-    if (isAuthenticated && (inAuthFlow || atRoot)) {
-      router.replace("/home");
-    }
-  }, [
-    authChecked,
-    authSyncing,
-    checkedPathname,
-    isAuthenticated,
-    pathname,
-    router,
-  ]);
+  const queryClient = useMemo(
+    () => new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: shouldRetryApiError,
+        },
+        mutations: {
+          retry: false,
+        },
+      },
+    }),
+    [],
+  );
+  useEffect(() => startOfflineSyncLifecycle(), []);
   return (
     <SafeAreaProvider>
       <ThemeProvider>
         <AlertProvider>
           <DiaryProvider>
             <QueryClientProvider client={queryClient}>
-              {authChecked && fontsLoaded ? (
-                <>
-                  <Stack
-                    screenOptions={{
-                      headerShown: false,
-                    }}
-                  />
-                  <PatchNotesPopup
-                    visible={showPopup}
-                    patch={latestPatch}
-                    onDismiss={markAsSeen}
-                  />
-                </>
-              ) : (
-                <View
-                  style={{
-                    flex: 1,
-                    justifyContent: "center",
-                    alignItems: "center",
-                    backgroundColor: "#FFFFFF",
-                  }}
-                >
-                  <ActivityIndicator size="large" color="#4CAF50" />
-                </View>
-              )}
+              <AuthProvider>
+                <AppNavigator fontsLoaded={fontsLoaded} />
+              </AuthProvider>
             </QueryClientProvider>
           </DiaryProvider>
         </AlertProvider>
       </ThemeProvider>
     </SafeAreaProvider>
+  );
+}
+
+function AppNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
+  const authState = useAuthState();
+  const pathname = usePathname();
+  const router = useRouter();
+  const { alert } = useAlert();
+  const sessionExpiredShown = useRef(false);
+  const { showPopup, latestPatch, markAsSeen } = usePatchNotes();
+
+  useEffect(() => {
+    if (authState === "initializing") return;
+
+    const credentialRoutes = ["/login", "/signin", "/forgot-password"];
+    const publicRoutes = ["/privacy", "/terms", "/delete-account-info"];
+    const recoveryRoute = pathname === "/reset-password";
+    const authRoutes = [...credentialRoutes, "/reset-password"];
+    const inAuthFlow = authRoutes.includes(pathname);
+    const isPublicRoute = publicRoutes.includes(pathname);
+    const atRoot = pathname === "/";
+
+    if (authState === "session-expired") {
+      if (!sessionExpiredShown.current) {
+        sessionExpiredShown.current = true;
+        alert("Session expired", "Please sign in again to continue.");
+      }
+      if (!inAuthFlow && !isPublicRoute) router.replace("/login");
+      return;
+    }
+
+    sessionExpiredShown.current = false;
+    if (authState === "anonymous" && !inAuthFlow && !isPublicRoute) {
+      router.replace("/login");
+    } else if (
+      authState === "authenticated" &&
+      (credentialRoutes.includes(pathname) || atRoot) &&
+      !recoveryRoute
+    ) {
+      router.replace("/home");
+    }
+  }, [alert, authState, pathname, router]);
+
+  if (authState === "initializing" || !fontsLoaded) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: "#FFFFFF",
+        }}
+      >
+        <ActivityIndicator size="large" color="#4CAF50" />
+      </View>
+    );
+  }
+
+  return (
+    <>
+      <Stack screenOptions={{ headerShown: false }} />
+      <PatchNotesPopup
+        visible={showPopup}
+        patch={latestPatch}
+        onDismiss={markAsSeen}
+      />
+    </>
   );
 }

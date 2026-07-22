@@ -1,120 +1,90 @@
-import React, { useEffect, useState } from "react";
+import { useTheme } from "@/context/ThemeContext";
+import { useAlert } from "@/context/AlertContext";
+import { useSyncStatus } from "@/hooks/useSyncStatus";
 import {
-  Animated,
-  Easing,
+  discardFailedMutations,
+  retryFailedMutations,
+} from "@/services/syncQueueService";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import {
+  ActivityIndicator,
   StyleSheet,
   Text,
-  View,
+  TouchableOpacity,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useTheme } from "@/context/ThemeContext";
-
-const SYNC_QUEUE_KEY = "@progressify_sync_queue";
 
 export function SyncStatusBadge() {
   const { theme } = useTheme();
-  const [queueCount, setQueueCount] = useState(0);
-  const [spinAnim] = useState(() => new Animated.Value(0));
-  const [fadeAnim] = useState(() => new Animated.Value(0));
+  const { alert } = useAlert();
+  const { pending, failed, isSyncing, isOnline } = useSyncStatus();
 
-  // Poll AsyncStorage for sync queue length
-  useEffect(() => {
-    const checkQueue = async () => {
-      try {
-        const raw = await AsyncStorage.getItem(SYNC_QUEUE_KEY);
-        if (raw) {
-          const queue = JSON.parse(raw);
-          setQueueCount(Array.isArray(queue) ? queue.length : 0);
-        } else {
-          setQueueCount(0);
-        }
-      } catch (err) {
-        setQueueCount(0);
-      }
-    };
+  if (pending === 0 && failed === 0 && isOnline) return null;
 
-    // Check immediately
-    checkQueue();
+  const hasFailed = failed > 0;
+  const color = hasFailed ? theme.expense : theme.primary;
+  const label = hasFailed
+    ? `${failed} failed - retry`
+    : !isOnline
+      ? `${pending} pending offline`
+      : isSyncing
+        ? `Syncing ${pending}`
+        : `${pending} pending`;
 
-    // Check every 3 seconds
-    const interval = setInterval(checkQueue, 3000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Handle spin and fade animations
-  useEffect(() => {
-    if (queueCount > 0) {
-      // Fade in
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-
-      // Loop spin animation
-      spinAnim.setValue(0);
-      Animated.loop(
-        Animated.timing(spinAnim, {
-          toValue: 1,
-          duration: 1500,
-          easing: Easing.linear,
-          useNativeDriver: true,
-        })
-      ).start();
-    } else {
-      // Fade out
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-      spinAnim.stopAnimation();
-    }
-  }, [queueCount, fadeAnim, spinAnim]);
-
-  if (queueCount === 0) return null;
-
-  const spin = spinAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0deg", "360deg"],
-  });
+  const handlePress = () => {
+    if (!hasFailed) return;
+    alert(
+      "Synchronization failed",
+      "Retry the failed changes, or discard them from this device.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Discard",
+          style: "destructive",
+          onPress: () => void discardFailedMutations(),
+        },
+        { text: "Retry", onPress: () => void retryFailedMutations() },
+      ],
+    );
+  };
 
   return (
-    <Animated.View
+    <TouchableOpacity
+      accessibilityRole={hasFailed ? "button" : "text"}
+      accessibilityLabel={label}
+      disabled={!hasFailed}
+      onPress={handlePress}
       style={[
         styles.container,
         {
-          opacity: fadeAnim,
-          backgroundColor: theme.primary + "15",
-          borderColor: theme.primary + "40",
+          backgroundColor: color + "15",
+          borderColor: color + "40",
         },
       ]}
     >
-      <Animated.View style={{ transform: [{ rotate: spin }] }}>
-        <MaterialCommunityIcons name="sync" size={14} color={theme.primary} />
-      </Animated.View>
-      <Text style={[styles.text, { color: theme.primary }]}>
-        Syncing ({queueCount})
-      </Text>
-    </Animated.View>
+      {isSyncing && !hasFailed ? (
+        <ActivityIndicator size={14} color={color} />
+      ) : (
+        <MaterialCommunityIcons
+          name={hasFailed ? "sync-alert" : isOnline ? "cloud-sync-outline" : "cloud-off-outline"}
+          size={15}
+          color={color}
+        />
+      )}
+      <Text style={[styles.text, { color }]}>{label}</Text>
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    minHeight: 30,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
     paddingVertical: 5,
     paddingHorizontal: 10,
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: 1,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 1,
   },
   text: {
     fontSize: 11,

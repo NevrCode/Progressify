@@ -1,9 +1,6 @@
 import { ThemeType } from "@/constants/colors";
-import { Dimensions } from "react-native";
 import { createWithFont } from "./fontHelper";
 
-const w = Dimensions.get("window").width;
-const h = Dimensions.get("window").height;
 export const authStyles = (theme: ThemeType) =>
   createWithFont({
     container: {

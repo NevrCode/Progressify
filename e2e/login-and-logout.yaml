@@ -1,0 +1,14 @@
+appId: com.nevrcode.progressify
+name: Login and logout
+tags:
+  - critical
+env:
+  E2E_EMAIL: ${E2E_EMAIL}
+  E2E_PASSWORD: ${E2E_PASSWORD}
+---
+- runFlow: login.yaml
+- tapOn: "Profile"
+- assertVisible: "Logout"
+- tapOn: "Logout"
+- tapOn: "Logout"
+- assertVisible: "Welcome Back"

@@ -1,5 +1,4 @@
 import { gymStyles } from "@/assets/styles/gym.style";
-import { profileStyles } from "@/assets/styles/profile.style";
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
 import { SyncStatusBadge } from "@/components/base/SyncStatusBadge";
 import { BarcodeScannerModal } from "@/components/nutrition/BarcodeScannerModal";
@@ -17,7 +16,6 @@ import {
   useNutritionGoals,
   useNutritionProfile,
   useOverrideGoals,
-  useRecalculateGoals,
   useSaveNutritionProfile,
   useTodayDiarySummary,
 } from "@/hooks/useNutrition";
@@ -43,8 +41,7 @@ import {
 } from "@/services/nutritionService";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -103,13 +100,6 @@ const goalOptions: {
   },
 ];
 
-const MACRO_COLORS = {
-  calories: "#4caf50",
-  protein: "#f44336",
-  carbohydrate: "#2196f3",
-  fat: "#ffeb3b",
-};
-
 const formatDateForApi = (date: Date) =>
   [
     date.getFullYear(),
@@ -148,44 +138,9 @@ const getEntryValue = (
   return source[snakeKey] ?? (camelKey ? source[camelKey] : undefined);
 };
 
-const getEntryDate = (entry: FoodEntryDetailResponseDTO) =>
-  String(
-    getEntryValue(entry, "entry_date", "entryDate") ?? entry.date ?? "",
-  ).slice(0, 10);
-
-const getEntryMeal = (entry: FoodEntryDetailResponseDTO) =>
-  String(getEntryValue(entry, "meal_type", "mealType") ?? "MEAL");
-
 const getEntryFoodName = (entry: FoodEntryDetailResponseDTO) =>
   String(getEntryValue(entry, "food_name", "foodName") ?? "Food");
 
-const getEntryServing = (entry: FoodEntryDetailResponseDTO) =>
-  String(
-    getEntryValue(entry, "serving_description", "servingDescription") ?? "",
-  );
-
-const getEntryMacro = (
-  entry: FoodEntryDetailResponseDTO,
-  snakeKey: string,
-  camelKey?: string,
-) => parseNumber(getEntryValue(entry, snakeKey, camelKey) as string | number);
-
-const getPageEntries = (page?: {
-  data?: FoodEntryDetailResponseDTO[];
-  content?: FoodEntryDetailResponseDTO[];
-}) => page?.data ?? page?.content ?? [];
-
-const getSummaryMacro = (
-  summary: ReturnType<typeof useFoodDiarySummary>["data"],
-  totalKey: string,
-  fallbackKey: string,
-) => {
-  const source = summary as Record<string, unknown> | undefined;
-  return (
-    parseNumber(source?.[totalKey] as string | number) ||
-    parseNumber(source?.[fallbackKey] as string | number)
-  );
-};
 const statusColor = (status?: string, theme?: any) => {
   if (status === "ON_TRACK") return theme?.income ?? "#2ecc71";
   if (status === "OVER") return theme?.expense ?? "#e74c3c";
@@ -500,20 +455,11 @@ function FoodEntriesByMeal({
 export default function FoodDiary() {
   const { theme } = useTheme();
   const styles = gymStyles(theme);
-  const router = useRouter();
   const { alert } = useAlert();
   const { selectedDate, setSelectedDate } = useDiaryContext();
   const [activeTab, setActiveTab] = useState<"SINGLE" | "PREP">("SINGLE");
-  const {
-    data: profile,
-    isLoading: profileLoading,
-    refetch: refetchProfile,
-  } = useNutritionProfile();
-  const {
-    data: goals,
-    isLoading: goalsLoading,
-    refetch: refetchGoals,
-  } = useNutritionGoals();
+  const { data: profile, isLoading: profileLoading } = useNutritionProfile();
+  const { data: goals } = useNutritionGoals();
   const {
     data: todayDairySummary,
     isLoading: summaryDiaryLoading,
@@ -522,7 +468,6 @@ export default function FoodDiary() {
 
   const saveMutation = useSaveNutritionProfile();
   const overrideMutation = useOverrideGoals();
-  const recalcMutation = useRecalculateGoals();
 
   // ── Onboarding / edit form state ──────────────────────────────────────────
   const [formOpen, setFormOpen] = useState(false);
@@ -556,10 +501,9 @@ export default function FoodDiary() {
   const [oPotassium, setOPotassium] = useState(
     goals?.potassium_goal?.toString() ?? "",
   );
-  const tabTranslateX = useRef(new Animated.Value(0)).current;
+  const [tabTranslateX] = useState(() => new Animated.Value(0));
   const [containerWidth, setContainerWidth] = useState(0);
 
-  const isLoading = profileLoading || goalsLoading || summaryDiaryLoading;
   const hasProfile = !!profile;
   useEffect(() => {
     Animated.timing(tabTranslateX, {
@@ -567,7 +511,7 @@ export default function FoodDiary() {
       duration: 220,
       useNativeDriver: true,
     }).start();
-  }, [activeTab]);
+  }, [activeTab, tabTranslateX]);
 
   const openForm = () => {
     setWeight(profile?.weight_kg?.toString() ?? "");
@@ -653,9 +597,6 @@ export default function FoodDiary() {
     );
   };
   const queryClient = useQueryClient();
-  const profileStyless = profileStyles(theme);
-  const { data: nutritionProfile } = useNutritionProfile();
-
   const [search, setSearch] = useState("");
   const [openMoreMacros, setOpenMoreMacros] = useState(false);
   const [selectedMeal, setSelectedMeal] = useState<MealType>("BREAKFAST");
@@ -664,16 +605,12 @@ export default function FoodDiary() {
   );
   const [quantity, setQuantity] = useState("1");
   const [showFoodPicker, setShowFoodPicker] = useState(false);
-  const calProg = todayDairySummary?.progress?.calories;
-
   const {
-    data: summary,
     isLoading: summaryLoading,
     isFetching: summaryFetching,
     refetch: refetchSummary,
   } = useFoodDiarySummary(selectedDate);
   const {
-    data: entriesPage,
     isLoading: entriesLoading,
     isFetching: entriesFetching,
     refetch: refetchEntries,
@@ -835,26 +772,6 @@ export default function FoodDiary() {
     [serving, quantityNumber],
   );
 
-  const summaryMacros = {
-    calories: getSummaryMacro(summary, "totalCalories", "total_calories"),
-    protein: getSummaryMacro(summary, "totalProtein", "total_protein"),
-    carbohydrate: getSummaryMacro(
-      summary,
-      "totalCarbohydrate",
-      "total_carbohydrate",
-    ),
-    fat: getSummaryMacro(summary, "totalFat", "total_fat"),
-  };
-
-  const dailyEntries = useMemo(() => {
-    const summaryEntries = summary?.entries ?? [];
-    if (summaryEntries.length) return summaryEntries;
-
-    return getPageEntries(entriesPage).filter(
-      (entry) => getEntryDate(entry) === selectedDate,
-    );
-  }, [entriesPage, selectedDate, summary?.entries]);
-
   const isRefreshing =
     summaryLoading || entriesLoading || summaryFetching || entriesFetching;
 
@@ -991,7 +908,7 @@ export default function FoodDiary() {
             style={{
               flexDirection: "row",
               alignItems: "center",
-              backgroundColor: theme.primary + "06",
+              backgroundColor: theme.background,
               borderRadius: 16,
               padding: 12,
               borderWidth: 1.5,
@@ -1078,7 +995,7 @@ export default function FoodDiary() {
               style={{
                 flexDirection: "row",
                 justifyContent: "space-between",
-                backgroundColor: theme.primary + "06",
+                backgroundColor: theme.background,
                 borderRadius: 14,
                 padding: 12,
                 borderWidth: 1.5,
@@ -1480,7 +1397,7 @@ export default function FoodDiary() {
             <>
               <ShadowGlowCard
                 style={{
-                  backgroundColor: theme.primary + "06",
+                  backgroundColor: theme.background,
                   borderColor: theme.primary + "20",
                   borderWidth: 1.5,
                 }}
@@ -1707,7 +1624,7 @@ export default function FoodDiary() {
               <ShadowGlowCard
                 style={{
                   marginTop: 16,
-                  backgroundColor: theme.primary + "06",
+                  backgroundColor: theme.background,
                   borderColor: theme.primary + "20",
                   borderWidth: 1.5,
                 }}
@@ -1880,7 +1797,7 @@ export default function FoodDiary() {
 
                 <ShadowGlowCard
                   style={{
-                    backgroundColor: theme.primary + "06",
+                    backgroundColor: theme.background,
                     borderColor: theme.primary + "20",
                     borderWidth: 1.5,
                   }}

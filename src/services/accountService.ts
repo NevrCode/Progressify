@@ -1,4 +1,5 @@
 import { api } from "@/utils/api";
+import { getErrorMessage } from "@/utils/apiError";
 interface CreateAccountRequest {
   account_name: string;
   account_type: "BANK" | "CASH" | "E_WALLET" | "INVESTMENT";
@@ -28,8 +29,8 @@ export const createAccount = async ({
     });
     const data = response.data;
     return data;
-  } catch (error: any) {
-    throw new Error(error.response?.data?.message || "Create account failed");
+  } catch (error: unknown) {
+    throw new Error(getErrorMessage(error, "Could not create the account."));
   }
 };
 
@@ -39,8 +40,8 @@ export const getAccount = async () => {
       await api.get<PageResponse<AccountResponse>>("/v1/account");
     const data = response.data;
     return data;
-  } catch (error: any) {
-    throw new Error(error.response?.data?.message || "read account failed");
+  } catch (error: unknown) {
+    throw new Error(getErrorMessage(error, "Could not load the accounts."));
   }
 };
 

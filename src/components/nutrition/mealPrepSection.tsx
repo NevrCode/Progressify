@@ -12,18 +12,13 @@ import {
   useUpdateMealPrep,
 } from "@/hooks/useMealPrep";
 import {
-  FatSecretFoodDetail,
-  FatSecretSearchFood,
-  getFatSecretFood,
   MealType,
-  searchFatSecretFoods,
 } from "@/services/foodDiaryService";
 import {
   MealPrepItemRequest,
   MealPrepResponse,
 } from "@/services/mealPrepService";
 import { MaterialIcons } from "@expo/vector-icons";
-import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -110,9 +105,6 @@ function PrepRow({
   theme: ThemeType;
 }) {
   const accent = ACCENT_COLORS[index % ACCENT_COLORS.length];
-  const [showAllItems, setShowAllItems] = useState(false); // ← add this
-
-  const PREVIEW_COUNT = 3;
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -445,45 +437,9 @@ export function MealPrepSection() {
   const [prepDesc, setPrepDesc] = useState("");
   const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
   const [showFoodPicker, setShowFoodPicker] = useState(false);
-  const [search, setSearch] = useState("");
   const [editingItemKey, setEditingItemKey] = useState<string | null>(null);
   const [showLogModal, setShowLogModal] = useState(false);
   const [logMealType, setLogMealType] = useState<MealType>("LUNCH");
-
-  const foodSearchQuery = useQuery({
-    queryKey: ["mealprep-food-search", search.trim()],
-    queryFn: () => searchFatSecretFoods(search),
-    enabled: search.trim().length >= 2,
-  });
-
-  const foodDetailMutation = useMutation({
-    mutationFn: (food: FatSecretSearchFood) => getFatSecretFood(food.food_id),
-    onSuccess: (food: FatSecretFoodDetail) => {
-      const serving = food.serving;
-      const baseAmount = parseNumber(serving?.metric_serving_amount) || 100;
-      const newItem: DraftItem = {
-        key: Date.now().toString(),
-        food_id: food.food_id,
-        food_name: food.food_name,
-        serving_id: serving?.serving_id,
-        serving_description: serving?.serving_description,
-        gramation: baseAmount,
-        calories: parseNumber(serving?.calories),
-        protein: parseNumber(serving?.protein),
-        fat: parseNumber(serving?.fat),
-        carbohydrate: parseNumber(serving?.carbohydrate),
-      };
-      if (editingItemKey) {
-        setDraftItems((prev) =>
-          prev.map((i) => (i.key === editingItemKey ? newItem : i)),
-        );
-        setEditingItemKey(null);
-      } else setDraftItems((prev) => [...prev, newItem]);
-      setShowFoodPicker(false);
-      setSearch("");
-    },
-    onError: (e: any) => alert("Food detail failed", e.message),
-  });
 
   const updateGramation = (key: string, raw: string) => {
     const grams = Math.max(parseNumber(raw), 0);

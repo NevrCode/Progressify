@@ -6,15 +6,17 @@ import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useActiveSession } from "@/hooks/useActiveSession";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
+import {
+  calculateEstimatedOneRepMax,
+  calculateWorkoutVolume,
+} from "@/utils/workoutMetrics";
 
 import {
   createExerciseProgression,
-  createExerciseSession,
   deleteExerciseProgression,
   ExerciseProgressionDTO,
   ExerciseSessionDTO,
   GymExerciseProgressionRequestDTO,
-  GymExerciseSessionRequestDTO,
   SplitType,
   updateExerciseProgression,
 } from "@/services/gymService";
@@ -22,7 +24,7 @@ import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -46,25 +48,6 @@ type SessionProgressionPoint = {
   estimated1RM: number;
   totalVolume: number;
   totalSets: number;
-};
-type ActiveWorkoutDraft = {
-  exerciseId: number;
-
-  startedAt: string;
-
-  sets: DraftWorkoutSet[];
-};
-
-type DraftWorkoutSet = {
-  localId: string;
-
-  set_number: number;
-
-  weight: number;
-
-  reps: number;
-
-  rir: number;
 };
 type SplitFilter = "ALL" | SplitType;
 type ModalKind = "exercise" | "set";
@@ -102,9 +85,6 @@ const displaySplit = (split?: string) => {
 
 const getExerciseName = (exercise: ExerciseProgressionDTO) =>
   exercise.name ?? "Exercise";
-
-const getWorkoutSets = (exercise: ExerciseProgressionDTO) =>
-  exercise.workout_sets ?? exercise.last_workout_sets ?? [];
 
 const getExerciseSessions = (exercise: ExerciseProgressionDTO) =>
   exercise.exercise_sessions ?? [];
@@ -223,7 +203,10 @@ const buildSessionProgression = (
         0,
       );
 
-      const estimated1RM = topSet.weight * (1 + topSet.reps / 30);
+      const estimated1RM = calculateEstimatedOneRepMax(
+        topSet.weight,
+        topSet.reps,
+      );
 
       return {
         key: `${session.id}-${sessionDate}`,
@@ -288,11 +271,8 @@ export default function GymProgression() {
   const [expandedExerciseId, setExpandedExerciseId] = useState<number | null>(
     null,
   );
-  const [expandedTableExerciseId, setExpandedTableExerciseId] = useState<
-    number | null
-  >(null);
   const [activeSplit, setActiveSplit] = useState<SplitFilter>("ALL");
-  const splitTranslateX = useRef(new Animated.Value(0)).current;
+  const [splitTranslateX] = useState(() => new Animated.Value(0));
   const [switcherWidth, setSwitcherWidth] = useState(0);
 
   useEffect(() => {
@@ -309,17 +289,10 @@ export default function GymProgression() {
       duration: 220,
       useNativeDriver: true,
     }).start();
-  }, [activeSplit]);
-  const [activeWorkoutDrafts, setActiveWorkoutDrafts] = useState<
-    Record<number, ActiveWorkoutDraft>
-  >({});
-  const [finishingExerciseId, setFinishingExerciseId] = useState<number | null>(
-    null,
-  );
+  }, [activeSplit, splitTranslateX]);
   const [deletingExerciseId, setDeletingExerciseId] = useState<number | null>(
     null,
   );
-  const [deletingSetId, setDeletingSetId] = useState<string | null>(null);
   const [modalState, setModalState] = useState<ModalState>({
     visible: false,
     kind: null,
@@ -389,7 +362,7 @@ export default function GymProgression() {
       for (const session of sessions) {
         const sets = getSessionSets(session);
         for (const set of sets) {
-          volume += set.weight * set.reps;
+          volume += calculateWorkoutVolume(set.weight, set.reps);
         }
       }
     }
@@ -404,207 +377,10 @@ export default function GymProgression() {
     });
   };
 
-  const getRandomInt = (): number => {
-    return Math.floor(Math.random() * 100);
-  };
-  const startWorkout = (exercise: ExerciseProgressionDTO) => {
-    const draft: ActiveWorkoutDraft = {
-      exerciseId: exercise.id,
-
-      startedAt: new Date().toISOString(),
-
-      sets: [
-        {
-          localId: `${Date.now() + getRandomInt()}`,
-
-          set_number: 1,
-
-          weight: 0,
-
-          reps: 0,
-
-          rir: 0,
-        },
-      ],
-    };
-
-    setActiveWorkoutDrafts((current) => ({
-      ...current,
-
-      [exercise.id]: draft,
-    }));
-  };
-  const updateDraftSet = (
-    exerciseId: number,
-    localId: string,
-    field: keyof DraftWorkoutSet,
-    value: number,
-  ) => {
-    setActiveWorkoutDrafts((current) => {
-      const draft = current[exerciseId];
-
-      if (!draft) return current;
-
-      return {
-        ...current,
-
-        [exerciseId]: {
-          ...draft,
-
-          sets: draft.sets.map((set) =>
-            set.localId === localId
-              ? {
-                  ...set,
-                  [field]: value,
-                }
-              : set,
-          ),
-        },
-      };
-    });
-  };
-  const addDraftSet = (exerciseId: number) => {
-    setActiveWorkoutDrafts((current) => {
-      const draft = current[exerciseId];
-
-      if (!draft) return current;
-
-      return {
-        ...current,
-
-        [exerciseId]: {
-          ...draft,
-
-          sets: [
-            ...draft.sets,
-
-            {
-              localId: new Date() + getRandomInt().toString(),
-
-              set_number: draft.sets.length + 1,
-
-              weight: 0,
-              reps: 0,
-              rir: 0,
-            },
-          ],
-        },
-      };
-    });
-  };
-  const validateDraftWorkout = (draft: ActiveWorkoutDraft) => {
-    if (!draft.sets.length) {
-      return "Add at least one set before finishing the workout.";
-    }
-
-    const invalidSet = draft.sets.find(
-      (set) => set.weight <= 0 || set.reps <= 0 || set.rir < 0,
-    );
-
-    if (!invalidSet) return null;
-
-    return `Set #${invalidSet.set_number} needs weight and reps above 0, and RIR cannot be negative.`;
-  };
-  const deleteDraftSet = (exerciseId: number, localId: string) => {
-    if (deletingSetId) return;
-
-    setDeletingSetId(localId);
-
-    setTimeout(() => {
-      setActiveWorkoutDrafts((current) => {
-        const draft = current[exerciseId];
-
-        if (!draft) return current;
-
-        const nextSets = draft.sets.filter((s) => s.localId !== localId);
-
-        // if no sets remain, remove the draft entirely
-        if (!nextSets.length) {
-          const copy = { ...current };
-          delete copy[exerciseId];
-          return copy;
-        }
-
-        // reindex set_number sequentially
-        const reindexed = nextSets.map((s, idx) => ({
-          ...s,
-          set_number: idx + 1,
-        }));
-
-        return {
-          ...current,
-          [exerciseId]: {
-            ...draft,
-            sets: reindexed,
-          },
-        };
-      });
-      setDeletingSetId(null);
-    }, 350);
-  };
-  const finishWorkout = async (exercise: ExerciseProgressionDTO) => {
-    const draft = activeWorkoutDrafts[exercise.id];
-
-    if (!draft) return;
-    const validationMessage = validateDraftWorkout(draft);
-
-    if (validationMessage) {
-      alert("Workout not ready", validationMessage);
-      return;
-    }
-
-    setFinishingExerciseId(exercise.id);
-    try {
-      const sessionDate = formatDateForApi(draft.startedAt);
-
-      const sessionPayload: GymExerciseSessionRequestDTO = {
-        session_date: sessionDate,
-        notes: "",
-        sets: draft.sets.map((set) => ({
-          set_number: set.set_number,
-          weight: set.weight,
-          reps: set.reps,
-          rir: set.rir,
-        })),
-      };
-
-      await sessionMutation.mutateAsync({
-        exerciseProgressionId: exercise.id,
-        payload: sessionPayload,
-      });
-
-      setActiveWorkoutDrafts((current) => {
-        const copy = { ...current };
-
-        delete copy[exercise.id];
-
-        return copy;
-      });
-    } catch (finishError: any) {
-      alert(
-        finishError.response?.data?.code ?? "Request failed",
-        finishError.response?.data?.message ?? finishError.message,
-      );
-    } finally {
-      setFinishingExerciseId(null);
-    }
-  };
-
   const invalidateGym = async () => {
     await queryClient.invalidateQueries({ queryKey: ["gym"] });
   };
 
-  const sessionMutation = useMutation({
-    mutationFn: async ({
-      exerciseProgressionId,
-      payload,
-    }: {
-      exerciseProgressionId: number;
-      payload: GymExerciseSessionRequestDTO;
-    }) => createExerciseSession(exerciseProgressionId, payload),
-
-    onSuccess: invalidateGym,
-  });
   const exerciseMutation = useMutation({
     mutationFn: async ({
       id,
@@ -1317,8 +1093,6 @@ export default function GymProgression() {
 
         {filteredSearchWorkout.length ? (
           filteredSearchWorkout.map((exercise) => {
-            const activeDraft = activeWorkoutDrafts[exercise.id];
-            const currentWorkoutSets = activeDraft?.sets ?? [];
             const exerciseSessions = getExerciseSessions(exercise);
             const latestSession = [...exerciseSessions].sort(
               (a, b) =>
@@ -1336,7 +1110,7 @@ export default function GymProgression() {
               <ShadowGlowCard
                 key={exercise.id}
                 style={{
-                  backgroundColor: theme.primary + "06",
+                  backgroundColor: theme.background + "06",
                   borderColor: theme.primary + "20",
                   borderWidth: 1.5,
                 }}
@@ -1421,6 +1195,8 @@ export default function GymProgression() {
                               fontSize: 9,
                               fontWeight: "800",
                               color: theme.primary,
+
+                              textTransform: "capitalize",
                             }}
                           >
                             {displaySplit(exercise.split)}
@@ -1562,11 +1338,10 @@ export default function GymProgression() {
                   <>
                     <View style={styles.subsectionHeader}>
                       <View>
-                        <Text style={styles.subsectionTitle}>
+                        <Text
+                          style={[styles.subsectionTitle, { marginBottom: 8 }]}
+                        >
                           Session progression
-                        </Text>
-                        <Text style={styles.sectionMeta}>
-                          One point per recorded workout session
                         </Text>
                       </View>
                     </View>
@@ -1602,18 +1377,19 @@ export default function GymProgression() {
                             color={theme.primary}
                             startFillColor={theme.primary}
                             endFillColor={theme.primary}
-                            startOpacity={0.35}
+                            startOpacity={0.25}
                             endOpacity={0.02}
                             hideRules={false}
-                            rulesColor={`${theme.border}55`}
+                            rulesColor={`${theme.background}`}
                             rulesType="dashed"
-                            yAxisColor="transparent"
-                            xAxisColor={`${theme.border}88`}
+                            yAxisColor={theme.background}
+                            xAxisColor={theme.background}
                             hideYAxisText={false}
                             yAxisTextStyle={{
                               color: theme.textLight,
                               fontSize: 11,
                             }}
+                            backgroundColor={theme.background}
                             xAxisLabelTextStyle={{
                               color: theme.textLight,
                               fontSize: 11,
@@ -1708,7 +1484,6 @@ export default function GymProgression() {
                     {latestSessionSets.length ? (
                       <View style={[styles.setTable, { marginBottom: 12 }]}>
                         <View style={styles.setTableHeader}>
-                          <Text style={styles.setHeaderText}>Date</Text>
                           <Text style={styles.setHeaderText}>Set</Text>
                           <Text style={styles.setHeaderText}>Weight</Text>
                           <Text style={styles.setHeaderText}>Reps</Text>
@@ -1716,9 +1491,6 @@ export default function GymProgression() {
                         </View>
                         {latestSessionSets.map((set) => (
                           <View key={set.id} style={styles.setRow}>
-                            <Text style={styles.setValue}>
-                              {getDayMonth(getSessionDate(latestSession))}
-                            </Text>
                             <Text style={styles.setValue}>
                               #{set.set_number}
                             </Text>

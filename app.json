@@ -34,7 +34,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Progressify to access your camera",
+          "cameraPermission": "Allow Progressify to use the camera to scan food barcodes you choose to add to your nutrition diary.",
           "barcodeScannerEnabled": true,
           "recordAudioAndroid": false
         }
@@ -52,14 +52,15 @@
       "@react-native-community/datetimepicker",
       "expo-secure-store",
       "expo-image",
-      "expo-font"
+      "expo-font",
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
     "extra": {
-      "displayedVersion": "1.0.4",
+      "displayedVersion": "1.1.0",
       "router": {},
       "apiUrl": "https://progressify-tracker.onrender.com",
       "eas": {

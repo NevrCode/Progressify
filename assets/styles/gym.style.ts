@@ -344,6 +344,8 @@ export const gymStyles = (theme: ThemeType) =>
     exerciseName: {
       color: theme.textBlack,
       fontSize: 16,
+
+      textTransform: "capitalize",
       fontWeight: "800",
     },
     exerciseMeta: {
@@ -359,11 +361,11 @@ export const gymStyles = (theme: ThemeType) =>
       marginTop: 4,
     },
     chartBlock: {
-      backgroundColor: theme.card,
+      backgroundColor: theme.background,
       borderRadius: 14,
       overflow: "hidden",
       borderWidth: 1,
-      borderColor: theme.border,
+      borderColor: theme.background,
     },
     chart: {
       borderRadius: 14,

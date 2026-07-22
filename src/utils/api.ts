@@ -1,29 +1,17 @@
-import {
-  clearAuthSession,
-  getAccessToken,
-  getRefreshToken,
-  saveAuthSession,
-} from "@/services/authSessionService";
+import { API_BASE_URL } from "@/constants/apiConfig";
+import { getAccessToken } from "@/services/authSessionService";
 import {
   cacheResponse,
   enqueueMutation,
   getCachedResponse,
-  processSyncQueue,
 } from "@/services/syncQueueService";
-import axios from "axios";
-import Constants from "expo-constants";
+import { refreshAuthSession } from "@/services/tokenRefreshService";
+import { create as createAxios } from "axios";
+import * as Crypto from "expo-crypto";
+import { toApiError } from "@/utils/apiError";
 
-const baseURL =
-  Constants.expoConfig?.extra?.apiUrl || process.env.EXPO_PUBLIC_API_URL;
-
-if (!baseURL) {
-  console.warn(
-    "Missing API URL: set expo.extra.apiUrl in app.json or EXPO_PUBLIC_API_URL during build",
-  );
-}
-
-export const api = axios.create({
-  baseURL,
+export const api = createAxios({
+  baseURL: API_BASE_URL,
   headers: {
     "Content-Type": "application/json",
   },
@@ -35,6 +23,17 @@ api.interceptors.request.use(
     const token = await getAccessToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    const method = config.method?.toUpperCase();
+    if (
+      method &&
+      ["POST", "PUT", "PATCH", "DELETE"].includes(method) &&
+      config.url?.startsWith("/v1/") &&
+      config.url !== "/v1/user/me" &&
+      !config.headers.get("Idempotency-Key")
+    ) {
+      config.headers.set("Idempotency-Key", Crypto.randomUUID());
     }
     return config;
   },
@@ -48,39 +47,34 @@ const authEndpoints = [
   "/auth/register",
   "/auth/refresh",
   "/auth/logout",
+  "/auth/password-reset",
+  "/auth/password-reset/confirm",
 ];
 const isAuthEndpoint = (url?: string) =>
   authEndpoints.some((endpoint) => url?.includes(endpoint));
+const isOnlineOnlyEndpoint = (url?: string) => url === "/v1/user/me";
 
-let refreshPromise: Promise<string> | null = null;
-
-const refreshAccessToken = async () => {
-  const refreshToken = await getRefreshToken();
-  if (!refreshToken) {
-    throw new Error("No refresh token is available.");
+const canonicalize = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    return Object.keys(value)
+      .sort()
+      .reduce<Record<string, unknown>>((result, key) => {
+        result[key] = canonicalize((value as Record<string, unknown>)[key]);
+        return result;
+      }, {});
   }
-
-  const response = await axios.post(
-    `${baseURL}/auth/refresh`,
-    { refresh_token: refreshToken },
-    { headers: { "Content-Type": "application/json" }, timeout: 10000 },
-  );
-  await saveAuthSession(response.data);
-  return response.data.access_token as string;
+  return value;
 };
 
-const getRefreshedAccessToken = () => {
-  if (!refreshPromise) {
-    refreshPromise = refreshAccessToken()
-      .catch(async (error) => {
-        await clearAuthSession();
-        throw error;
-      })
-      .finally(() => {
-        refreshPromise = null;
-      });
-  }
-  return refreshPromise;
+const buildCacheKey = (url?: string, params?: unknown) =>
+  `GET:${url ?? ""}:${JSON.stringify(canonicalize(params ?? {}))}`;
+
+const getHeader = (headers: any, name: string) => {
+  const value = typeof headers?.get === "function"
+    ? headers.get(name)
+    : headers?.[name];
+  return typeof value === "string" ? value : undefined;
 };
 
 // Response interceptor to handle 401 and refresh access tokens
@@ -89,15 +83,13 @@ api.interceptors.response.use(
     // Cache GET Responses and Process Sync Queue
     if (response.config.method === "get") {
       if (response.data && typeof response.data === "object") {
-        const cacheKey =
-          response.config.url +
-          (response.config.params
-            ? JSON.stringify(response.config.params)
-            : "");
+        const cacheKey = buildCacheKey(
+          response.config.url,
+          response.config.params,
+        );
         void cacheResponse(cacheKey, response.data);
       }
     }
-    void processSyncQueue();
     return response;
   },
   async (error) => {
@@ -110,19 +102,19 @@ api.interceptors.response.use(
       error.code === "ECONNABORTED" ||
       [502, 503, 504].includes(error.response?.status);
 
-    if (isOfflineOrDown && !isAuthEndpoint(originalRequest?.url)) {
+    if (
+      isOfflineOrDown &&
+      !isAuthEndpoint(originalRequest?.url) &&
+      !isOnlineOnlyEndpoint(originalRequest?.url)
+    ) {
       if (originalRequest) {
         if (originalRequest.method === "get") {
-          const cacheKey =
-            originalRequest.url +
-            (originalRequest.params
-              ? JSON.stringify(originalRequest.params)
-              : "");
+          const cacheKey = buildCacheKey(
+            originalRequest.url,
+            originalRequest.params,
+          );
           const cachedData = await getCachedResponse(cacheKey);
           if (cachedData) {
-            console.log(
-              `[Offline Cache] Serving cached data for ${originalRequest.url}`,
-            );
             return {
               data: cachedData,
               status: 200,
@@ -132,20 +124,31 @@ api.interceptors.response.use(
             };
           }
         } else if (
-          ["post", "put", "delete"].includes(originalRequest.method || "")
+          ["post", "put", "patch", "delete"].includes(
+            originalRequest.method || "",
+          ) &&
+          originalRequest.url?.startsWith("/v1/") &&
+          !getHeader(originalRequest.headers, "Content-Type")?.includes(
+            "multipart/form-data",
+          )
         ) {
-          console.log(
-            `[Offline Queue] Queueing offline ${originalRequest.method} request to ${originalRequest.url}`,
-          );
-          await enqueueMutation(
+          const idempotencyKey =
+            getHeader(originalRequest.headers, "Idempotency-Key") ??
+            Crypto.randomUUID();
+          const pendingId = await enqueueMutation(
             originalRequest.url || "",
-            (originalRequest.method || "POST").toUpperCase() as any,
+            (originalRequest.method || "POST").toUpperCase() as
+              | "POST"
+              | "PUT"
+              | "PATCH"
+              | "DELETE",
             originalRequest.data,
+            idempotencyKey,
           );
           return {
-            data: { status: "success", offline: true },
-            status: 200,
-            statusText: "OK",
+            data: { status: "pending", offline: true, pending_id: pendingId },
+            status: 202,
+            statusText: "Accepted",
             headers: {},
             config: originalRequest,
           };
@@ -163,15 +166,16 @@ api.interceptors.response.use(
       originalRequest._retry = true;
 
       try {
-        const newAccessToken = await getRefreshedAccessToken();
+        const tokens = await refreshAuthSession();
+        const newAccessToken = tokens.access_token;
         originalRequest.headers = originalRequest.headers ?? {};
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
         return api(originalRequest);
       } catch (err) {
-        return Promise.reject(err);
+        return Promise.reject(toApiError(err));
       }
     }
 
-    return Promise.reject(error);
+    return Promise.reject(toApiError(error));
   },
 );

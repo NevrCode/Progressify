@@ -169,11 +169,8 @@ export default function HomeScreen() {
     refetch: refetchProfile,
   } = useNutritionProfile();
 
-  const {
-    data: goals,
-    isLoading: goalsLoading,
-    refetch: refetchGoals,
-  } = useNutritionGoals();
+  const { isLoading: goalsLoading, refetch: refetchGoals } =
+    useNutritionGoals();
 
   const {
     data: summary,
@@ -190,7 +187,6 @@ export default function HomeScreen() {
   const {
     data: profileData,
     isLoading: userProfileLoading,
-    error: profileError,
     refetch: refetchUserProfile,
   } = useProfile();
 
@@ -1114,6 +1110,7 @@ export default function HomeScreen() {
                                   fontSize: 14,
                                   fontWeight: "800",
                                   color: theme.textBlack,
+                                  textTransform: "capitalize",
                                 }}
                               >
                                 {exercise.name}

@@ -12,7 +12,7 @@ import {
 } from "@/services/programStorage";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -53,7 +53,7 @@ export default function WorkoutSession() {
   const { alert } = useAlert();
 
   const [selectedSplit, setSelectedSplit] = useState<SplitType>("PUSH");
-  const splitTranslateX = useRef(new Animated.Value(0)).current;
+  const [splitTranslateX] = useState(() => new Animated.Value(0));
   const [switcherWidth, setSwitcherWidth] = useState(0);
 
   useEffect(() => {
@@ -68,7 +68,7 @@ export default function WorkoutSession() {
       duration: 220,
       useNativeDriver: true,
     }).start();
-  }, [selectedSplit]);
+  }, [selectedSplit, splitTranslateX]);
   const [selectedExerciseIds, setSelectedExerciseIds] = useState<Set<number>>(
     new Set(),
   );
@@ -80,11 +80,6 @@ export default function WorkoutSession() {
 
   useEffect(() => {
     loadPrograms().then(setPrograms);
-  }, []);
-
-  const refreshPrograms = useCallback(async () => {
-    const loaded = await loadPrograms();
-    setPrograms(loaded);
   }, []);
 
   const handleDeleteProgram = (program: WorkoutProgram) => {
@@ -135,7 +130,6 @@ export default function WorkoutSession() {
     isLoading,
     error,
     refetch,
-    isFetching,
   } = useGymDashboard();
 
   const exerciseProgressions = useMemo(

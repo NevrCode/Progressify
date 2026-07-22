@@ -1,5 +1,6 @@
 import { getAccessToken } from "@/services/authSessionService";
 import { api } from "@/utils/api";
+import { getErrorMessage } from "@/utils/apiError";
 
 export type SplitType = "PUSH" | "PULL" | "LEGS";
 
@@ -103,40 +104,8 @@ const getAuthHeaders = async () => {
   };
 };
 
-const getApiErrorMessage = (error: any, fallbackMessage: string) => {
-  const data = error.response?.data;
-
-  if (!data) return fallbackMessage;
-  if (typeof data === "string") return data;
-  if (typeof data.message === "string" && data.message.trim()) {
-    return data.message;
-  }
-  if (typeof data.error === "string" && data.error.trim()) {
-    return data.error;
-  }
-  if (Array.isArray(data.errors) && data.errors.length) {
-    return data.errors
-      .map((item: any) =>
-        typeof item === "string"
-          ? item
-          : `${item.field ?? item.path ?? "field"}: ${item.message ?? item.defaultMessage ?? "invalid"}`,
-      )
-      .join("\n");
-  }
-  if (Array.isArray(data.fieldErrors) && data.fieldErrors.length) {
-    return data.fieldErrors
-      .map(
-        (item: any) =>
-          `${item.field ?? item.path ?? "field"}: ${item.message ?? item.defaultMessage ?? "invalid"}`,
-      )
-      .join("\n");
-  }
-
-  return fallbackMessage;
-};
-
-const handleApiError = (error: any, fallbackMessage: string) => {
-  const message = getApiErrorMessage(error, fallbackMessage);
+const handleApiError = (error: unknown, fallbackMessage: string): never => {
+  const message = getErrorMessage(error, fallbackMessage);
   throw new Error(message);
 };
 

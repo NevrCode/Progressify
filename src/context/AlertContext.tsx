@@ -1,10 +1,8 @@
-import { gymStyles } from "@/assets/styles/gym.style";
 import { useTheme } from "@/context/ThemeContext";
 import {
     createContext,
     useCallback,
     useContext,
-    useRef,
     useState,
 } from "react";
 import { Animated, Modal, Text, TouchableOpacity, View } from "react-native";

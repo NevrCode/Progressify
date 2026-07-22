@@ -1,13 +1,11 @@
 import { AnimatedTabIcon } from "@/components/navigation/animated-tab-icon";
 import { useTheme } from "@/context/ThemeContext";
-import { usePatchNotes } from "@/hooks/usePatchNote";
 import { Tabs } from "expo-router";
 import { Platform } from "react-native";
 
 export default function TabsLayout() {
   const { theme } = useTheme();
   const color = theme.primary;
-  const { showPopup, latestPatch, markAsSeen } = usePatchNotes();
   return (
     <Tabs
       screenOptions={{

@@ -4,6 +4,10 @@ import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
 import {
+  calculateEstimatedOneRepMax,
+  calculateWorkoutVolume,
+} from "@/utils/workoutMetrics";
+import {
   deleteSessionProgression,
   ExerciseProgressionDTO,
   ExerciseSessionDTO,
@@ -90,13 +94,16 @@ const buildSessionPoints = (sessions: ExerciseSessionDTO[]): SessionPoint[] =>
         return best;
       }, sets[0]);
       const totalVolume = sets.reduce(
-        (total, set) => total + set.weight * set.reps,
+        (total, set) => total + calculateWorkoutVolume(set.weight, set.reps),
         0,
       );
 
       return {
         sessionDate,
-        estimated1RM: topSet.weight * (1 + topSet.reps / 30),
+        estimated1RM: calculateEstimatedOneRepMax(
+          topSet.weight,
+          topSet.reps,
+        ),
         topWeight: topSet.weight,
         bestReps: topSet.reps,
         totalSets: sets.length,
@@ -475,7 +482,8 @@ export default function ManageWorkoutSession() {
             const sessionDateValue = getSessionDate(session);
             const sets = getSessionSets(session);
             const totalVolume = sets.reduce(
-              (total, set) => total + set.weight * set.reps,
+              (total, set) =>
+                total + calculateWorkoutVolume(set.weight, set.reps),
               0,
             );
 

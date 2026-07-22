@@ -1,3 +1,6 @@
+import { api } from "@/utils/api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
 export interface CustomFoodResponse {
   id: number;
   food_name: string;
@@ -42,9 +45,6 @@ export const createCustomFood = async (
 export const deleteCustomFood = async (id: number): Promise<void> => {
   await api.delete(`/v1/custom-foods/${id}`);
 };
-
-import { api } from "@/utils/api";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export const CUSTOM_FOOD_KEY = ["custom-foods"];
 

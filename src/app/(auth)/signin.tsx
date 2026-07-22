@@ -21,6 +21,7 @@ export default function SignIn() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [acceptedLegal, setAcceptedLegal] = useState(false);
   const { alert } = useAlert();
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState<{
@@ -28,6 +29,7 @@ export default function SignIn() {
     email?: string;
     password?: string;
     confirmPassword?: string;
+    acceptedLegal?: string;
   }>({});
   const router = useRouter();
   const { theme } = useTheme();
@@ -51,14 +53,19 @@ export default function SignIn() {
 
     if (!password) {
       newErrors.password = "Password is required";
-    } else if (password.length < 6) {
-      newErrors.password = "Password must be at least 6 characters";
+    } else if (password.length < 8) {
+      newErrors.password = "Password must be at least 8 characters";
     }
 
     if (!confirmPassword) {
       newErrors.confirmPassword = "Please confirm your password";
     } else if (password !== confirmPassword) {
       newErrors.confirmPassword = "Passwords do not match";
+    }
+
+    if (!acceptedLegal) {
+      newErrors.acceptedLegal =
+        "You must accept the Terms and acknowledge the Privacy Policy";
     }
 
     setErrors(newErrors);
@@ -73,7 +80,7 @@ export default function SignIn() {
 
     try {
       setLoading(true);
-      await signIn({ name, email, password });
+      await signIn({ name, email, password, legalAccepted: acceptedLegal });
       alert(
         "Success",
         "Account created successfully! Please log in with your new credentials.",
@@ -252,7 +259,7 @@ export default function SignIn() {
                 paddingHorizontal: 10,
                 color: theme.text,
               }}
-              placeholder="Min. 6 characters"
+              placeholder="Min. 8 characters"
               placeholderTextColor={theme.textLight}
               secureTextEntry={!showPassword}
               value={password}
@@ -341,6 +348,50 @@ export default function SignIn() {
             </Text>
           ) : null}
         </View>
+
+        <TouchableOpacity
+          onPress={() => {
+            setAcceptedLegal((value) => !value);
+            if (errors.acceptedLegal) {
+              setErrors({ ...errors, acceptedLegal: undefined });
+            }
+          }}
+          style={{
+            flexDirection: "row",
+            alignItems: "flex-start",
+            gap: 10,
+            marginBottom: 8,
+          }}
+        >
+          <MaterialIcons
+            name={acceptedLegal ? "check-box" : "check-box-outline-blank"}
+            size={22}
+            color={errors.acceptedLegal ? theme.expense : theme.primary}
+          />
+          <Text style={{ flex: 1, color: theme.textLight, lineHeight: 20 }}>
+            I accept the Terms of Service and acknowledge the Privacy Policy.
+          </Text>
+        </TouchableOpacity>
+        <View
+          style={{
+            flexDirection: "row",
+            gap: 18,
+            marginBottom: 12,
+            marginLeft: 32,
+          }}
+        >
+          <TouchableOpacity onPress={() => router.push("/terms")}>
+            <Text style={{ color: theme.primary }}>Terms</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push("/privacy")}>
+            <Text style={{ color: theme.primary }}>Privacy Policy</Text>
+          </TouchableOpacity>
+        </View>
+        {errors.acceptedLegal ? (
+          <Text style={{ color: theme.expense, fontSize: 12, marginBottom: 12 }}>
+            {errors.acceptedLegal}
+          </Text>
+        ) : null}
 
         {/* Sign Up Button */}
         <TouchableOpacity

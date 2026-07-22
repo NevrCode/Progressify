@@ -41,7 +41,7 @@ export const profileStyles = (theme: ThemeType) =>
     },
     identityCard: {
       width: "100%",
-      backgroundColor: theme.card,
+      backgroundColor: theme.background,
       borderRadius: 16,
       padding: 20,
       flexDirection: "row",
@@ -252,7 +252,7 @@ export const profileStyles = (theme: ThemeType) =>
       width: "100%",
       minHeight: 66,
       borderRadius: 14,
-      backgroundColor: theme.card,
+      backgroundColor: theme.background,
       flexDirection: "row",
       alignItems: "center",
       gap: 12,

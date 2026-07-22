@@ -1,5 +1,4 @@
 import { gymStyles } from "@/assets/styles/gym.style";
-import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useGymDashboard } from "@/hooks/useGymDashboard";

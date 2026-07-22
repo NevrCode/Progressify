@@ -8,12 +8,8 @@ import {
   useCustomFoodSearch,
 } from "@/services/customFoodService";
 import {
-  FatSecretFoodDetail,
-  FatSecretSearchFood,
-  getFatSecretFood,
 } from "@/services/foodDiaryService";
 import { MaterialIcons } from "@expo/vector-icons";
-import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -311,29 +307,6 @@ export function FoodSearchModal({
   // });
 
   const customFoodQuery = useCustomFoodSearch(search.trim());
-
-  // FatSecret detail fetch
-  const foodDetailMutation = useMutation({
-    mutationFn: (food: FatSecretSearchFood) => getFatSecretFood(food.food_id),
-    onSuccess: (food: FatSecretFoodDetail) => {
-      const serving = food.serving;
-      onFoodSelected({
-        food_id: food.food_id,
-        food_name: food.food_name,
-        serving_id: serving?.serving_id,
-        serving_description: serving?.serving_description,
-        metric_serving_amount:
-          parseFloat(serving?.metric_serving_amount ?? "100") || 100,
-        calories: parseFloat(serving?.calories ?? "0") || 0,
-        protein: parseFloat(serving?.protein ?? "0") || 0,
-        fat: parseFloat(serving?.fat ?? "0") || 0,
-        carbohydrate: parseFloat(serving?.carbohydrate ?? "0") || 0,
-        is_custom: false,
-      });
-      handleClose();
-    },
-    onError: (e: any) => alert("Food detail failed", e.message),
-  });
 
   const handleCustomFoodSelect = (food: CustomFoodResponse) => {
     onFoodSelected({

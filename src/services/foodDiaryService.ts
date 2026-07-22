@@ -1,6 +1,7 @@
-import { useAlert } from "@/context/AlertContext";
+import { logger } from "@/utils/logger";
 import { api } from "@/utils/api";
 import axios from "axios";
+import { getErrorMessage } from "@/utils/apiError";
 
 export type MealType = "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK";
 
@@ -111,13 +112,8 @@ const toArray = <T>(value?: T[] | T): T[] => {
   return Array.isArray(value) ? value : [value];
 };
 
-const getApiErrorMessage = (error: any, fallback: string) => {
-  const data = error.response?.data;
-  if (typeof data === "string") return data;
-  if (typeof data?.message === "string") return data.message;
-  if (typeof data?.error === "string") return data.error;
-  return error.message || fallback;
-};
+const getApiErrorMessage = (error: unknown, fallback: string) =>
+  getErrorMessage(error, fallback);
 
 export const searchFatSecretFoods = async (expression: string) => {
   if (!expression.trim()) return [];
@@ -224,7 +220,6 @@ export const deleteFoodEntry = async (id: number) => {
 export const findFoodByBarcode = async (
   barcode: string,
 ): Promise<FatSecretFoodDetail> => {
-  const { alert } = useAlert();
   const cleanBarcode = barcode.trim();
   if (!cleanBarcode) {
     throw new Error("Barcode is empty.");
@@ -268,7 +263,9 @@ export const findFoodByBarcode = async (
         },
       };
     }
-  } catch (offError: any) {}
+  } catch {
+    logger.warn("barcode_open_food_facts_lookup_failed");
+  }
 
   // 2. Fallback to FatSecret barcode lookup
   try {
@@ -287,11 +284,8 @@ export const findFoodByBarcode = async (
       // Then, get the full food details
       return await getFatSecretFood(foodId);
     }
-  } catch (fsError: any) {
-    alert(
-      "[Barcode Scanner] FatSecret fallback lookup failed:",
-      fsError.message,
-    );
+  } catch {
+    logger.warn("barcode_fatsecret_lookup_failed");
   }
 
   throw new Error("Product not found. Please log manually or search by name.");

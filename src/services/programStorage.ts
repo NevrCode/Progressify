@@ -1,6 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getUserScopedKey } from "@/services/userScopedStorage";
+import { logger } from "@/utils/logger";
 
-const PROGRAMS_KEY = "@progressify_programs";
+const PROGRAMS_NAMESPACE = "@progressify_programs";
+const LEGACY_PROGRAMS_KEY = "@progressify_programs";
 
 export type WorkoutProgram = {
   id: string;
@@ -12,19 +15,29 @@ export type WorkoutProgram = {
 
 export const savePrograms = async (programs: WorkoutProgram[]) => {
   try {
-    await AsyncStorage.setItem(PROGRAMS_KEY, JSON.stringify(programs));
+    const key = await getUserScopedKey(PROGRAMS_NAMESPACE);
+    if (!key) return;
+    await AsyncStorage.removeItem(LEGACY_PROGRAMS_KEY);
+    await AsyncStorage.setItem(key, JSON.stringify(programs));
   } catch (error) {
-    alert("failed to save program ! : ");
+    logger.warn("workout_program_save_failed", {
+      error_type: error instanceof Error ? error.name : "unknown",
+    });
   }
 };
 
 export const loadPrograms = async (): Promise<WorkoutProgram[]> => {
   try {
-    const raw = await AsyncStorage.getItem(PROGRAMS_KEY);
+    const key = await getUserScopedKey(PROGRAMS_NAMESPACE);
+    if (!key) return [];
+    await AsyncStorage.removeItem(LEGACY_PROGRAMS_KEY);
+    const raw = await AsyncStorage.getItem(key);
     if (!raw) return [];
     return JSON.parse(raw) as WorkoutProgram[];
   } catch (error) {
-    console.warn("Failed to load programs:", error);
+    logger.warn("workout_program_load_failed", {
+      error_type: error instanceof Error ? error.name : "unknown",
+    });
     return [];
   }
 };

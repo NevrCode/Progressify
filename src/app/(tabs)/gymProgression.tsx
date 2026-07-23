@@ -11,6 +11,7 @@ import {
   EXERCISE_PAGE_SIZE,
   ExerciseProgressionCardSkeletons,
 } from "@/components/gym/exercise-progression-card-skeleton";
+import { ExerciseCatalogPicker } from "@/components/gym/exercise-catalog-picker";
 import { MuscleHeatmap } from "@/components/gym/MuscleHeatmap";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
@@ -43,6 +44,7 @@ import {
   Modal,
   Platform,
   RefreshControl,
+  ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
@@ -62,6 +64,7 @@ type SessionProgressionPoint = {
 type SplitFilter = "ALL" | SplitType;
 type ModalKind = "exercise" | "set";
 type ModalMode = "create" | "edit";
+type ExerciseEntryStep = "catalog" | "details";
 
 type ModalState =
   | {
@@ -291,8 +294,11 @@ export default function GymProgression() {
     kind: null,
     mode: null,
   });
+  const [exerciseEntryStep, setExerciseEntryStep] =
+    useState<ExerciseEntryStep>("catalog");
 
   const [exerciseForm, setExerciseForm] = useState({
+    catalog_exercise_id: null as string | null,
     split: "PUSH" as SplitType,
     name: "",
     muscle_group: "",
@@ -381,7 +387,9 @@ export default function GymProgression() {
     });
 
   const openExerciseModal = (item?: ExerciseProgressionDTO) => {
+    setExerciseEntryStep(item ? "details" : "catalog");
     setExerciseForm({
+      catalog_exercise_id: item?.catalog_exercise_id ?? null,
       split: normalizeSplit(item?.split),
       name: item ? getExerciseName(item) : "",
       muscle_group: item?.muscle_group ?? "",
@@ -433,6 +441,7 @@ export default function GymProgression() {
         await exerciseMutation.mutateAsync({
           id: modalState.itemId,
           payload: {
+            catalog_exercise_id: exerciseForm.catalog_exercise_id,
             split: exerciseForm.split,
             name: exerciseForm.name,
             muscle_group: exerciseForm.muscle_group,
@@ -484,8 +493,108 @@ export default function GymProgression() {
     if (!modalState.visible || !modalState.kind) return null;
 
     if (modalState.kind === "exercise") {
+      if (exerciseEntryStep === "catalog") {
+        return (
+          <ExerciseCatalogPicker
+            customActionLabel={
+              modalState.mode === "edit"
+                ? "Remove catalog link"
+                : "Create custom exercise"
+            }
+            customActionDescription={
+              modalState.mode === "edit"
+                ? "Keep this exercise and its history as a custom exercise"
+                : undefined
+            }
+            onCreateCustom={() => {
+              setExerciseForm((current) => ({
+                ...current,
+                catalog_exercise_id: null,
+                name: modalState.mode === "create" ? "" : current.name,
+                muscle_group:
+                  modalState.mode === "create" ? "" : current.muscle_group,
+              }));
+              setExerciseEntryStep("details");
+            }}
+            onUseExercise={(exercise) => {
+              setExerciseForm((current) => ({
+                ...current,
+                catalog_exercise_id: exercise.id,
+                name: exercise.name,
+                muscle_group: exercise.primaryMuscle,
+              }));
+              setExerciseEntryStep("details");
+            }}
+          />
+        );
+      }
+
       return (
-        <>
+        <ScrollView
+          contentInsetAdjustmentBehavior="automatic"
+          keyboardShouldPersistTaps="handled"
+          style={{ maxHeight: 520 }}
+          contentContainerStyle={{ gap: 14 }}
+        >
+          <View
+            style={{
+              padding: 12,
+              gap: 4,
+              borderRadius: 12,
+              borderCurve: "continuous",
+              borderWidth: 1,
+              borderColor: exerciseForm.catalog_exercise_id
+                ? theme.primary + "35"
+                : theme.border,
+              backgroundColor: exerciseForm.catalog_exercise_id
+                ? theme.primary + "10"
+                : theme.background,
+            }}
+          >
+            <Text
+              selectable
+              style={{
+                color: exerciseForm.catalog_exercise_id
+                  ? theme.primary
+                  : theme.textBlack,
+                fontSize: 12,
+                fontFamily: "PlusJakartaSans_700Bold",
+              }}
+            >
+              {exerciseForm.catalog_exercise_id
+                ? "Linked to exercise catalog"
+                : "Custom exercise"}
+            </Text>
+            {exerciseForm.catalog_exercise_id ? (
+              <Text
+                selectable
+                style={{
+                  color: theme.textLight,
+                  fontSize: 10,
+                  fontFamily: "PlusJakartaSans_500Medium",
+                }}
+              >
+                {exerciseForm.catalog_exercise_id}
+              </Text>
+            ) : null}
+          </View>
+          {modalState.mode === "create" ? (
+            <AppButton
+              label="Back to exercise catalog"
+              variant="ghost"
+              onPress={() => setExerciseEntryStep("catalog")}
+            />
+          ) : (
+            <AppButton
+              label={
+                exerciseForm.catalog_exercise_id
+                  ? "Change catalog link"
+                  : "Link to exercise catalog"
+              }
+              variant="secondary"
+              onPress={() => setExerciseEntryStep("catalog")}
+            />
+          )}
           {renderSplitSelector(exerciseForm.split, (split) =>
             setExerciseForm((current) => ({ ...current, split })),
           )}
@@ -563,7 +672,7 @@ export default function GymProgression() {
               setExerciseForm((current) => ({ ...current, notes }))
             }
           />
-        </>
+        </ScrollView>
       );
     }
 
@@ -741,7 +850,7 @@ export default function GymProgression() {
 
         {/* ── Start Workout launcher card ── */}
         <TouchableOpacity
-          onPress={() => router.push("/(pages)/workoutSession")}
+          onPress={() => router.push("/(pages)/programs")}
           activeOpacity={0.8}
           style={{ marginBottom: 12 }}
         >
@@ -786,7 +895,7 @@ export default function GymProgression() {
                   fontWeight: "800",
                 }}
               >
-                Start a Workout
+                Active Program
               </Text>
               <Text
                 style={{
@@ -796,7 +905,7 @@ export default function GymProgression() {
                   marginTop: 2,
                 }}
               >
-                Pick exercises and begin your session
+                Choose a routine or manage your training plan
               </Text>
             </View>
             <MaterialIcons
@@ -1426,20 +1535,23 @@ export default function GymProgression() {
 
               {renderModalBody()}
 
-              <View style={styles.modalActions}>
-                <AppButton
-                  label="Cancel"
-                  variant="secondary"
-                  onPress={closeModal}
-                  style={{ flex: 1 }}
-                />
-                <AppButton
-                  label="Save"
-                  onPress={handleSubmit}
-                  loading={modalSaving}
-                  style={{ flex: 1 }}
-                />
-              </View>
+              {modalState.mode === "edit" ||
+              exerciseEntryStep === "details" ? (
+                <View style={styles.modalActions}>
+                  <AppButton
+                    label="Cancel"
+                    variant="secondary"
+                    onPress={closeModal}
+                    style={{ flex: 1 }}
+                  />
+                  <AppButton
+                    label="Save"
+                    onPress={handleSubmit}
+                    loading={modalSaving}
+                    style={{ flex: 1 }}
+                  />
+                </View>
+              ) : null}
             </View>
           </View>
         </KeyboardAvoidingView>

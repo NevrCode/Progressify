@@ -9,6 +9,7 @@ import { refreshAuthSession } from "@/services/tokenRefreshService";
 import { create as createAxios } from "axios";
 import * as Crypto from "expo-crypto";
 import { toApiError } from "@/utils/apiError";
+import { requiresImmediateServerResponse } from "@/utils/apiRequestPolicy";
 
 export const api = createAxios({
   baseURL: API_BASE_URL,
@@ -52,7 +53,7 @@ const authEndpoints = [
 ];
 const isAuthEndpoint = (url?: string) =>
   authEndpoints.some((endpoint) => url?.includes(endpoint));
-const isOnlineOnlyEndpoint = (url?: string) => url === "/v1/user/me";
+const isOnlineOnlyEndpoint = requiresImmediateServerResponse;
 
 const canonicalize = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(canonicalize);

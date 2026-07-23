@@ -14,6 +14,7 @@ import {
   loadActiveSession,
   saveActiveSession,
 } from "@/services/sessionStorage";
+import { completeWorkoutSession } from "@/services/workoutProgramService";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
@@ -118,13 +119,19 @@ export default function ActiveWorkoutSession() {
   const styles = gymStyles(theme);
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { exerciseIds, split } = useLocalSearchParams<{
+  const { exerciseIds, split, workoutSessionId, routineName, plannedExerciseMap } = useLocalSearchParams<{
     exerciseIds?: string;
     split?: string;
+    workoutSessionId?: string;
+    routineName?: string;
+    plannedExerciseMap?: string;
   }>();
 
   const [restoredIds, setRestoredIds] = useState<number[]>([]);
   const [restoredSplit, setRestoredSplit] = useState<SplitType | null>(null);
+  const [restoredWorkoutSessionId, setRestoredWorkoutSessionId] = useState<number | null>(null);
+  const [restoredRoutineName, setRestoredRoutineName] = useState<string | null>(null);
+  const [restoredPlannedExerciseIds, setRestoredPlannedExerciseIds] = useState<Record<number, number>>({});
 
   // Rest Timer State
   const [restTime, setRestTime] = useState<number>(0);
@@ -187,6 +194,19 @@ export default function ActiveWorkoutSession() {
   }, [isRestActive, restTime, isRestPaused]);
 
   const selectedSplit = restoredSplit ?? normalizeSplit(split);
+  const activeWorkoutSessionId = restoredWorkoutSessionId ?? (workoutSessionId ? Number(workoutSessionId) : null);
+  const activeRoutineName = restoredRoutineName ?? routineName;
+  const routePlannedExerciseIds = useMemo(() => {
+    if (!plannedExerciseMap) return {};
+    try {
+      return JSON.parse(plannedExerciseMap) as Record<number, number>;
+    } catch {
+      return {};
+    }
+  }, [plannedExerciseMap]);
+  const activePlannedExerciseIds = Object.keys(restoredPlannedExerciseIds).length
+    ? restoredPlannedExerciseIds
+    : routePlannedExerciseIds;
   const selectedIds = useMemo(
     () =>
       (exerciseIds ?? "")
@@ -249,6 +269,9 @@ export default function ActiveWorkoutSession() {
         setCompletedIds(new Set(stored.completedIds));
         setRestoredIds(stored.exerciseIds);
         setRestoredSplit(normalizeSplit(stored.split));
+        setRestoredWorkoutSessionId(stored.workoutSessionId ?? null);
+        setRestoredRoutineName(stored.routineName ?? null);
+        setRestoredPlannedExerciseIds(stored.plannedExerciseIds ?? {});
         setCurrentExerciseIds(stored.exerciseIds);
         setHydrated(true);
         return;
@@ -277,6 +300,9 @@ export default function ActiveWorkoutSession() {
 
     const data: ActiveSessionData = {
       split: selectedSplit,
+      workoutSessionId: activeWorkoutSessionId ?? undefined,
+      routineName: activeRoutineName,
+      plannedExerciseIds: activePlannedExerciseIds,
       exerciseIds: sessionExerciseIds,
       startedAt: sessionStartedAtRef.current,
       drafts,
@@ -290,6 +316,9 @@ export default function ActiveWorkoutSession() {
     selectedSplit,
     drafts,
     completedIds,
+    activeWorkoutSessionId,
+    activeRoutineName,
+    activePlannedExerciseIds,
   ]);
 
   useEffect(() => {
@@ -594,7 +623,7 @@ export default function ActiveWorkoutSession() {
         "Incomplete set",
         `Set #${invalidSet.set_number} needs weight > 0, reps > 0, and RIR ≥ 0.`,
       );
-      return;
+      return false;
     }
 
     setFinishingId(exercise.id);
@@ -604,6 +633,8 @@ export default function ActiveWorkoutSession() {
       const payload: GymExerciseSessionRequestDTO = {
         session_date: sessionDate,
         notes: "",
+        workout_session_id: activeWorkoutSessionId ?? undefined,
+        planned_exercise_id: activePlannedExerciseIds[exercise.id],
         sets: draft.sets.map((s) => ({
           set_number: s.set_number,
           weight: parseFloat(s.weight) || 0,
@@ -617,6 +648,10 @@ export default function ActiveWorkoutSession() {
         payload,
       });
 
+      const completesWorkout =
+        !completedIds.has(exercise.id) &&
+        completedIds.size + 1 === selectedExercises.length;
+
       setCompletedIds((prev) => {
         const next = new Set(prev).add(exercise.id);
         if (next.size === selectedExercises.length) {
@@ -626,11 +661,26 @@ export default function ActiveWorkoutSession() {
         }
         return next;
       });
+
+      if (completesWorkout && activeWorkoutSessionId) {
+        try {
+          await completeWorkoutSession(activeWorkoutSessionId);
+        } catch (completionError) {
+          alert(
+            "Workout saved",
+            completionError instanceof Error
+              ? `Your sets were saved, but the routine could not be marked complete: ${completionError.message}`
+              : "Your sets were saved, but the routine could not be marked complete.",
+          );
+        }
+      }
+      return true;
     } catch (err: any) {
       alert(
         "Save failed",
         err?.message || "Could not save this exercise session.",
       );
+      return false;
     } finally {
       setFinishingId(null);
     }
@@ -643,8 +693,21 @@ export default function ActiveWorkoutSession() {
       return;
     }
 
+    let everyExerciseSaved = true;
     for (const exercise of unfinished) {
-      await finishExercise(exercise);
+      everyExerciseSaved = (await finishExercise(exercise)) === true && everyExerciseSaved;
+    }
+    if (everyExerciseSaved && unfinished.length > 1 && activeWorkoutSessionId) {
+      try {
+        await completeWorkoutSession(activeWorkoutSessionId);
+      } catch (completionError) {
+        alert(
+          "Workout saved",
+          completionError instanceof Error
+            ? `Your sets were saved, but the routine could not be marked complete: ${completionError.message}`
+            : "Your sets were saved, but the routine could not be marked complete.",
+        );
+      }
     }
   };
 
@@ -773,7 +836,7 @@ export default function ActiveWorkoutSession() {
                   marginBottom: 2,
                 }}
               >
-                {displaySplit(selectedSplit)} Day
+                {activeRoutineName ?? `${displaySplit(selectedSplit)} Day`}
               </Text>
               <Text
                 style={{

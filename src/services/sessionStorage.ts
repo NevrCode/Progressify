@@ -21,6 +21,9 @@ export type StoredExerciseDraft = {
 
 export type ActiveSessionData = {
   split: string;
+  workoutSessionId?: number;
+  routineName?: string;
+  plannedExerciseIds?: Record<number, number>;
   exerciseIds: number[];
   startedAt: string;
   drafts: Record<number, StoredExerciseDraft>;

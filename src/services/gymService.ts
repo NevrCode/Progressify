@@ -46,6 +46,8 @@ export interface GymExerciseSessionRequestDTO {
   session_date?: string;
   notes?: string;
   sets?: WorkoutSetDTO[];
+  workout_session_id?: number;
+  planned_exercise_id?: number;
 }
 
 export interface ProgressPointDTO {
@@ -57,6 +59,7 @@ export interface ProgressPointDTO {
 
 export interface ExerciseProgressionDTO {
   id: number;
+  catalog_exercise_id?: string | null;
   split: string;
   name?: string;
   muscle_group?: string;
@@ -81,6 +84,7 @@ export interface ExerciseProgressionPageDTO {
 }
 
 export interface GymExerciseProgressionRequestDTO {
+  catalog_exercise_id: string | null;
   split: SplitType;
   name: string;
   muscle_group: string;

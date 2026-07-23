@@ -71,6 +71,8 @@
     "test": "npm run test:unit && npm run test:components",
     "test:unit": "node --test --experimental-strip-types tests/*.test.mjs",
     "test:components": "jest --runInBand",
+    "catalog:build": "node ./scripts/build-exercise-catalog.mjs",
+    "catalog:check": "node ./scripts/build-exercise-catalog.mjs --check",
     "doctor": "expo-doctor"
   },
   "jest": {

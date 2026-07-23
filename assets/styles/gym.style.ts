@@ -580,6 +580,7 @@ export const gymStyles = (theme: ThemeType) =>
     },
     modalCard: {
       width: "100%",
+      maxHeight: "94%",
       backgroundColor: theme.card,
       borderRadius: 16,
       padding: 20,

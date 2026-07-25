@@ -7,7 +7,9 @@ import { AppButton } from "@/components/base/app-button";
 import { DateNavigator } from "@/components/base/date-navigator";
 import { FormField } from "@/components/base/form-field";
 import { IconButton } from "@/components/base/icon-button";
+import { ModalHeader } from "@/components/base/modal-header";
 import { PaginationNavigator } from "@/components/base/pagination-navigator";
+import { SelectionCard } from "@/components/base/selection-card";
 import { SegmentedControl } from "@/components/base/segmented-control";
 
 jest.mock("@/context/ThemeContext", () => ({
@@ -36,6 +38,8 @@ describe("shared UI primitives", () => {
     const onNext = jest.fn();
     const onPageChange = jest.fn();
     const onSegmentChange = jest.fn();
+    const onSelectionChange = jest.fn();
+    const onClose = jest.fn();
     const screen = await render(
       <>
         <AppButton label="Save" onPress={onPrimaryPress} />
@@ -65,6 +69,13 @@ describe("shared UI primitives", () => {
           onChange={onSegmentChange}
         />
         <FormField label="Exercise name" value="Bench press" />
+        <SelectionCard
+          label="Moderately Active"
+          description="Three to five days per week"
+          selected
+          onPress={onSelectionChange}
+        />
+        <ModalHeader title="Edit Session" onClose={onClose} />
       </>,
     );
 
@@ -74,6 +85,8 @@ describe("shared UI primitives", () => {
     await fireEvent.press(screen.getByLabelText("Next date"));
     await fireEvent.press(screen.getByLabelText("Page 3"));
     await fireEvent.press(screen.getByLabelText("Push"));
+    await fireEvent.press(screen.getByLabelText("Moderately Active"));
+    await fireEvent.press(screen.getByLabelText("Close"));
 
     expect(onPrimaryPress).toHaveBeenCalledTimes(1);
     expect(onDeletePress).toHaveBeenCalledTimes(1);
@@ -81,6 +94,18 @@ describe("shared UI primitives", () => {
     expect(onNext).toHaveBeenCalledTimes(1);
     expect(onPageChange).toHaveBeenCalledWith(2);
     expect(onSegmentChange).toHaveBeenCalledWith("PUSH");
+    expect(onSelectionChange).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText("Exercise name")).toBeTruthy();
+    expect(screen.getByLabelText("Delete item").props.hitSlop).toBe(5);
+    expect(screen.getByLabelText("Page 3").props.accessibilityState).toEqual({
+      selected: false,
+    });
+    expect(screen.getByLabelText("All").props.accessibilityState).toEqual({
+      selected: true,
+    });
+    expect(
+      screen.getByLabelText("Moderately Active").props.accessibilityState,
+    ).toEqual({ selected: true });
   });
 });

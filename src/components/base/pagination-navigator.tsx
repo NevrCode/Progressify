@@ -73,8 +73,8 @@ export function PaginationNavigator({
               accessibilityState={{ selected }}
               onPress={() => onPageChange(item)}
               style={{
-                minWidth: 32,
-                minHeight: 35,
+                minWidth: 44,
+                minHeight: 44,
                 paddingHorizontal: 5,
                 borderRadius: 9,
                 alignItems: "center",

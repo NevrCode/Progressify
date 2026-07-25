@@ -23,7 +23,9 @@ const isHomeQuery = (queryKey: QueryKey) => {
   return domain === "nutrition-profile" ||
     domain === "diary-summary" ||
     domain === "profile" ||
-    (domain === "gym" && resource === "dashboard");
+    (domain === "foodDiary" && resource === "home-history") ||
+    (domain === "gym" &&
+      (resource === "dashboard" || resource === "programs"));
 };
 
 export const restoreHomeQueryCache = async (queryClient: QueryClient) => {

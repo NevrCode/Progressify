@@ -1,4 +1,5 @@
 import { useTheme } from "@/context/ThemeContext";
+import { getSkeletonColors } from "@/constants/semantic-colors";
 import { LinearGradient } from "expo-linear-gradient";
 import { useEffect } from "react";
 import {
@@ -30,6 +31,7 @@ export function ShimmerSkeleton({
   style,
 }: ShimmerSkeletonProps) {
   const { theme } = useTheme();
+  const skeletonColors = getSkeletonColors(theme);
   const { width: screenWidth } = useWindowDimensions();
   const translateX = useSharedValue(-screenWidth);
 
@@ -61,7 +63,7 @@ export function ShimmerSkeleton({
           height,
           borderRadius,
           borderCurve: "continuous",
-          backgroundColor: theme.border + "55",
+          backgroundColor: skeletonColors.base,
           overflow: "hidden",
         },
         style,
@@ -81,9 +83,9 @@ export function ShimmerSkeleton({
       >
         <LinearGradient
           colors={[
-            theme.border + "00",
-            theme.primary + "24",
-            theme.border + "00",
+            skeletonColors.base,
+            skeletonColors.highlight,
+            skeletonColors.base,
           ]}
           locations={[0.2, 0.5, 0.8]}
           start={{ x: 0, y: 0.5 }}

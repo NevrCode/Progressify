@@ -14,6 +14,9 @@ export const MenuButton = ({
   const style = profileStyles(theme);
   return (
     <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityLabel={item.label}
+      accessibilityHint={item.description}
       style={style.menuRow}
       activeOpacity={0.82}
       onPress={onPress}

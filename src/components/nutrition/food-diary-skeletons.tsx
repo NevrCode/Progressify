@@ -85,7 +85,7 @@ export function IntakeSummarySkeleton() {
 export function FoodDiaryInitialSkeleton() {
   const { theme } = useTheme();
   const cardStyle = {
-    backgroundColor: theme.background,
+    backgroundColor: theme.card,
     borderColor: theme.primary + "20",
     borderWidth: 1.5,
     borderRadius: 16,

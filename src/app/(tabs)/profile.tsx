@@ -1,11 +1,14 @@
 import { profileStyles } from "@/assets/styles/profile.style";
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
-import { PageHeader } from "@/components/base/page-header";
 import { AppButton } from "@/components/base/app-button";
+import { PageHeader } from "@/components/base/page-header";
+import { StatePanel } from "@/components/base/state-panel";
 import { TabScreenScrollView } from "@/components/base/tab-screen-scroll-view";
 import { MenuButton } from "@/components/profile/menuButton";
+import { SyncStatusPanel } from "@/components/profile/sync-status-panel";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useOnboardingPreference } from "@/hooks/useOnboardingPreference";
 import { useProfile } from "@/hooks/useProfile";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
 import { logout } from "@/services/authService";
@@ -14,11 +17,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import { ComponentProps } from "react";
-import {
-  RefreshControl,
-  Text,
-  View,
-} from "react-native";
+import { RefreshControl, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 type MaterialIconsName = ComponentProps<typeof MaterialIcons>["name"];
@@ -42,6 +41,11 @@ const menuSections: { title: string; items: MenuItem[] }[] = [
         icon: "palette",
         label: "Appearance",
         description: "Theme and display options",
+      },
+      {
+        icon: "checklist",
+        label: "Setup checklist",
+        description: "Review your first steps",
       },
       {
         icon: "new-releases",
@@ -68,6 +72,7 @@ export default function Profile() {
   const queryClient = useQueryClient();
   const { pending, failed } = useSyncStatus();
   const { theme } = useTheme();
+  const [, setOnboardingPreference] = useOnboardingPreference();
   const { alert } = useAlert();
   const profileStyless = profileStyles(theme);
 
@@ -120,18 +125,7 @@ export default function Profile() {
           <RefreshControl refreshing={isRefreshing} onRefresh={refetchAll} />
         }
       >
-        <PageHeader
-          eyebrow="Account"
-          title="Profile"
-          showSyncStatus={false}
-          icon={
-            <MaterialCommunityIcons
-              name="account"
-              size={22}
-              color={theme.primary}
-            />
-          }
-        />
+        <PageHeader eyebrow="Account" title="Profile" showSyncStatus={false} />
 
         {/* Identity card */}
         <View style={profileStyless.identityCard}>
@@ -148,7 +142,7 @@ export default function Profile() {
               <MaterialCommunityIcons
                 name="crown-outline"
                 size={14}
-                color={theme.teriary}
+                color={theme.tertiary}
               />
               <Text style={profileStyless.memberChipText}>Premium planner</Text>
             </View>
@@ -156,21 +150,23 @@ export default function Profile() {
         </View>
 
         {!!profileError && (
-          <View style={profileStyless.noticeCard}>
-            <MaterialIcons
-              name="info-outline"
-              size={18}
-              color={theme.expense}
-            />
-            <Text style={profileStyless.noticeText}>
-              Profile data could not refresh. Pull down to try again.
-            </Text>
-          </View>
+          <StatePanel
+            variant="error"
+            compact
+            title="Profile refresh failed"
+            message="Your saved profile is still displayed. Try loading the latest data again."
+            primaryAction={{
+              label: "Retry",
+              onPress: () => refetchProfile(),
+            }}
+          />
         )}
+
+        <SyncStatusPanel />
 
         {/* Preferences section */}
         <ShadowGlowCard
-          style={{ padding: 16, backgroundColor: theme.background }}
+          style={{ padding: 16 }}
         >
           <Text style={[profileStyless.sectionTitle, { marginBottom: 12 }]}>
             Preferences
@@ -181,6 +177,10 @@ export default function Profile() {
               item={item}
               onPress={() => {
                 if (item.label === "Appearance") router.push("/appearance");
+                if (item.label === "Setup checklist") {
+                  setOnboardingPreference("review");
+                  router.push("/home");
+                }
                 if (item.label === "Patch Notes") router.push("/changelog");
                 if (item.label === "Privacy and security")
                   router.push("/privacy");
@@ -195,7 +195,9 @@ export default function Profile() {
           description="End this session on your device"
           variant="secondary"
           onPress={handleLogout}
-          leftIcon={<MaterialIcons name="logout" size={22} color={theme.primary} />}
+          leftIcon={
+            <MaterialIcons name="logout" size={22} color={theme.primary} />
+          }
           style={{ justifyContent: "flex-start", paddingVertical: 13 }}
         />
 

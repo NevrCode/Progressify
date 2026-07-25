@@ -169,16 +169,23 @@ export const getFoodDiarySummary = async (date: string) => {
   }
 };
 
-export const getFoodEntries = async () => {
+export type FoodEntryPageOptions = {
+  page?: number;
+  limit?: number;
+  sortBy?: "id" | "date";
+  direction?: "asc" | "desc";
+};
+
+export const getFoodEntries = async (options: FoodEntryPageOptions = {}) => {
   try {
     const response = await api.get<
       ResultPageResponseDTO<FoodEntryDetailResponseDTO>
     >("/v1/food-diary", {
       params: {
-        page: 0,
-        limit: 25,
-        sortBy: "id",
-        direction: "desc",
+        page: options.page ?? 0,
+        limit: options.limit ?? 25,
+        sortBy: options.sortBy ?? "id",
+        direction: options.direction ?? "desc",
       },
     });
 
@@ -211,7 +218,8 @@ export const updateFoodEntry = async (
 
 export const deleteFoodEntry = async (id: number) => {
   try {
-    await api.delete(`/v1/food-diary/${id}`);
+    const response = await api.delete(`/v1/food-diary/${id}`);
+    return response.data;
   } catch (error: any) {
     throw new Error(getApiErrorMessage(error, "Delete food entry failed"));
   }

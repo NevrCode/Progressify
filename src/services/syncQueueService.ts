@@ -31,11 +31,22 @@ const LEGACY_CACHE_PREFIX = "@progressify_cache:";
 
 export type MutationStatus = "PENDING" | "SYNCING" | "FAILED";
 
+export type FailedSyncItem = {
+  id: string;
+  method: QueuedMutationRow["method"];
+  resource: string;
+  queuedAt: number;
+  attemptCount: number;
+  errorCategory: string;
+};
+
 export type SyncStatusSnapshot = {
   pending: number;
   failed: number;
   isSyncing: boolean;
   isOnline: boolean;
+  lastSuccessfulSyncAt: number | null;
+  failedItems: FailedSyncItem[];
 };
 
 type QueuedMutationRow = {
@@ -59,6 +70,16 @@ type CacheRow = {
   expires_at: number;
 };
 
+type FailedMutationSummaryRow = Pick<
+  QueuedMutationRow,
+  | "id"
+  | "method"
+  | "url"
+  | "attempt_count"
+  | "created_at"
+  | "last_status"
+>;
+
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
 let writeChain: Promise<void> = Promise.resolve();
 let processingPromise: Promise<void> | null = null;
@@ -68,6 +89,8 @@ let snapshot: SyncStatusSnapshot = {
   failed: 0,
   isSyncing: false,
   isOnline: true,
+  lastSuccessfulSyncAt: null,
+  failedItems: [],
 };
 const listeners = new Set<() => void>();
 
@@ -133,6 +156,11 @@ const getDatabase = () => {
             UNIQUE (owner_id, idempotency_key)
           );
 
+          CREATE TABLE IF NOT EXISTS sync_metadata (
+            owner_id TEXT PRIMARY KEY,
+            last_success_at INTEGER
+          );
+
           CREATE INDEX IF NOT EXISTS idx_offline_mutations_owner_status_time
           ON offline_mutations (owner_id, status, next_attempt_at, created_at);
 
@@ -168,10 +196,66 @@ const serializeWrite = async <T>(operation: () => Promise<T>) => {
   return result;
 };
 
+const getResourceCategory = (url: string) => {
+  const path = url.split("?")[0].toLowerCase();
+  if (path.startsWith("/v1/gym/")) return "Workout";
+  if (path.startsWith("/v1/food-diary")) return "Food diary";
+  if (path.startsWith("/v1/custom-foods")) return "Custom food";
+  if (path.startsWith("/v1/meal-prep")) return "Meal prep";
+  if (path.startsWith("/v1/water")) return "Water intake";
+  if (path.startsWith("/v1/account")) return "Financial account";
+  if (path.startsWith("/v1/transaction")) return "Transaction";
+  if (path.startsWith("/v1/budget")) return "Budget";
+  if (path.startsWith("/v1/category")) return "Category";
+  if (path.startsWith("/v1/profile")) return "Profile";
+  return "Application data";
+};
+
+const getErrorCategory = (status: number | null) => {
+  if (status === 401) return "Authentication required";
+  if (status === 403) return "Permission denied";
+  if (status === 404) return "Target no longer exists";
+  if (status === 409) return "Conflicting server change";
+  if (status === 422) return "Validation rejected";
+  if (status != null && status >= 500) return "Server unavailable";
+  if (status != null && status >= 400) return "Request rejected";
+  return "Retry limit or connection failure";
+};
+
+const readFailedSyncItems = async (
+  database: SQLite.SQLiteDatabase,
+  ownerId: string,
+) => {
+  const rows = await database.getAllAsync<FailedMutationSummaryRow>(
+    `SELECT id, method, url, attempt_count, created_at, last_status
+     FROM offline_mutations
+     WHERE owner_id = ? AND status = 'FAILED'
+     ORDER BY created_at ASC`,
+    ownerId,
+  );
+
+  return rows.map(
+    (row): FailedSyncItem => ({
+      id: row.id,
+      method: row.method,
+      resource: getResourceCategory(row.url),
+      queuedAt: row.created_at,
+      attemptCount: row.attempt_count,
+      errorCategory: getErrorCategory(row.last_status),
+    }),
+  );
+};
+
 const refreshSyncStatus = async () => {
   const ownerId = await getAuthUserId();
   if (!ownerId) {
-    emitSnapshot({ pending: 0, failed: 0, isSyncing: false });
+    emitSnapshot({
+      pending: 0,
+      failed: 0,
+      isSyncing: false,
+      lastSuccessfulSyncAt: null,
+      failedItems: [],
+    });
     return;
   }
 
@@ -187,10 +271,22 @@ const refreshSyncStatus = async () => {
      WHERE owner_id = ?`,
     ownerId,
   );
+  const metadata = await database.getFirstAsync<{
+    last_success_at: number | null;
+  }>(
+    "SELECT last_success_at FROM sync_metadata WHERE owner_id = ?",
+    ownerId,
+  );
+  const failedItems =
+    (counts?.failed ?? 0) > 0
+      ? await readFailedSyncItems(database, ownerId)
+      : [];
 
   emitSnapshot({
     pending: counts?.pending ?? 0,
     failed: counts?.failed ?? 0,
+    lastSuccessfulSyncAt: metadata?.last_success_at ?? null,
+    failedItems,
   });
 };
 
@@ -386,6 +482,15 @@ const runSyncQueue = async () => {
 
       try {
         await executeQueuedMutation(item);
+        const syncedAt = Date.now();
+        await database.runAsync(
+          `INSERT INTO sync_metadata (owner_id, last_success_at)
+           VALUES (?, ?)
+           ON CONFLICT(owner_id) DO UPDATE SET
+             last_success_at = excluded.last_success_at`,
+          ownerId,
+          syncedAt,
+        );
         await database.runAsync("DELETE FROM offline_mutations WHERE id = ?", item.id);
       } catch (error) {
         const status = isAxiosError(error) ? error.response?.status ?? null : null;
@@ -471,12 +576,66 @@ export const discardFailedMutations = async () => {
   await refreshSyncStatus();
 };
 
+const assertOldestFailedMutation = async (
+  database: SQLite.SQLiteDatabase,
+  ownerId: string,
+  mutationId: string,
+) => {
+  const oldest = await database.getFirstAsync<{ id: string }>(
+    `SELECT id FROM offline_mutations
+     WHERE owner_id = ? AND status = 'FAILED'
+     ORDER BY created_at ASC
+     LIMIT 1`,
+    ownerId,
+  );
+  if (!oldest || oldest.id !== mutationId) {
+    throw new Error("Resolve the earlier failed change first.");
+  }
+};
+
+export const retryFailedMutation = async (mutationId: string) => {
+  const ownerId = await getAuthUserId();
+  if (!ownerId) return;
+  const database = await getDatabase();
+  await assertOldestFailedMutation(database, ownerId, mutationId);
+  const now = Date.now();
+  await database.runAsync(
+    `UPDATE offline_mutations
+     SET status = 'PENDING', attempt_count = 0, next_attempt_at = ?,
+         created_at = ?, updated_at = ?, last_error = NULL, last_status = NULL
+     WHERE owner_id = ? AND id = ? AND status = 'FAILED'`,
+    now,
+    now,
+    now,
+    ownerId,
+    mutationId,
+  );
+  await refreshSyncStatus();
+  await processSyncQueue();
+};
+
+export const discardFailedMutation = async (mutationId: string) => {
+  const ownerId = await getAuthUserId();
+  if (!ownerId) return;
+  const database = await getDatabase();
+  await assertOldestFailedMutation(database, ownerId, mutationId);
+  await database.runAsync(
+    `DELETE FROM offline_mutations
+     WHERE owner_id = ? AND id = ? AND status = 'FAILED'`,
+    ownerId,
+    mutationId,
+  );
+  await refreshSyncStatus();
+  await processSyncQueue();
+};
+
 export const clearOfflineDataForUser = async (ownerId: string) => {
   await serializeWrite(async () => {
     const database = await getDatabase();
     await database.withTransactionAsync(async () => {
       await database.runAsync("DELETE FROM offline_cache WHERE owner_id = ?", ownerId);
       await database.runAsync("DELETE FROM offline_mutations WHERE owner_id = ?", ownerId);
+      await database.runAsync("DELETE FROM sync_metadata WHERE owner_id = ?", ownerId);
     });
   });
   await refreshSyncStatus();

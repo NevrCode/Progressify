@@ -1,3 +1,4 @@
+import { FONT_FAMILIES } from "@/constants/typography";
 import { StyleSheet } from "react-native";
 
 export const mapFont = (style: any) => {
@@ -6,16 +7,19 @@ export const mapFont = (style: any) => {
   if (mapped.fontWeight) {
     const weight = String(mapped.fontWeight);
     if (weight === "900" || weight === "800") {
-      mapped.fontFamily = "PlusJakartaSans_800ExtraBold";
+      mapped.fontFamily = FONT_FAMILIES.extraBold;
       delete mapped.fontWeight;
     } else if (weight === "700") {
-      mapped.fontFamily = "PlusJakartaSans_700Bold";
+      mapped.fontFamily = FONT_FAMILIES.bold;
       delete mapped.fontWeight;
-    } else if (weight === "600" || weight === "500") {
-      mapped.fontFamily = "PlusJakartaSans_500Medium";
+    } else if (weight === "600") {
+      mapped.fontFamily = FONT_FAMILIES.semibold;
+      delete mapped.fontWeight;
+    } else if (weight === "500") {
+      mapped.fontFamily = FONT_FAMILIES.medium;
       delete mapped.fontWeight;
     } else {
-      mapped.fontFamily = "PlusJakartaSans_400Regular";
+      mapped.fontFamily = FONT_FAMILIES.regular;
       delete mapped.fontWeight;
     }
   } else {
@@ -26,7 +30,7 @@ export const mapFont = (style: any) => {
       mapped.textAlign ||
       mapped.letterSpacing
     ) {
-      mapped.fontFamily = "PlusJakartaSans_400Regular";
+      mapped.fontFamily = FONT_FAMILIES.regular;
     }
   }
   return mapped;

@@ -1,4 +1,7 @@
 import { gymStyles } from "@/assets/styles/gym.style";
+import { AppButton } from "@/components/base/app-button";
+import { IconButton } from "@/components/base/icon-button";
+import { ModalHeader } from "@/components/base/modal-header";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
@@ -6,7 +9,6 @@ import {
   createExerciseSession,
   ExerciseProgressionDTO,
   GymExerciseSessionRequestDTO,
-  SplitType,
 } from "@/services/gymService";
 import {
   ActiveSessionData,
@@ -47,17 +49,6 @@ type ExerciseDraft = {
   exerciseId: number;
   startedAt: string;
   sets: DraftSet[];
-};
-
-const normalizeSplit = (split?: string): SplitType => {
-  const normalized = split?.toUpperCase();
-  if (normalized === "PULL" || normalized === "LEGS") return normalized;
-  return "PUSH";
-};
-
-const displaySplit = (split?: string) => {
-  const normalized = normalizeSplit(split);
-  return normalized.charAt(0) + normalized.slice(1).toLowerCase();
 };
 
 const getExerciseName = (exercise: ExerciseProgressionDTO) =>
@@ -119,16 +110,14 @@ export default function ActiveWorkoutSession() {
   const styles = gymStyles(theme);
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { exerciseIds, split, workoutSessionId, routineName, plannedExerciseMap } = useLocalSearchParams<{
+  const { exerciseIds, workoutSessionId, routineName, plannedExerciseMap } = useLocalSearchParams<{
     exerciseIds?: string;
-    split?: string;
     workoutSessionId?: string;
     routineName?: string;
     plannedExerciseMap?: string;
   }>();
 
   const [restoredIds, setRestoredIds] = useState<number[]>([]);
-  const [restoredSplit, setRestoredSplit] = useState<SplitType | null>(null);
   const [restoredWorkoutSessionId, setRestoredWorkoutSessionId] = useState<number | null>(null);
   const [restoredRoutineName, setRestoredRoutineName] = useState<string | null>(null);
   const [restoredPlannedExerciseIds, setRestoredPlannedExerciseIds] = useState<Record<number, number>>({});
@@ -193,7 +182,6 @@ export default function ActiveWorkoutSession() {
     };
   }, [isRestActive, restTime, isRestPaused]);
 
-  const selectedSplit = restoredSplit ?? normalizeSplit(split);
   const activeWorkoutSessionId = restoredWorkoutSessionId ?? (workoutSessionId ? Number(workoutSessionId) : null);
   const activeRoutineName = restoredRoutineName ?? routineName;
   const routePlannedExerciseIds = useMemo(() => {
@@ -268,7 +256,6 @@ export default function ActiveWorkoutSession() {
         setDrafts(stored.drafts);
         setCompletedIds(new Set(stored.completedIds));
         setRestoredIds(stored.exerciseIds);
-        setRestoredSplit(normalizeSplit(stored.split));
         setRestoredWorkoutSessionId(stored.workoutSessionId ?? null);
         setRestoredRoutineName(stored.routineName ?? null);
         setRestoredPlannedExerciseIds(stored.plannedExerciseIds ?? {});
@@ -299,7 +286,6 @@ export default function ActiveWorkoutSession() {
     if (!sessionExerciseIds.length) return;
 
     const data: ActiveSessionData = {
-      split: selectedSplit,
       workoutSessionId: activeWorkoutSessionId ?? undefined,
       routineName: activeRoutineName,
       plannedExerciseIds: activePlannedExerciseIds,
@@ -313,7 +299,6 @@ export default function ActiveWorkoutSession() {
     hydrated,
     allSaved,
     sessionExerciseIds,
-    selectedSplit,
     drafts,
     completedIds,
     activeWorkoutSessionId,
@@ -488,8 +473,7 @@ export default function ActiveWorkoutSession() {
         if (!keyword) return true;
         return (
           exercise.name?.toLowerCase().includes(keyword) ||
-          exercise.muscle_group?.toLowerCase().includes(keyword) ||
-          exercise.split?.toLowerCase().includes(keyword)
+          exercise.muscle_group?.toLowerCase().includes(keyword)
         );
       });
   }, [exerciseProgressions, sessionExerciseIds, exerciseSearch]);
@@ -738,12 +722,10 @@ export default function ActiveWorkoutSession() {
             <Text style={styles.errorText}>
               Could not load the selected exercises. Go back and try again.
             </Text>
-            <TouchableOpacity
-              style={styles.primaryButton}
+            <AppButton
+              label="Go back"
               onPress={() => router.back()}
-            >
-              <Text style={styles.primaryButtonText}>Go back</Text>
-            </TouchableOpacity>
+            />
           </View>
         </SafeAreaView>
       </SafeAreaProvider>
@@ -795,15 +777,15 @@ export default function ActiveWorkoutSession() {
                 { textAlign: "center", marginTop: 8 },
               ]}
             >
-              {displaySplit(selectedSplit)} | {elapsed} | {totalSets} sets |{" "}
+              {activeRoutineName ?? "Manual Workout"} | {elapsed} | {totalSets} sets |{" "}
               {totalVolume} vol
             </Text>
-            <TouchableOpacity
-              style={[styles.primaryButton, { marginTop: 32, width: "100%" }]}
+            <AppButton
+              label="Done"
+              accessibilityLabel="Close completed workout"
               onPress={() => router.back()}
-            >
-              <Text style={styles.primaryButtonText}>Done</Text>
-            </TouchableOpacity>
+              style={{ marginTop: 32, width: "100%" }}
+            />
           </View>
         </SafeAreaView>
       </SafeAreaProvider>
@@ -836,7 +818,7 @@ export default function ActiveWorkoutSession() {
                   marginBottom: 2,
                 }}
               >
-                {activeRoutineName ?? `${displaySplit(selectedSplit)} Day`}
+                {activeRoutineName ?? "Manual Workout"}
               </Text>
               <Text
                 style={{
@@ -850,21 +832,14 @@ export default function ActiveWorkoutSession() {
                 Active Session
               </Text>
             </View>
-            <TouchableOpacity
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 14,
-                backgroundColor: theme.primary + "15",
-                borderWidth: 1.5,
-                borderColor: theme.primary + "30",
-                justifyContent: "center",
-                alignItems: "center",
-              }}
+            <IconButton
+              accessibilityLabel="Exit active workout"
+              icon={
+                <MaterialIcons name="close" size={22} color={theme.primary} />
+              }
               onPress={confirmExit}
-            >
-              <MaterialIcons name="close" size={22} color={theme.primary} />
-            </TouchableOpacity>
+              size="large"
+            />
           </View>
 
           <View
@@ -931,6 +906,9 @@ export default function ActiveWorkoutSession() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Exercises</Text>
             <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Add exercise to active workout"
+              accessibilityState={{ disabled: !!finishingId }}
               style={styles.inlineAction}
               onPress={openAddExerciseModal}
               disabled={!!finishingId}
@@ -990,7 +968,6 @@ export default function ActiveWorkoutSession() {
                       )}
                     </View>
                     <Text style={styles.exerciseMeta}>
-                      {displaySplit(exercise.split)} |{" "}
                       {exercise.muscle_group ?? "-"} |{" "}
                       {exercise.target_rep_range ?? "-"}
                     </Text>
@@ -1020,40 +997,31 @@ export default function ActiveWorkoutSession() {
                         alignItems: "flex-start",
                       }}
                     >
-                      <TouchableOpacity
+                      <IconButton
+                        accessibilityLabel={`Swap ${getExerciseName(exercise)}`}
+                        icon={
+                          <MaterialIcons
+                            name="swap-horiz"
+                            size={18}
+                            color={theme.primary}
+                          />
+                        }
                         onPress={() => openSwapModal(exercise.id)}
-                        style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 8,
-                          backgroundColor: theme.primary + "15",
-                          justifyContent: "center",
-                          alignItems: "center",
-                        }}
-                      >
-                        <MaterialIcons
-                          name="swap-horiz"
-                          size={18}
-                          color={theme.primary}
-                        />
-                      </TouchableOpacity>
-                      <TouchableOpacity
+                        size="compact"
+                      />
+                      <IconButton
+                        accessibilityLabel={`Remove ${getExerciseName(exercise)} from workout`}
+                        icon={
+                          <MaterialIcons
+                            name="delete-outline"
+                            size={18}
+                            color={theme.expense}
+                          />
+                        }
                         onPress={() => removeExercise(exercise.id)}
-                        style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 8,
-                          backgroundColor: theme.expense + "15",
-                          justifyContent: "center",
-                          alignItems: "center",
-                        }}
-                      >
-                        <MaterialIcons
-                          name="delete-outline"
-                          size={18}
-                          color={theme.expense}
-                        />
-                      </TouchableOpacity>
+                        size="compact"
+                        variant="destructive"
+                      />
                     </View>
                   )}
                 </View>
@@ -1062,6 +1030,9 @@ export default function ActiveWorkoutSession() {
                   <View style={styles.subsectionHeader}>
                     <Text style={styles.subsectionTitle}>Sets</Text>
                     <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={`Add set to ${getExerciseName(exercise)}`}
+                      accessibilityState={{ disabled: isFinishing }}
                       style={styles.inlineAction}
                       onPress={() => addDraftSet(exercise.id)}
                       disabled={isFinishing}
@@ -1112,7 +1083,7 @@ export default function ActiveWorkoutSession() {
                         <Text
                           style={{
                             flex: 1,
-                            fontSize: 10,
+                            fontSize: 11,
                             fontWeight: "800",
                             fontFamily: "PlusJakartaSans_800ExtraBold",
                             color: theme.textLight,
@@ -1124,7 +1095,7 @@ export default function ActiveWorkoutSession() {
                         <Text
                           style={{
                             flex: 2.2,
-                            fontSize: 10,
+                            fontSize: 11,
                             fontWeight: "800",
                             fontFamily: "PlusJakartaSans_800ExtraBold",
                             color: theme.textLight,
@@ -1136,7 +1107,7 @@ export default function ActiveWorkoutSession() {
                         <Text
                           style={{
                             flex: 1.8,
-                            fontSize: 10,
+                            fontSize: 11,
                             fontWeight: "800",
                             fontFamily: "PlusJakartaSans_800ExtraBold",
                             color: theme.textLight,
@@ -1148,7 +1119,7 @@ export default function ActiveWorkoutSession() {
                         <Text
                           style={{
                             flex: 1.8,
-                            fontSize: 10,
+                            fontSize: 11,
                             fontWeight: "800",
                             fontFamily: "PlusJakartaSans_800ExtraBold",
                             color: theme.textLight,
@@ -1160,7 +1131,7 @@ export default function ActiveWorkoutSession() {
                         <Text
                           style={{
                             flex: 1.6,
-                            fontSize: 10,
+                            fontSize: 11,
                             fontWeight: "800",
                             fontFamily: "PlusJakartaSans_800ExtraBold",
                             color: theme.textLight,
@@ -1239,7 +1210,7 @@ export default function ActiveWorkoutSession() {
                               {/* Weight Input */}
                               <View style={{ flex: 2.2, paddingHorizontal: 4 }}>
                                 <TextInput
-                                  accessibilityLabel={`Set ${set.set_number} weight`}
+                                  accessibilityLabel={`Set ${set.set_number} weight in kilograms for ${getExerciseName(exercise)}`}
                                   style={{
                                     backgroundColor: theme.card,
                                     borderRadius: 8,
@@ -1267,7 +1238,7 @@ export default function ActiveWorkoutSession() {
                               {/* Reps Input */}
                               <View style={{ flex: 1.8, paddingHorizontal: 4 }}>
                                 <TextInput
-                                  accessibilityLabel={`Set ${set.set_number} reps`}
+                                  accessibilityLabel={`Set ${set.set_number} repetitions for ${getExerciseName(exercise)}`}
                                   style={{
                                     backgroundColor: theme.card,
                                     borderRadius: 8,
@@ -1295,7 +1266,7 @@ export default function ActiveWorkoutSession() {
                               {/* RIR Input */}
                               <View style={{ flex: 1.8, paddingHorizontal: 4 }}>
                                 <TextInput
-                                  accessibilityLabel={`Set ${set.set_number} RIR`}
+                                  accessibilityLabel={`Set ${set.set_number} repetitions in reserve for ${getExerciseName(exercise)}`}
                                   style={{
                                     backgroundColor: theme.card,
                                     borderRadius: 8,
@@ -1330,50 +1301,35 @@ export default function ActiveWorkoutSession() {
                                   gap: 6,
                                 }}
                               >
-                                <TouchableOpacity
-                                  onPress={() => startRestTimer(90)}
-                                  style={{
-                                    width: 26,
-                                    height: 26,
-                                    borderRadius: 6,
-                                    backgroundColor: theme.primary + "12",
-                                    justifyContent: "center",
-                                    alignItems: "center",
-                                  }}
-                                >
-                                  <MaterialCommunityIcons
-                                    name="timer-play-outline"
-                                    size={15}
-                                    color={theme.primary}
-                                  />
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                  onPress={() =>
-                                    deleteDraftSet(exercise.id, set.localId)
-                                  }
-                                  disabled={deletingSetKey === set.localId}
-                                  style={{
-                                    width: 26,
-                                    height: 26,
-                                    borderRadius: 6,
-                                    backgroundColor: theme.expense + "12",
-                                    justifyContent: "center",
-                                    alignItems: "center",
-                                  }}
-                                >
-                                  {deletingSetKey === set.localId ? (
-                                    <ActivityIndicator
-                                      size="small"
-                                      color={theme.expense}
+                                <IconButton
+                                  accessibilityLabel={`Start 90 second rest timer after set ${set.set_number}`}
+                                  icon={
+                                    <MaterialCommunityIcons
+                                      name="timer-play-outline"
+                                      size={15}
+                                      color={theme.primary}
                                     />
-                                  ) : (
+                                  }
+                                  onPress={() => startRestTimer(90)}
+                                  visualSize={26}
+                                />
+                                <IconButton
+                                  accessibilityLabel={`Delete set ${set.set_number}`}
+                                  icon={
                                     <MaterialIcons
                                       name="delete-outline"
                                       size={15}
                                       color={theme.expense}
                                     />
-                                  )}
-                                </TouchableOpacity>
+                                  }
+                                  loading={deletingSetKey === set.localId}
+                                  onPress={() =>
+                                    deleteDraftSet(exercise.id, set.localId)
+                                  }
+                                  disabled={deletingSetKey === set.localId}
+                                  variant="destructive"
+                                  visualSize={26}
+                                />
                               </View>
                             </>
                           )}
@@ -1384,22 +1340,11 @@ export default function ActiveWorkoutSession() {
                 )}
 
                 {!isCompleted && (
-                  <TouchableOpacity
-                    style={[
-                      styles.saveSetButton,
-                      { opacity: isFinishing ? 0.6 : 1 },
-                    ]}
+                  <AppButton
+                    label="Finish Exercise"
+                    loading={isFinishing}
                     onPress={() => finishExercise(exercise)}
-                    disabled={isFinishing}
-                  >
-                    {isFinishing ? (
-                      <ActivityIndicator size="small" color={theme.white} />
-                    ) : (
-                      <Text style={styles.saveSetButtonText}>
-                        Finish Exercise
-                      </Text>
-                    )}
-                  </TouchableOpacity>
+                  />
                 )}
               </View>
             );
@@ -1452,9 +1397,15 @@ export default function ActiveWorkoutSession() {
               />
               <View>
                 <Text
+                  accessibilityLiveRegion="polite"
+                  accessibilityLabel={
+                    restTime === 0
+                      ? "Rest finished"
+                      : `${formatRestTime(restTime)} remaining${isRestPaused ? ", paused" : ""}`
+                  }
                   style={{
                     color: theme.background,
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: "800",
                     textTransform: "uppercase",
                     letterSpacing: 0.8,
@@ -1470,6 +1421,7 @@ export default function ActiveWorkoutSession() {
                     fontWeight: "900",
                     letterSpacing: -0.5,
                     marginTop: 1,
+                    fontVariant: ["tabular-nums"],
                   }}
                 >
                   {restTime === 0 ? "Go Lift!" : formatRestTime(restTime)}
@@ -1481,6 +1433,9 @@ export default function ActiveWorkoutSession() {
             {restTime > 0 ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                 <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Reduce rest timer by 30 seconds"
+                  hitSlop={7}
                   onPress={() => adjustRestTime(-30)}
                   style={{
                     paddingHorizontal: 10,
@@ -1494,6 +1449,9 @@ export default function ActiveWorkoutSession() {
                   <Text style={{ color: theme.background, fontSize: 11, fontWeight: "900" }}>-30s</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Increase rest timer by 30 seconds"
+                  hitSlop={7}
                   onPress={() => adjustRestTime(30)}
                   style={{
                     paddingHorizontal: 10,
@@ -1510,6 +1468,9 @@ export default function ActiveWorkoutSession() {
             ) : (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                 <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={`Restart rest timer for ${initialRestDuration} seconds`}
+                  hitSlop={7}
                   onPress={() => startRestTimer(initialRestDuration)}
                   style={{
                     paddingHorizontal: 12,
@@ -1531,37 +1492,35 @@ export default function ActiveWorkoutSession() {
             {/* Right section: Play/Pause/Dismiss */}
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
               {restTime > 0 && (
-                <TouchableOpacity
+                <IconButton
+                  accessibilityLabel={isRestPaused ? "Resume rest timer" : "Pause rest timer"}
+                  icon={
+                    <MaterialCommunityIcons
+                      name={isRestPaused ? "play" : "pause"}
+                      size={20}
+                      color={theme.primary}
+                    />
+                  }
                   onPress={toggleRestPause}
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 10,
-                    backgroundColor: theme.background,
-                    justifyContent: "center",
-                    alignItems: "center",
-                  }}
-                >
-                  <MaterialCommunityIcons
-                    name={isRestPaused ? "play" : "pause"}
-                    size={20}
-                    color={theme.primary}
-                  />
-                </TouchableOpacity>
+                  visualSize={36}
+                />
               )}
-              <TouchableOpacity
+              <IconButton
+                accessibilityLabel="Dismiss rest timer"
+                icon={
+                  <MaterialCommunityIcons
+                    name="close"
+                    size={20}
+                    color={theme.background}
+                  />
+                }
                 onPress={stopRestTimer}
                 style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 10,
                   backgroundColor: theme.background + "20",
-                  justifyContent: "center",
-                  alignItems: "center",
                 }}
-              >
-                <MaterialCommunityIcons name="close" size={20} color={theme.background} />
-              </TouchableOpacity>
+                variant="ghost"
+                visualSize={36}
+              />
             </View>
           </LinearGradient>
         )}
@@ -1576,21 +1535,21 @@ export default function ActiveWorkoutSession() {
             borderTopColor: theme.border,
           }}
         >
-          <TouchableOpacity
-            style={[styles.primaryButton, { width: "100%" }]}
+          <AppButton
+            label={
+              completedIds.size === selectedExercises.length
+                ? "All Done"
+                : `Save All (${completedIds.size}/${selectedExercises.length} done)`
+            }
+            accessibilityLabel={
+              completedIds.size === selectedExercises.length
+                ? "Finish workout"
+                : `Save workout, ${completedIds.size} of ${selectedExercises.length} exercises completed`
+            }
+            loading={!!finishingId}
             onPress={finishAll}
-            disabled={!!finishingId}
-          >
-            {finishingId ? (
-              <ActivityIndicator color={theme.white} />
-            ) : (
-              <Text style={styles.primaryButtonText}>
-                {completedIds.size === selectedExercises.length
-                  ? "All Done"
-                  : `Save All (${completedIds.size}/${selectedExercises.length} done)`}
-              </Text>
-            )}
-          </TouchableOpacity>
+            style={{ width: "100%" }}
+          />
         </View>
 
         {/* Swap Exercise Modal */}
@@ -1601,17 +1560,16 @@ export default function ActiveWorkoutSession() {
           onRequestClose={closeExercisePicker}
         >
           <View style={styles.modalBackdrop}>
-            <View style={[styles.modalCard, { maxHeight: "70%" }]}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Swap Exercise</Text>
-                <TouchableOpacity onPress={closeExercisePicker}>
-                  <MaterialIcons
-                    name="close"
-                    size={22}
-                    color={theme.textBlack}
-                  />
-                </TouchableOpacity>
-              </View>
+            <View
+              accessibilityViewIsModal
+              style={[styles.modalCard, { maxHeight: "70%" }]}
+            >
+              <ModalHeader
+                closeLabel="Close swap exercise"
+                onClose={closeExercisePicker}
+                style={styles.modalHeader}
+                title="Swap Exercise"
+              />
               <TextInput
                 style={styles.input}
                 placeholder="Search exercises..."
@@ -1627,6 +1585,8 @@ export default function ActiveWorkoutSession() {
                 ) : (
                   availableSessionExercises.map((ex) => (
                     <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={`Swap to ${getExerciseName(ex)}`}
                       key={ex.id}
                       style={styles.listCard}
                       onPress={() => swapExercise(ex.id)}
@@ -1635,7 +1595,7 @@ export default function ActiveWorkoutSession() {
                         {getExerciseName(ex)}
                       </Text>
                       <Text style={styles.listMeta}>
-                        {displaySplit(ex.split)} | {ex.muscle_group ?? "-"} |{" "}
+                        {ex.muscle_group ?? "-"} |{" "}
                         {ex.target_rep_range ?? "-"}
                       </Text>
                     </TouchableOpacity>
@@ -1654,17 +1614,16 @@ export default function ActiveWorkoutSession() {
           onRequestClose={closeExercisePicker}
         >
           <View style={styles.modalBackdrop}>
-            <View style={[styles.modalCard, { maxHeight: "70%" }]}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Add Exercise</Text>
-                <TouchableOpacity onPress={closeExercisePicker}>
-                  <MaterialIcons
-                    name="close"
-                    size={22}
-                    color={theme.textBlack}
-                  />
-                </TouchableOpacity>
-              </View>
+            <View
+              accessibilityViewIsModal
+              style={[styles.modalCard, { maxHeight: "70%" }]}
+            >
+              <ModalHeader
+                closeLabel="Close add exercise"
+                onClose={closeExercisePicker}
+                style={styles.modalHeader}
+                title="Add Exercise"
+              />
               <TextInput
                 style={styles.input}
                 placeholder="Search exercises..."
@@ -1680,6 +1639,8 @@ export default function ActiveWorkoutSession() {
                 ) : (
                   availableSessionExercises.map((ex) => (
                     <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={`Add ${getExerciseName(ex)} to workout`}
                       key={ex.id}
                       style={styles.listCard}
                       onPress={() => addExerciseToSession(ex.id)}
@@ -1688,7 +1649,7 @@ export default function ActiveWorkoutSession() {
                         {getExerciseName(ex)}
                       </Text>
                       <Text style={styles.listMeta}>
-                        {displaySplit(ex.split)} | {ex.muscle_group ?? "-"} |{" "}
+                        {ex.muscle_group ?? "-"} |{" "}
                         {ex.target_rep_range ?? "-"}
                       </Text>
                     </TouchableOpacity>

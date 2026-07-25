@@ -1,21 +1,16 @@
 import { gymStyles } from "@/assets/styles/gym.style";
+import { AppButton } from "@/components/base/app-button";
+import { IconButton } from "@/components/base/icon-button";
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
-import { ExerciseProgressionDTO, SplitType } from "@/services/gymService";
-import {
-  addProgram,
-  deleteProgram,
-  loadPrograms,
-  WorkoutProgram,
-} from "@/services/programStorage";
+import { ExerciseProgressionDTO } from "@/services/gymService";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Animated,
   ScrollView,
   Text,
   TextInput,
@@ -23,19 +18,6 @@ import {
   View,
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-
-const splitOptions: SplitType[] = ["PUSH", "PULL", "LEGS"];
-
-const normalizeSplit = (split?: string): SplitType => {
-  const normalized = split?.toUpperCase();
-  if (normalized === "PULL" || normalized === "LEGS") return normalized;
-  return "PUSH";
-};
-
-const displaySplit = (split?: string) => {
-  const normalized = normalizeSplit(split);
-  return normalized.charAt(0) + normalized.slice(1).toLowerCase();
-};
 
 const getExerciseName = (exercise: ExerciseProgressionDTO) =>
   exercise.name ?? "Exercise";
@@ -52,78 +34,10 @@ export default function WorkoutSession() {
   const router = useRouter();
   const { alert } = useAlert();
 
-  const [selectedSplit, setSelectedSplit] = useState<SplitType>("PUSH");
-  const [splitTranslateX] = useState(() => new Animated.Value(0));
-  const [switcherWidth, setSwitcherWidth] = useState(0);
-
-  useEffect(() => {
-    const toVal =
-      selectedSplit === "PUSH"
-        ? 0
-        : selectedSplit === "PULL"
-          ? 1
-          : 2;
-    Animated.timing(splitTranslateX, {
-      toValue: toVal,
-      duration: 220,
-      useNativeDriver: true,
-    }).start();
-  }, [selectedSplit, splitTranslateX]);
   const [selectedExerciseIds, setSelectedExerciseIds] = useState<Set<number>>(
     new Set(),
   );
   const [search, setSearch] = useState("");
-  const [programs, setPrograms] = useState<WorkoutProgram[]>([]);
-  const [showSaveInput, setShowSaveInput] = useState(false);
-  const [programName, setProgramName] = useState("");
-  const [showAllExercises, setShowAllExercises] = useState(false);
-
-  useEffect(() => {
-    loadPrograms().then(setPrograms);
-  }, []);
-
-  const handleDeleteProgram = (program: WorkoutProgram) => {
-    alert("Delete program", `"${program.name}" will be removed.`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          const updated = await deleteProgram(program.id);
-          setPrograms(updated);
-        },
-      },
-    ]);
-  };
-
-  const handleSaveProgram = async () => {
-    const name = programName.trim();
-    if (!name) {
-      alert("Name required", "Enter a name for your program.");
-      return;
-    }
-    if (!selectedExerciseIds.size) return;
-
-    const updated = await addProgram({
-      name,
-      split: selectedSplit,
-      exerciseIds: Array.from(selectedExerciseIds),
-    });
-    setPrograms(updated);
-    setShowSaveInput(false);
-    setProgramName("");
-    alert("Saved", `"${name}" program created.`);
-  };
-
-  const loadProgram = (program: WorkoutProgram) => {
-    setSelectedSplit(normalizeSplit(program.split));
-    setSelectedExerciseIds(new Set(program.exerciseIds));
-  };
-
-  const programsForSplit = useMemo(
-    () => programs.filter((p) => normalizeSplit(p.split) === selectedSplit),
-    [programs, selectedSplit],
-  );
 
   const {
     data: dashboard,
@@ -137,25 +51,13 @@ export default function WorkoutSession() {
     [dashboard],
   );
 
-  const splitExercises = useMemo(() => {
-    const filtered = exerciseProgressions.filter(
-      (exercise) => normalizeSplit(exercise.split) === selectedSplit,
-    );
-    return [...filtered].sort(
-      (a, b) =>
-        toDateSortValue(a.last_session_date) -
-        toDateSortValue(b.last_session_date),
-    );
-  }, [exerciseProgressions, selectedSplit]);
-
   const availableExercises = useMemo(() => {
-    const source = showAllExercises ? exerciseProgressions : splitExercises;
-    return [...source].sort(
+    return [...exerciseProgressions].sort(
       (a, b) =>
         toDateSortValue(a.last_session_date) -
         toDateSortValue(b.last_session_date),
     );
-  }, [exerciseProgressions, showAllExercises, splitExercises]);
+  }, [exerciseProgressions]);
 
   const filteredExercises = useMemo(() => {
     if (!search.trim()) return availableExercises;
@@ -163,8 +65,7 @@ export default function WorkoutSession() {
     return availableExercises.filter(
       (exercise) =>
         exercise.name?.toLowerCase().includes(keyword) ||
-        exercise.muscle_group?.toLowerCase().includes(keyword) ||
-        exercise.split?.toLowerCase().includes(keyword),
+        exercise.muscle_group?.toLowerCase().includes(keyword),
     );
   }, [availableExercises, search]);
 
@@ -205,7 +106,7 @@ export default function WorkoutSession() {
       pathname: "/activeWorkoutSession",
       params: {
         exerciseIds: Array.from(selectedExerciseIds).join(","),
-        split: selectedSplit,
+        routineName: "Manual Workout",
       },
     });
   };
@@ -236,12 +137,10 @@ export default function WorkoutSession() {
             <Text style={styles.errorText}>
               Check your connection and try again.
             </Text>
-            <TouchableOpacity
-              style={styles.primaryButton}
+            <AppButton
+              label="Retry"
               onPress={() => refetch()}
-            >
-              <Text style={styles.primaryButtonText}>Retry</Text>
-            </TouchableOpacity>
+            />
           </View>
         </SafeAreaView>
       </SafeAreaProvider>
@@ -286,21 +185,14 @@ export default function WorkoutSession() {
                 Setup Session
               </Text>
             </View>
-            <TouchableOpacity
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 14,
-                backgroundColor: theme.primary + "15",
-                borderWidth: 1.5,
-                borderColor: theme.primary + "30",
-                justifyContent: "center",
-                alignItems: "center",
-              }}
+            <IconButton
+              accessibilityLabel="Close workout setup"
+              icon={
+                <MaterialIcons name="close" size={22} color={theme.primary} />
+              }
               onPress={() => router.back()}
-            >
-              <MaterialIcons name="close" size={22} color={theme.primary} />
-            </TouchableOpacity>
+              size="large"
+            />
           </View>
 
           <ShadowGlowCard>
@@ -315,7 +207,7 @@ export default function WorkoutSession() {
                     color: theme.textBlack,
                   }}
                 >
-                  {displaySplit(selectedSplit)} Day
+                  Manual Workout
                 </Text>
               </View>
               <View
@@ -352,125 +244,18 @@ export default function WorkoutSession() {
             </View>
           </ShadowGlowCard>
 
-          <View style={[styles.sectionHeader, { marginTop: 14 }]}>
-            <Text style={styles.sectionTitle}>1. Pick your split</Text>
-          </View>
-
-          <View
-            onLayout={(e) => setSwitcherWidth(e.nativeEvent.layout.width)}
-            style={{
-              flexDirection: "row",
-              backgroundColor: theme.card,
-              borderRadius: 24,
-              padding: 4,
-              borderWidth: 1.5,
-              borderColor: theme.border,
-              marginBottom: 16,
-              position: "relative",
-            }}
-          >
-            {switcherWidth > 0 && (
-              <Animated.View
-                style={{
-                  position: "absolute",
-                  top: 4,
-                  bottom: 4,
-                  left: 4,
-                  width: (switcherWidth - 8) / 3,
-                  backgroundColor: theme.primary + "12",
-                  borderWidth: 1.5,
-                  borderColor: theme.primary + "30",
-                  borderRadius: 20,
-                  transform: [
-                    {
-                      translateX: splitTranslateX.interpolate({
-                        inputRange: [0, 1, 2],
-                        outputRange: [
-                          0,
-                          (switcherWidth - 8) / 3,
-                          ((switcherWidth - 8) / 3) * 2,
-                        ],
-                      }),
-                    },
-                  ],
-                }}
-              />
-            )}
-
-            {splitOptions.map((option) => {
-              const active = selectedSplit === option;
-              return (
-                <TouchableOpacity
-                  key={option}
-                  style={{
-                    flex: 1,
-                    flexDirection: "row",
-                    justifyContent: "center",
-                    alignItems: "center",
-                    paddingVertical: 10,
-                    borderRadius: 20,
-                  }}
-                  activeOpacity={0.8}
-                  onPress={() => {
-                    setSelectedSplit(option);
-                    setSelectedExerciseIds(new Set());
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 13,
-                      fontWeight: "800",
-                      fontFamily: "PlusJakartaSans_800ExtraBold",
-                      color: active ? theme.primary : theme.textLight,
-                    }}
-                  >
-                    {displaySplit(option)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* Programs section */}
-          {programsForSplit.length > 0 && (
-            <>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>My Programs</Text>
-                <Text style={styles.sectionMeta}>
-                  {programsForSplit.length} saved
-                </Text>
-              </View>
-              {programsForSplit.map((program) => (
-                <TouchableOpacity
-                  key={program.id}
-                  style={styles.exerciseCard}
-                  activeOpacity={0.7}
-                  onPress={() => loadProgram(program)}
-                  onLongPress={() => handleDeleteProgram(program)}
-                >
-                  <View style={styles.exerciseHeader}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.exerciseName}>{program.name}</Text>
-                      <Text style={styles.exerciseMeta}>
-                        {displaySplit(program.split)} |{" "}
-                        {program.exerciseIds.length} exercises
-                      </Text>
-                    </View>
-                    <MaterialIcons
-                      name="play-circle-outline"
-                      size={24}
-                      color={theme.primary}
-                    />
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </>
-          )}
-
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>2. Choose exercises</Text>
+            <Text style={styles.sectionTitle}>Choose exercises</Text>
             {filteredExercises.length > 0 && (
-              <TouchableOpacity style={styles.inlineAction} onPress={toggleAll}>
+              <TouchableOpacity
+                accessibilityRole="checkbox"
+                accessibilityLabel={
+                  allSelected ? "Deselect all exercises" : "Select all exercises"
+                }
+                accessibilityState={{ checked: allSelected }}
+                style={styles.inlineAction}
+                onPress={toggleAll}
+              >
                 <MaterialIcons
                   name={allSelected ? "check-box" : "check-box-outline-blank"}
                   size={16}
@@ -481,41 +266,6 @@ export default function WorkoutSession() {
                 </Text>
               </TouchableOpacity>
             )}
-          </View>
-
-          <View style={styles.chipRow}>
-            <TouchableOpacity
-              style={[
-                styles.filterChip,
-                !showAllExercises && styles.filterChipActive,
-              ]}
-              onPress={() => setShowAllExercises(false)}
-            >
-              <Text
-                style={[
-                  styles.filterChipText,
-                  !showAllExercises && styles.filterChipTextActive,
-                ]}
-              >
-                {displaySplit(selectedSplit)} only
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.filterChip,
-                showAllExercises && styles.filterChipActive,
-              ]}
-              onPress={() => setShowAllExercises(true)}
-            >
-              <Text
-                style={[
-                  styles.filterChipText,
-                  showAllExercises && styles.filterChipTextActive,
-                ]}
-              >
-                All exercises
-              </Text>
-            </TouchableOpacity>
           </View>
 
           <View
@@ -532,7 +282,10 @@ export default function WorkoutSession() {
               marginBottom: 4,
             }}
           >
-            <TouchableOpacity>
+            <View
+              accessibilityElementsHidden
+              importantForAccessibility="no"
+            >
               <View
                 style={{
                   alignItems: "center",
@@ -541,8 +294,9 @@ export default function WorkoutSession() {
               >
                 <MaterialIcons name="search" size={20} color={theme.primary} />
               </View>
-            </TouchableOpacity>
+            </View>
             <TextInput
+              accessibilityLabel="Search exercises"
               style={{
                 color: theme.primary,
                 fontWeight: "500",
@@ -554,6 +308,12 @@ export default function WorkoutSession() {
               onChangeText={setSearch}
             />
             <TouchableOpacity
+              accessible={search !== ""}
+              accessibilityRole="button"
+              accessibilityLabel="Clear exercise search"
+              accessibilityState={{ disabled: search === "" }}
+              disabled={search === ""}
+              hitSlop={8}
               onPress={() => {
                 if (search !== "") setSearch("");
               }}
@@ -580,6 +340,9 @@ export default function WorkoutSession() {
               return (
                 <TouchableOpacity
                   key={exercise.id}
+                  accessibilityRole="checkbox"
+                  accessibilityLabel={getExerciseName(exercise)}
+                  accessibilityState={{ checked: isSelected }}
                   style={[
                     styles.exerciseCard,
                     isSelected && {
@@ -596,7 +359,6 @@ export default function WorkoutSession() {
                         {getExerciseName(exercise)}
                       </Text>
                       <Text style={styles.exerciseMeta}>
-                        {displaySplit(exercise.split)} |{" "}
                         {exercise.muscle_group ?? "-"} |{" "}
                         {exercise.target_rep_range ?? "-"}
                       </Text>
@@ -638,9 +400,7 @@ export default function WorkoutSession() {
               <Text style={styles.emptyText}>
                 {search.trim()
                   ? "Try a different search term."
-                  : showAllExercises
-                    ? "Add exercises from the progression page first."
-                    : `No ${displaySplit(selectedSplit)} exercises yet. Switch to all exercises or add some from the progression page.`}
+                  : "Add exercises from the progression page first."}
               </Text>
             </View>
           )}
@@ -657,70 +417,11 @@ export default function WorkoutSession() {
               gap: 10,
             }}
           >
-            {showSaveInput ? (
-              <View
-                style={{
-                  flexDirection: "row",
-                  gap: 8,
-                  alignItems: "center",
-                }}
-              >
-                <TextInput
-                  style={{
-                    flex: 1,
-                    backgroundColor: theme.background,
-                    borderRadius: 10,
-                    paddingHorizontal: 14,
-                    paddingVertical: 10,
-                    color: theme.textBlack,
-                    fontSize: 14,
-                    borderWidth: 1,
-                    borderColor: theme.border,
-                  }}
-                  placeholder="Program name..."
-                  placeholderTextColor={theme.textLight}
-                  value={programName}
-                  onChangeText={setProgramName}
-                  autoFocus
-                />
-                <TouchableOpacity
-                  style={styles.primaryButton}
-                  onPress={handleSaveProgram}
-                >
-                  <Text style={styles.primaryButtonText}>Save</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.secondaryButton}
-                  onPress={() => {
-                    setShowSaveInput(false);
-                    setProgramName("");
-                  }}
-                >
-                  <Text style={styles.secondaryButtonText}>Cancel</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                <TouchableOpacity
-                  style={[styles.primaryButton, { flex: 1 }]}
-                  onPress={startSession}
-                >
-                  <Text style={styles.primaryButtonText}>
-                    Start ({selectedExerciseIds.size})
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.secondaryButton}
-                  onPress={() => setShowSaveInput(true)}
-                >
-                  <MaterialIcons
-                    name="bookmark-outline"
-                    size={18}
-                    color={theme.primary}
-                  />
-                </TouchableOpacity>
-              </View>
-            )}
+            <AppButton
+              label={`Start (${selectedExerciseIds.size})`}
+              disabled={selectedExerciseIds.size === 0}
+              onPress={startSession}
+            />
           </View>
         )}
       </SafeAreaView>

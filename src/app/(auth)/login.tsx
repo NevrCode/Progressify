@@ -1,4 +1,6 @@
-import { authStyles } from "@/assets/styles/auth.style";
+import { AppButton } from "@/components/base/app-button";
+import { FormField } from "@/components/base/form-field";
+import { IconButton } from "@/components/base/icon-button";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { login } from "@/services/authService";
@@ -10,7 +12,6 @@ import {
   ActivityIndicator,
   ScrollView,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -24,7 +25,6 @@ export default function Login() {
   const router = useRouter();
   const { theme } = useTheme();
   const { alert } = useAlert();
-  const style = authStyles(theme);
 
   const validateEmail = (text: string) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -130,16 +130,10 @@ export default function Login() {
           >
             Email Address
           </Text>
-          <TextInput
-            style={[
-              style.input,
-              {
-                borderColor: emailError ? theme.expense : theme.border,
-                borderWidth: 1.2,
-              },
-            ]}
+          <FormField
+            accessibilityLabel="Email Address"
+            error={emailError}
             placeholder="your@email.com"
-            placeholderTextColor={theme.textLight}
             value={email}
             onChangeText={(text) => {
               setEmail(text);
@@ -148,11 +142,6 @@ export default function Login() {
             keyboardType="email-address"
             editable={!loading}
           />
-          {emailError ? (
-            <Text style={{ color: theme.expense, fontSize: 12, marginTop: 4 }}>
-              {emailError}
-            </Text>
-          ) : null}
         </View>
 
         <View style={{ marginBottom: 12 }}>
@@ -166,46 +155,38 @@ export default function Login() {
           >
             Password
           </Text>
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              borderColor: theme.border,
-              borderWidth: 1.2,
-              borderRadius: 10,
-              backgroundColor: theme.card,
-              paddingRight: 12,
-            }}
-          >
-            <TextInput
-              style={{
-                flex: 1,
-                height: 40,
-                paddingHorizontal: 10,
-                color: theme.text,
-              }}
-              placeholder="Enter your password"
-              placeholderTextColor={theme.textLight}
-              secureTextEntry={!showPassword}
-              value={password}
-              onChangeText={setPassword}
-              editable={!loading}
-            />
-            <TouchableOpacity
-              onPress={() => setShowPassword(!showPassword)}
-              style={{ padding: 8 }}
-            >
-              <MaterialIcons
-                name={showPassword ? "visibility" : "visibility-off"}
-                size={20}
-                color={theme.textLight}
+          <FormField
+            accessibilityLabel="Password"
+            placeholder="Enter your password"
+            secureTextEntry={!showPassword}
+            value={password}
+            onChangeText={setPassword}
+            editable={!loading}
+            trailing={
+              <IconButton
+                accessibilityLabel={
+                  showPassword ? "Hide password" : "Show password"
+                }
+                selected={showPassword}
+                size="compact"
+                variant="ghost"
+                onPress={() => setShowPassword(!showPassword)}
+                icon={
+                  <MaterialIcons
+                    name={showPassword ? "visibility" : "visibility-off"}
+                    size={20}
+                    color={theme.textLight}
+                  />
+                }
               />
-            </TouchableOpacity>
-          </View>
+            }
+          />
         </View>
 
         {/* Forgot Password Link */}
         <TouchableOpacity
+          accessibilityRole="link"
+          accessibilityLabel="Forgot password"
           style={{ marginBottom: 10, alignItems: "flex-end" }}
           onPress={() => router.push("/forgot-password" as Href)}
         >
@@ -221,28 +202,12 @@ export default function Login() {
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[
-            style.loginButton,
-            {
-              paddingVertical: 8,
-              marginBottom: 20,
-              paddingHorizontal: 40,
-              opacity: loading ? 0.6 : 1,
-            },
-          ]}
+        <AppButton
+          label="Login"
+          loading={loading}
           onPress={handleLogin}
-          disabled={loading}
-        >
-          <Text
-            style={[
-              style.loginButtonText,
-              { fontSize: 16, fontWeight: "bold" },
-            ]}
-          >
-            Login
-          </Text>
-        </TouchableOpacity>
+          style={{ marginBottom: 20 }}
+        />
 
         <View
           style={{
@@ -276,21 +241,12 @@ export default function Login() {
           />
         </View>
 
-        <TouchableOpacity
+        <AppButton
+          label="Create Account"
+          variant="secondary"
           onPress={() => router.replace("/signin")}
-          style={[
-            style.signInButton,
-            {
-              paddingVertical: 8,
-              opacity: loading ? 0.6 : 1,
-            },
-          ]}
           disabled={loading}
-        >
-          <Text style={[style.signInButtonText, { fontSize: 16 }]}>
-            Create Account
-          </Text>
-        </TouchableOpacity>
+        />
       </View>
     </ScrollView>
   );

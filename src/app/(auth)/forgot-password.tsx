@@ -1,9 +1,11 @@
+import { AppButton } from "@/components/base/app-button";
+import { FormField } from "@/components/base/form-field";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { requestPasswordReset } from "@/services/authService";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Text, View } from "react-native";
 
 export default function ForgotPasswordScreen() {
   const { theme } = useTheme();
@@ -43,13 +45,15 @@ export default function ForgotPasswordScreen() {
           <Text style={{ color: theme.text, lineHeight: 22, marginBottom: 24 }}>
             If an account exists for that email, reset instructions have been sent.
           </Text>
-          <TouchableOpacity onPress={() => router.replace("/login")} style={{ padding: 14, borderRadius: 12, backgroundColor: theme.primary }}>
-            <Text style={{ color: "white", fontWeight: "700", textAlign: "center" }}>Back to login</Text>
-          </TouchableOpacity>
+          <AppButton
+            label="Back to login"
+            onPress={() => router.replace("/login")}
+          />
         </>
       ) : (
         <>
-          <TextInput
+          <FormField
+            label="Email address"
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
@@ -58,14 +62,18 @@ export default function ForgotPasswordScreen() {
             placeholder="Email address"
             placeholderTextColor={theme.textLight}
             editable={!submitting}
-            style={{ color: theme.text, borderWidth: 1, borderColor: theme.border, borderRadius: 12, padding: 14, marginBottom: 16 }}
+            containerStyle={{ marginBottom: 16 }}
           />
-          <TouchableOpacity disabled={submitting} onPress={submit} style={{ padding: 14, borderRadius: 12, backgroundColor: theme.primary, opacity: submitting ? 0.6 : 1 }}>
-            {submitting ? <ActivityIndicator color="white" /> : <Text style={{ color: "white", fontWeight: "700", textAlign: "center" }}>Send reset link</Text>}
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.back()} style={{ padding: 14 }}>
-            <Text style={{ color: theme.primary, fontWeight: "600", textAlign: "center" }}>Cancel</Text>
-          </TouchableOpacity>
+          <AppButton
+            label="Send reset link"
+            loading={submitting}
+            onPress={submit}
+          />
+          <AppButton
+            label="Cancel"
+            onPress={() => router.back()}
+            variant="ghost"
+          />
         </>
       )}
     </View>

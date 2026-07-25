@@ -1,4 +1,5 @@
 import { api } from "@/utils/api";
+import type { OfflineQueuedResponse } from "@/utils/offline-response";
 import { FoodEntryDetailResponseDTO } from "./foodDiaryService";
 
 export type Gender = "MALE" | "FEMALE";
@@ -97,7 +98,7 @@ export interface FoodDiarySummary {
 
 export const saveUserProfile = async (
   dto: UserProfileRequest,
-): Promise<UserProfileResponse> => {
+): Promise<UserProfileResponse | OfflineQueuedResponse> => {
   const res = await api.post("/v1/profile", dto);
   return res.data;
 };
@@ -114,7 +115,7 @@ export const getUserGoals = async (): Promise<UserGoalResponse> => {
 
 export const overrideUserGoals = async (
   dto: UserGoalOverrideRequest,
-): Promise<UserGoalResponse> => {
+): Promise<UserGoalResponse | OfflineQueuedResponse> => {
   const res = await api.put("/v1/profile/goals", dto);
   return res.data;
 };

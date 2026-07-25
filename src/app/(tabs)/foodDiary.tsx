@@ -1,11 +1,17 @@
 import { gymStyles } from "@/assets/styles/gym.style";
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
-import { PageHeader } from "@/components/base/page-header";
+import {
+  ActionStatus,
+  type ActionFeedback,
+} from "@/components/base/action-status";
 import { AppButton } from "@/components/base/app-button";
+import { DateNavigator } from "@/components/base/date-navigator";
 import { FormField } from "@/components/base/form-field";
 import { IconButton } from "@/components/base/icon-button";
-import { DateNavigator } from "@/components/base/date-navigator";
+import { PageHeader } from "@/components/base/page-header";
 import { SegmentedControl } from "@/components/base/segmented-control";
+import { SelectionCard } from "@/components/base/selection-card";
+import { StatePanel } from "@/components/base/state-panel";
 import { TabScreenScrollView } from "@/components/base/tab-screen-scroll-view";
 import { BarcodeScannerModal } from "@/components/nutrition/BarcodeScannerModal";
 import {
@@ -15,6 +21,11 @@ import {
 } from "@/components/nutrition/food-diary-skeletons";
 import { MealPrepSection } from "@/components/nutrition/mealPrepSection";
 import { ThemeType } from "@/constants/colors";
+import {
+  getNutritionAccents,
+  getThemeSemantics,
+} from "@/constants/semantic-colors";
+import { FONT_FAMILIES } from "@/constants/typography";
 import { useAlert } from "@/context/AlertContext";
 import { useDiaryContext } from "@/context/DairyContext";
 import { useTheme } from "@/context/ThemeContext";
@@ -50,6 +61,8 @@ import {
   GoalType,
   MacroProgress,
 } from "@/services/nutritionService";
+import { toApiError } from "@/utils/apiError";
+import { isOfflineQueuedResponse } from "@/utils/offline-response";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -73,6 +86,17 @@ const mealOptions: { value: MealType; label: string }[] = [
   { value: "DINNER", label: "Dinner" },
   { value: "SNACK", label: "Snack" },
 ];
+
+type FoodFeedbackSurface =
+  | "page"
+  | "profile"
+  | "override"
+  | "single"
+  | "custom";
+
+type ScopedFoodActionFeedback = ActionFeedback & {
+  surface: FoodFeedbackSurface;
+};
 
 const genderOptions: { value: Gender; label: string }[] = [
   { value: "MALE", label: "Male" },
@@ -151,10 +175,11 @@ const getEntryValue = (
 const getEntryFoodName = (entry: FoodEntryDetailResponseDTO) =>
   String(getEntryValue(entry, "food_name", "foodName") ?? "Food");
 
-const statusColor = (status?: string, theme?: any) => {
-  if (status === "ON_TRACK") return theme?.income ?? "#2ecc71";
-  if (status === "OVER") return theme?.expense ?? "#e74c3c";
-  return theme?.textLight ?? "#aaa";
+const statusColor = (status: string | undefined, theme: ThemeType) => {
+  const semantics = getThemeSemantics(theme);
+  if (status === "ON_TRACK") return semantics.success;
+  if (status === "OVER") return semantics.danger;
+  return theme.textLight;
 };
 
 // ── MacroBar component ────────────────────────────────────────────────────────
@@ -183,7 +208,9 @@ export function MacroBar({
           marginBottom: 4,
         }}
       >
-        <Text style={style.listMeta}>{label}</Text>
+        <Text style={[style.listMeta, { color, fontWeight: "700" }]}>
+          {label}
+        </Text>
         <Text style={style.listMeta}>
           {progress.consumed.toFixed(1)}
           {unit} / {progress.goal.toFixed(0)}
@@ -301,7 +328,7 @@ function FoodEntryCard({
               marginBottom: 0,
               fontWeight: "600",
               fontSize: 13.5,
-              fontFamily: "PlusJakartaSans_500Medium",
+              fontFamily: FONT_FAMILIES.semibold,
             },
           ]}
         >
@@ -351,11 +378,13 @@ function FoodEntryCard({
         accessibilityLabel={`Delete ${entry.food_name || "food entry"}`}
         variant="destructive"
         onPress={() => onDelete(entry)}
-        icon={<MaterialIcons
-          name="delete-outline"
-          size={17}
-          color={theme.expense ?? "#A32D2D"}
-        />}
+        icon={
+          <MaterialIcons
+            name="delete-outline"
+            size={17}
+            color={theme.expense ?? "#A32D2D"}
+          />
+        }
       />
     </View>
   );
@@ -427,10 +456,10 @@ function FoodEntriesByMeal({
               >
                 <Text
                   style={{
-                    fontSize: 10.5,
+                    fontSize: 12,
                     fontWeight: "600",
                     color: theme.textLight,
-                    fontFamily: "PlusJakartaSans_500Medium",
+                    fontFamily: FONT_FAMILIES.semibold,
                   }}
                 >
                   {mealEntries.length} item{mealEntries.length !== 1 ? "s" : ""}{" "}
@@ -457,6 +486,8 @@ function FoodEntriesByMeal({
 
 export default function FoodDiary() {
   const { theme } = useTheme();
+  const nutritionAccents = getNutritionAccents(theme.background);
+  const semantics = getThemeSemantics(theme);
   const styles = gymStyles(theme);
   const { alert } = useAlert();
   const { selectedDate, setSelectedDate } = useDiaryContext();
@@ -507,6 +538,7 @@ export default function FoodDiary() {
   const hasProfile = !!profile;
 
   const openForm = () => {
+    setFoodActionFeedback(null);
     setWeight(profile?.weight_kg?.toString() ?? "");
     setHeight(profile?.height_cm?.toString() ?? "");
     setAge(profile?.age?.toString() ?? "");
@@ -518,6 +550,7 @@ export default function FoodDiary() {
   };
 
   const openOverride = () => {
+    setFoodActionFeedback(null);
     setOCalories(goals?.calories_goal?.toString() ?? "");
     setOProtein(goals?.protein_goal?.toString() ?? "");
     setOCarbs(goals?.carbs_goal?.toString() ?? "");
@@ -534,8 +567,16 @@ export default function FoodDiary() {
     const w = parseFloat(weight),
       h = parseFloat(height),
       a = parseInt(age);
-    if (!w || !h || !a)
-      return alert("Missing info", "Fill in weight, height, and age.");
+    if (!w || !h || !a) {
+      setFoodActionFeedback({
+        surface: "profile",
+        status: "error",
+        title: "Missing information",
+        message: "Fill in weight, height, and age.",
+      });
+      return;
+    }
+    setFoodActionFeedback(null);
     saveMutation.mutate(
       {
         weight_kg: w,
@@ -547,13 +588,31 @@ export default function FoodDiary() {
       },
       {
         onSuccess: (res) => {
+          if (isOfflineQueuedResponse(res)) {
+            setFoodActionFeedback({
+              surface: "profile",
+              status: "info",
+              title: "Profile saved locally",
+              message:
+                "Keep this form available while the profile waits to synchronize.",
+            });
+            return;
+          }
           setFormOpen(false);
-          alert(
-            "Profile saved!",
-            `Your daily goal: ${res.calculated_calories.toFixed(0)} kcal\nTDEE: ${res.calculated_tdee.toFixed(0)} kcal`,
-          );
+          setFoodActionFeedback({
+            surface: "page",
+            status: "success",
+            title: "Nutrition profile saved",
+            message: `Daily goal ${res.calculated_calories.toFixed(0)} kcal · TDEE ${res.calculated_tdee.toFixed(0)} kcal.`,
+          });
         },
-        onError: (e: any) => alert("Save failed", e.message),
+        onError: (error) =>
+          setFoodActionFeedback({
+            surface: "profile",
+            status: "error",
+            title: "Could not save profile",
+            message: toApiError(error).message,
+          }),
       },
     );
   };
@@ -563,11 +622,16 @@ export default function FoodDiary() {
       p = parseFloat(oProtein),
       cb = parseFloat(oCarbs),
       f = parseFloat(oFat);
-    if (!c || !p || !cb || !f)
-      return alert(
-        "Required",
-        "Calories, protein, carbs and fat are required.",
-      );
+    if (!c || !p || !cb || !f) {
+      setFoodActionFeedback({
+        surface: "override",
+        status: "error",
+        title: "Goals required",
+        message: "Calories, protein, carbs and fat are required.",
+      });
+      return;
+    }
+    setFoodActionFeedback(null);
     overrideMutation.mutate(
       {
         calories_goal: c,
@@ -581,11 +645,32 @@ export default function FoodDiary() {
         potassium_goal: oPotassium ? parseFloat(oPotassium) : undefined,
       },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
+          if (isOfflineQueuedResponse(result)) {
+            setFoodActionFeedback({
+              surface: "override",
+              status: "info",
+              title: "Goals saved locally",
+              message:
+                "Keep this form available while the goal changes wait to synchronize.",
+            });
+            return;
+          }
           setOverrideOpen(false);
-          alert("Goals updated!");
+          setFoodActionFeedback({
+            surface: "page",
+            status: "success",
+            title: "Nutrition goals updated",
+            message: "Your daily calorie and macro targets are now active.",
+          });
         },
-        onError: (e: any) => alert("Update failed", e.message),
+        onError: (error) =>
+          setFoodActionFeedback({
+            surface: "override",
+            status: "error",
+            title: "Could not update goals",
+            message: toApiError(error).message,
+          }),
       },
     );
   };
@@ -646,39 +731,81 @@ export default function FoodDiary() {
   const [customFiber, setCustomFiber] = useState("");
   const [customSodium, setCustomSodium] = useState("");
   const [showOptionalFields, setShowOptionalFields] = useState(false);
+  const [foodActionFeedback, setFoodActionFeedback] =
+    useState<ScopedFoodActionFeedback | null>(null);
+
+  const resetCustomFoodForm = () => {
+    setCustomName("");
+    setCustomServingDesc("100g");
+    setCustomGramation("100");
+    setCustomCalories("");
+    setCustomProtein("");
+    setCustomCarbs("");
+    setCustomFat("");
+    setCustomFiber("");
+    setCustomSodium("");
+    setShowOptionalFields(false);
+  };
 
   const createCustomFoodMutation = useMutation({
     mutationFn: createCustomFood,
     onSuccess: (saved) => {
-      handleSelectCustomFood(saved);
       queryClient.invalidateQueries({
         queryKey: [...FOOD_DIARY_QUERY_KEY, "custom"],
       });
-      setCustomName("");
-      setCustomServingDesc("100g");
-      setCustomGramation("100");
-      setCustomCalories("");
-      setCustomProtein("");
-      setCustomCarbs("");
-      setCustomFat("");
-      setCustomFiber("");
-      setCustomSodium("");
+      resetCustomFoodForm();
       setShowManual(false);
+      if (isOfflineQueuedResponse(saved)) {
+        setFoodActionFeedback({
+          surface: "custom",
+          status: "info",
+          title: "Custom food saved locally",
+          message:
+            "It will become available for logging after synchronization completes.",
+        });
+        return;
+      }
+      handleSelectCustomFood(saved);
+      setFoodActionFeedback({
+        surface: "single",
+        status: "success",
+        title: "Custom food created",
+        message: `${saved.food_name} is selected and ready to log.`,
+      });
     },
-    onError: (error: any) => {
-      alert("Create custom food failed", error.message || "Please try again.");
+    onError: (error) => {
+      setFoodActionFeedback({
+        surface: "custom",
+        status: "error",
+        title: "Could not create custom food",
+        message: toApiError(error).message,
+      });
     },
   });
 
   const deleteCustomFoodMutation = useMutation({
     mutationFn: deleteCustomFood,
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({
         queryKey: [...FOOD_DIARY_QUERY_KEY, "custom"],
       });
+      const queued = isOfflineQueuedResponse(result);
+      setFoodActionFeedback({
+        surface: "custom",
+        status: queued ? "info" : "success",
+        title: queued ? "Deletion saved locally" : "Custom food deleted",
+        message: queued
+          ? "The custom food will be removed after synchronization."
+          : "The custom food was removed from your library.",
+      });
     },
-    onError: (error: any) => {
-      alert("Delete failed", error.message || "Please try again.");
+    onError: (error) => {
+      setFoodActionFeedback({
+        surface: "custom",
+        status: "error",
+        title: "Could not delete custom food",
+        message: toApiError(error).message,
+      });
     },
   });
 
@@ -692,7 +819,10 @@ export default function FoodDiary() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => deleteCustomFoodMutation.mutate(id),
+          onPress: () => {
+            setFoodActionFeedback(null);
+            deleteCustomFoodMutation.mutate(id);
+          },
         },
       ],
     );
@@ -702,21 +832,33 @@ export default function FoodDiary() {
 
   const barcodeScanMutation = useMutation({
     mutationFn: findFoodByBarcode,
+    onMutate: () => setFoodActionFeedback(null),
     onSuccess: (food) => {
       setSelectedFood(food);
       setShowBarcodeScanner(false);
       setShowFoodPicker(false);
       setQuantity("1");
+      setFoodActionFeedback({
+        surface: "single",
+        status: "success",
+        title: "Barcode matched",
+        message: `${food.food_name} is selected and ready to log.`,
+      });
     },
     onError: (error: any) => {
-      alert("Barcode lookup failed", error.message || "Please try again.");
+      setFoodActionFeedback({
+        surface: "custom",
+        status: "error",
+        title: "Barcode lookup failed",
+        message: toApiError(error).message,
+      });
       setShowBarcodeScanner(false);
     },
   });
 
   const createEntryMutation = useMutation({
     mutationFn: createFoodEntry,
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       setSelectedFood(null);
       setSearch("");
       setQuantity("1");
@@ -729,15 +871,30 @@ export default function FoodDiary() {
       await queryClient.invalidateQueries({
         queryKey: ["diary-summary", selectedDate],
       });
+      setFoodActionFeedback({
+        surface: "single",
+        status: isOfflineQueuedResponse(result) ? "info" : "success",
+        title: isOfflineQueuedResponse(result)
+          ? "Food saved locally"
+          : "Food logged",
+        message: isOfflineQueuedResponse(result)
+          ? "The diary entry is pending synchronization in the device queue."
+          : "The entry was added to the selected meal and date.",
+      });
     },
-    onError: (error: any) => {
-      alert("Could not save food", error.message || "Please try again.");
+    onError: (error) => {
+      setFoodActionFeedback({
+        surface: "single",
+        status: "error",
+        title: "Could not save food",
+        message: toApiError(error).message || "Please try again.",
+      });
     },
   });
 
   const deleteEntryMutation = useMutation({
     mutationFn: deleteFoodEntry,
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       await queryClient.invalidateQueries({
         queryKey: [...FOOD_DIARY_QUERY_KEY, "summary", selectedDate],
       });
@@ -747,9 +904,23 @@ export default function FoodDiary() {
       await queryClient.invalidateQueries({
         queryKey: ["diary-summary", selectedDate],
       });
+      const queued = isOfflineQueuedResponse(result);
+      setFoodActionFeedback({
+        surface: "page",
+        status: queued ? "info" : "success",
+        title: queued ? "Deletion saved locally" : "Food entry deleted",
+        message: queued
+          ? "The diary entry will be removed after synchronization."
+          : "The food entry was removed from the diary.",
+      });
     },
-    onError: (error: any) => {
-      alert("Delete failed", error.message || "Please try again.");
+    onError: (error) => {
+      setFoodActionFeedback({
+        surface: "page",
+        status: "error",
+        title: "Could not delete food",
+        message: toApiError(error).message,
+      });
     },
   });
 
@@ -776,15 +947,26 @@ export default function FoodDiary() {
 
   const saveSelectedFood = () => {
     if (!selectedFood || !serving) {
-      alert("Pick a food first", "Search FatSecret and select a food.");
+      setFoodActionFeedback({
+        surface: "single",
+        status: "error",
+        title: "Pick a food first",
+        message: "Search the food database and select a food.",
+      });
       return;
     }
 
     if (quantityNumber <= 0) {
-      alert("Quantity needed", "Quantity must be greater than 0.");
+      setFoodActionFeedback({
+        surface: "single",
+        status: "error",
+        title: "Quantity needed",
+        message: "Quantity must be greater than 0.",
+      });
       return;
     }
 
+    setFoodActionFeedback(null);
     createEntryMutation.mutate({
       food_id: selectedFood.food_id,
       food_name: selectedFood.food_name,
@@ -809,19 +991,15 @@ export default function FoodDiary() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => deleteEntryMutation.mutate(entry.id),
+          onPress: () => {
+            setFoodActionFeedback(null);
+            deleteEntryMutation.mutate(entry.id);
+          },
         },
       ],
     );
   };
   const prog = todayDairySummary?.progress;
-  const calColor = prog
-    ? prog.calories.percentage > 110
-      ? (theme.expense ?? "#e74c3c")
-      : prog.calories.percentage >= 85
-        ? (theme.income ?? "#2ecc71")
-        : (theme.textLight ?? "#999")
-    : theme.primary;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -838,17 +1016,14 @@ export default function FoodDiary() {
             />
           }
         >
-          <PageHeader
-            eyebrow="Nutrition"
-            title="Food Diary"
-            icon={
-              <MaterialIcons
-                name="restaurant"
-                size={22}
-                color={theme.primary}
-              />
-            }
-          />
+          <PageHeader eyebrow="Nutrition" title="Food Diary" />
+
+          {foodActionFeedback?.surface === "page" ? (
+            <ActionStatus
+              {...foodActionFeedback}
+              onDismiss={() => setFoodActionFeedback(null)}
+            />
+          ) : null}
 
           <DateNavigator
             label={
@@ -869,7 +1044,7 @@ export default function FoodDiary() {
               style={{
                 flexDirection: "row",
                 justifyContent: "space-between",
-                backgroundColor: theme.background,
+                backgroundColor: theme.card,
                 borderRadius: 14,
                 padding: 12,
                 borderWidth: 1.5,
@@ -880,7 +1055,7 @@ export default function FoodDiary() {
               <View style={{ flex: 1, alignItems: "center" }}>
                 <Text
                   style={{
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: "700",
                     fontFamily: "PlusJakartaSans_700Bold",
                     color: theme.textLight,
@@ -907,7 +1082,7 @@ export default function FoodDiary() {
               <View style={{ flex: 1, alignItems: "center" }}>
                 <Text
                   style={{
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: "700",
                     fontFamily: "PlusJakartaSans_700Bold",
                     color: theme.textLight,
@@ -934,7 +1109,7 @@ export default function FoodDiary() {
               <View style={{ flex: 1, alignItems: "center" }}>
                 <Text
                   style={{
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: "700",
                     fontFamily: "PlusJakartaSans_700Bold",
                     color: theme.textLight,
@@ -961,7 +1136,7 @@ export default function FoodDiary() {
               <View style={{ flex: 1, alignItems: "center" }}>
                 <Text
                   style={{
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: "700",
                     fontFamily: "PlusJakartaSans_700Bold",
                     color: theme.textLight,
@@ -996,37 +1171,44 @@ export default function FoodDiary() {
                       ? "Step 2 — Activity"
                       : "Step 3 — Your Goal"}
                 </Text>
-                <TouchableOpacity onPress={() => setFormOpen(false)}>
-                  <MaterialIcons
-                    name="close"
-                    size={20}
-                    color={theme.textLight}
-                  />
-                </TouchableOpacity>
+                <IconButton
+                  accessibilityLabel="Close nutrition profile"
+                  icon={
+                    <MaterialIcons
+                      name="close"
+                      size={20}
+                      color={theme.textLight}
+                    />
+                  }
+                  onPress={() => {
+                    setFormOpen(false);
+                    setFoodActionFeedback(null);
+                  }}
+                  size="compact"
+                  variant="ghost"
+                />
               </View>
+
+              {foodActionFeedback?.surface === "profile" ? (
+                <ActionStatus
+                  {...foodActionFeedback}
+                  onDismiss={() => setFoodActionFeedback(null)}
+                />
+              ) : null}
 
               {/* Step 0 — body metrics */}
               {step === 0 && (
                 <>
                   <View style={[styles.chipRow, { marginBottom: 12 }]}>
                     {genderOptions.map((g) => (
-                      <TouchableOpacity
+                      <SelectionCard
                         key={g.value}
-                        style={[
-                          styles.filterChip,
-                          gender === g.value && styles.filterChipActive,
-                        ]}
+                        compact
+                        label={g.label}
                         onPress={() => setGender(g.value)}
-                      >
-                        <Text
-                          style={[
-                            styles.filterChipText,
-                            gender === g.value && styles.filterChipTextActive,
-                          ]}
-                        >
-                          {g.label}
-                        </Text>
-                      </TouchableOpacity>
+                        selected={gender === g.value}
+                        style={{ flex: 1 }}
+                      />
                     ))}
                   </View>
                   <FormField
@@ -1053,12 +1235,10 @@ export default function FoodDiary() {
                     value={age}
                     onChangeText={setAge}
                   />
-                  <TouchableOpacity
-                    style={styles.primaryButton}
+                  <AppButton
+                    label="Next"
                     onPress={() => setStep(1)}
-                  >
-                    <Text style={styles.primaryButtonText}>Next →</Text>
-                  </TouchableOpacity>
+                  />
                 </>
               )}
 
@@ -1066,60 +1246,27 @@ export default function FoodDiary() {
               {step === 1 && (
                 <>
                   {activityOptions.map((a) => (
-                    <TouchableOpacity
+                    <SelectionCard
                       key={a.value}
-                      style={[
-                        styles.listCard,
-                        activity === a.value && {
-                          borderColor: theme.primary,
-                          borderWidth: 1.5,
-                        },
-                        { marginBottom: 8, padding: 12, borderRadius: 12 },
-                      ]}
+                      description={a.desc}
+                      label={a.label}
                       onPress={() => setActivity(a.value)}
-                    >
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                        }}
-                      >
-                        <View>
-                          <Text style={styles.listTitle}>{a.label}</Text>
-                          <Text style={styles.listMeta}>{a.desc}</Text>
-                        </View>
-                        {activity === a.value && (
-                          <MaterialIcons
-                            name="check-circle"
-                            size={20}
-                            color={theme.primary}
-                          />
-                        )}
-                      </View>
-                    </TouchableOpacity>
+                      selected={activity === a.value}
+                      style={{ marginBottom: 8 }}
+                    />
                   ))}
                   <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
-                    <TouchableOpacity
-                      style={[
-                        styles.filterChip,
-                        {
-                          flex: 1,
-                          height: 42,
-                          justifyContent: "center",
-                          alignItems: "center",
-                        },
-                      ]}
+                    <AppButton
+                      label="Back"
                       onPress={() => setStep(0)}
-                    >
-                      <Text style={styles.filterChipText}>← Back</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.primaryButton, { flex: 2 }]}
+                      style={{ flex: 1 }}
+                      variant="secondary"
+                    />
+                    <AppButton
+                      label="Next"
                       onPress={() => setStep(2)}
-                    >
-                      <Text style={styles.primaryButtonText}>Next →</Text>
-                    </TouchableOpacity>
+                      style={{ flex: 2 }}
+                    />
                   </View>
                 </>
               )}
@@ -1128,67 +1275,28 @@ export default function FoodDiary() {
               {step === 2 && (
                 <>
                   {goalOptions.map((g) => (
-                    <TouchableOpacity
+                    <SelectionCard
                       key={g.value}
-                      style={[
-                        styles.listCard,
-                        goal === g.value && {
-                          borderColor: theme.primary,
-                          borderWidth: 1.5,
-                        },
-                        { marginBottom: 8, padding: 12, borderRadius: 12 },
-                      ]}
+                      description={g.desc}
+                      label={g.label}
                       onPress={() => setGoal(g.value)}
-                    >
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                        }}
-                      >
-                        <View>
-                          <Text style={styles.listTitle}>{g.label}</Text>
-                          <Text style={styles.listMeta}>{g.desc}</Text>
-                        </View>
-                        {goal === g.value && (
-                          <MaterialIcons
-                            name="check-circle"
-                            size={20}
-                            color={theme.primary}
-                          />
-                        )}
-                      </View>
-                    </TouchableOpacity>
+                      selected={goal === g.value}
+                      style={{ marginBottom: 8 }}
+                    />
                   ))}
                   <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
-                    <TouchableOpacity
-                      style={[
-                        styles.filterChip,
-                        {
-                          flex: 1,
-                          height: 42,
-                          justifyContent: "center",
-                          alignItems: "center",
-                        },
-                      ]}
+                    <AppButton
+                      label="Back"
                       onPress={() => setStep(1)}
-                    >
-                      <Text style={styles.filterChipText}>← Back</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.primaryButton, { flex: 2 }]}
+                      style={{ flex: 1 }}
+                      variant="secondary"
+                    />
+                    <AppButton
+                      label="Save Profile"
+                      loading={saveMutation.isPending}
                       onPress={saveProfile}
-                      disabled={saveMutation.isPending}
-                    >
-                      {saveMutation.isPending ? (
-                        <ActivityIndicator color={theme.white} />
-                      ) : (
-                        <Text style={styles.primaryButtonText}>
-                          Save Profile
-                        </Text>
-                      )}
-                    </TouchableOpacity>
+                      style={{ flex: 2 }}
+                    />
                   </View>
                 </>
               )}
@@ -1200,14 +1308,29 @@ export default function FoodDiary() {
             <ShadowGlowCard style={{ padding: 16 }}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Override Goals</Text>
-                <TouchableOpacity onPress={() => setOverrideOpen(false)}>
-                  <MaterialIcons
-                    name="close"
-                    size={20}
-                    color={theme.textLight}
-                  />
-                </TouchableOpacity>
+                <IconButton
+                  accessibilityLabel="Close goal override"
+                  icon={
+                    <MaterialIcons
+                      name="close"
+                      size={20}
+                      color={theme.textLight}
+                    />
+                  }
+                  onPress={() => {
+                    setOverrideOpen(false);
+                    setFoodActionFeedback(null);
+                  }}
+                  size="compact"
+                  variant="ghost"
+                />
               </View>
+              {foodActionFeedback?.surface === "override" ? (
+                <ActionStatus
+                  {...foodActionFeedback}
+                  onDismiss={() => setFoodActionFeedback(null)}
+                />
+              ) : null}
               <View
                 style={{
                   flexDirection: "column",
@@ -1247,24 +1370,18 @@ export default function FoodDiary() {
 
           {/* ── NO PROFILE YET ─────────────────────────────────────────────── */}
           {!hasProfile && !formOpen && !profileLoading && (
-            <View style={styles.subEmptyCard}>
-              <Text style={styles.subEmptyText}>
-                Set up your body profile to get personalized calorie and macro
-                goals.
-              </Text>
-              <AppButton
-                label="Get Started"
-                style={{ marginTop: 12 }}
-                onPress={openForm}
-              />
-            </View>
+            <StatePanel
+              variant="empty"
+              title="Set up your nutrition profile"
+              message="Add your body profile to receive personalized calorie and macro goals."
+              primaryAction={{ label: "Get started", onPress: openForm }}
+            />
           )}
 
           {hasProfile && !formOpen && !overrideOpen && (
             <>
               <ShadowGlowCard
                 style={{
-                  backgroundColor: theme.background,
                   borderColor: theme.primary + "20",
                   borderWidth: 1.5,
                 }}
@@ -1307,9 +1424,19 @@ export default function FoodDiary() {
                     {/* Big calorie stats */}
                     <View style={[styles.heroStats, { marginBottom: 16 }]}>
                       <View style={styles.heroStat}>
-                        <Text style={styles.heroStatLabel}>Consumed</Text>
                         <Text
-                          style={[styles.heroStatValue, { color: calColor }]}
+                          style={[
+                            styles.heroStatLabel,
+                            { color: nutritionAccents.calories },
+                          ]}
+                        >
+                          Consumed
+                        </Text>
+                        <Text
+                          style={[
+                            styles.heroStatValue,
+                            { color: nutritionAccents.calories },
+                          ]}
                         >
                           {prog.calories.consumed.toFixed(0)}
                         </Text>
@@ -1338,7 +1465,7 @@ export default function FoodDiary() {
                       label="Protein"
                       unit="g"
                       progress={prog.protein}
-                      color={theme.expense}
+                      color={nutritionAccents.protein}
                       theme={theme}
                       style={styles}
                     />
@@ -1346,7 +1473,7 @@ export default function FoodDiary() {
                       label="Carbohydrate"
                       unit="g"
                       progress={prog.carbohydrate}
-                      color={theme.primary ?? "#2ecc71"}
+                      color={nutritionAccents.carbohydrate}
                       theme={theme}
                       style={styles}
                     />
@@ -1354,7 +1481,7 @@ export default function FoodDiary() {
                       label="Fat"
                       unit="g"
                       progress={prog.fat}
-                      color={"#fff240"}
+                      color={nutritionAccents.fat}
                       theme={theme}
                       style={styles}
                     />
@@ -1364,7 +1491,7 @@ export default function FoodDiary() {
                           label="Fiber"
                           unit="g"
                           progress={prog.fiber}
-                          color={theme.teriary ?? "#9b59b6"}
+                          color={theme.tertiary}
                           theme={theme}
                           style={styles}
                         />
@@ -1372,7 +1499,7 @@ export default function FoodDiary() {
                           label="Sugar"
                           unit="g"
                           progress={prog.sugar}
-                          color={"#f39c12"}
+                          color={semantics.warning}
                           theme={theme}
                           style={styles}
                         />
@@ -1380,7 +1507,7 @@ export default function FoodDiary() {
                           label="Sodium"
                           unit="mg"
                           progress={prog.sodium}
-                          color={"#1abc9c"}
+                          color={semantics.success}
                           theme={theme}
                           style={styles}
                         />
@@ -1388,7 +1515,7 @@ export default function FoodDiary() {
                           label="Cholesterol"
                           unit="mg"
                           progress={prog.cholesterol}
-                          color={"#e67e22"}
+                          color={nutritionAccents.calories}
                           theme={theme}
                           style={styles}
                         />
@@ -1396,7 +1523,7 @@ export default function FoodDiary() {
                           label="Potassium"
                           unit="mg"
                           progress={prog.potassium}
-                          color={"#3498db"}
+                          color={semantics.info}
                           theme={theme}
                           style={styles}
                         />
@@ -1412,6 +1539,14 @@ export default function FoodDiary() {
                       }}
                     >
                       <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          openMoreMacros
+                            ? "Hide additional nutrients"
+                            : "Show additional nutrients"
+                        }
+                        accessibilityState={{ expanded: openMoreMacros }}
+                        hitSlop={8}
                         onPress={() => setOpenMoreMacros(!openMoreMacros)}
                       >
                         <Text style={styles.inlineActionText}>
@@ -1421,6 +1556,9 @@ export default function FoodDiary() {
 
                       <View style={{ flexDirection: "row", gap: 8 }}>
                         <TouchableOpacity
+                          accessibilityRole="button"
+                          accessibilityLabel="Open nutrition profile"
+                          hitSlop={6}
                           style={{
                             paddingHorizontal: 10,
                             paddingVertical: 5,
@@ -1442,6 +1580,9 @@ export default function FoodDiary() {
                         </TouchableOpacity>
 
                         <TouchableOpacity
+                          accessibilityRole="button"
+                          accessibilityLabel="Override nutrition goals"
+                          hitSlop={6}
                           style={{
                             paddingHorizontal: 10,
                             paddingVertical: 5,
@@ -1481,9 +1622,17 @@ export default function FoodDiary() {
                     </View>
                   </>
                 ) : (
-                  <Text style={styles.subEmptyText}>
-                    No food logged today. Go log a meal!
-                  </Text>
+                  <StatePanel
+                    variant="empty"
+                    compact
+                    embedded
+                    title="No nutrition recorded"
+                    message="Log your first food to start today’s calorie and macro summary."
+                    primaryAction={{
+                      label: "Search food",
+                      onPress: () => setShowFoodPicker(true),
+                    }}
+                  />
                 )}
               </ShadowGlowCard>
 
@@ -1491,7 +1640,6 @@ export default function FoodDiary() {
               <ShadowGlowCard
                 style={{
                   marginTop: 16,
-                  backgroundColor: theme.background,
                   borderColor: theme.primary + "20",
                   borderWidth: 1.5,
                 }}
@@ -1524,9 +1672,17 @@ export default function FoodDiary() {
                     style={styles}
                   />
                 ) : (
-                  <Text style={styles.subEmptyText}>
-                    No food logged today. Start adding items below!
-                  </Text>
+                  <StatePanel
+                    variant="empty"
+                    compact
+                    embedded
+                    title="No meals logged today"
+                    message="Foods added today will be grouped here by meal."
+                    primaryAction={{
+                      label: "Add food",
+                      onPress: () => setShowFoodPicker(true),
+                    }}
+                  />
                 )}
               </ShadowGlowCard>
             </>
@@ -1558,6 +1714,8 @@ export default function FoodDiary() {
                 <View style={[styles.sectionHeader, { marginBottom: 12 }]}>
                   <Text style={styles.sectionTitle}>Log Food Now</Text>
                   <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Search foods"
                     style={styles.inlineAction}
                     onPress={() => setShowFoodPicker(true)}
                   >
@@ -1570,9 +1728,15 @@ export default function FoodDiary() {
                   </TouchableOpacity>
                 </View>
 
+                {foodActionFeedback?.surface === "single" ? (
+                  <ActionStatus
+                    {...foodActionFeedback}
+                    onDismiss={() => setFoodActionFeedback(null)}
+                  />
+                ) : null}
+
                 <ShadowGlowCard
                   style={{
-                    backgroundColor: theme.background,
                     borderColor: theme.primary + "20",
                     borderWidth: 1.5,
                   }}
@@ -1593,7 +1757,12 @@ export default function FoodDiary() {
                             {serving.serving_description ?? "Selected serving"}
                           </Text>
                         </View>
-                        <TouchableOpacity onPress={() => setSelectedFood(null)}>
+                        <TouchableOpacity
+                          accessibilityRole="button"
+                          accessibilityLabel={`Clear selected food ${selectedFood.food_name}`}
+                          hitSlop={10}
+                          onPress={() => setSelectedFood(null)}
+                        >
                           <MaterialIcons
                             name="close"
                             size={20}
@@ -1613,6 +1782,9 @@ export default function FoodDiary() {
                           return (
                             <TouchableOpacity
                               key={meal.value}
+                              accessibilityRole="radio"
+                              accessibilityLabel={meal.label}
+                              accessibilityState={{ selected: active }}
                               style={[
                                 styles.filterChip,
                                 active && styles.filterChipActive,
@@ -1664,22 +1836,17 @@ export default function FoodDiary() {
                         </View>
                       </View>
 
-                      <TouchableOpacity
-                        style={styles.primaryButton}
+                      <AppButton
+                        label="Save to Diary"
+                        accessibilityLabel={`Log ${selectedFood.food_name}`}
+                        loading={createEntryMutation.isPending}
                         onPress={saveSelectedFood}
-                        disabled={createEntryMutation.isPending}
-                      >
-                        {createEntryMutation.isPending ? (
-                          <ActivityIndicator color={theme.white} />
-                        ) : (
-                          <Text style={styles.primaryButtonText}>
-                            Save to Diary
-                          </Text>
-                        )}
-                      </TouchableOpacity>
+                      />
                     </>
                   ) : (
                     <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Open food search"
                       onPress={() => setShowFoodPicker(true)}
                       activeOpacity={0.8}
                       style={{ paddingVertical: 12, alignItems: "center" }}
@@ -1711,12 +1878,16 @@ export default function FoodDiary() {
         onRequestClose={() => {
           setShowFoodPicker(false);
           setShowManual(false);
+          setFoodActionFeedback(null);
         }}
       >
         <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { maxHeight: "88%" }]}>
+          <View
+            accessibilityViewIsModal
+            style={[styles.modalCard, { maxHeight: "88%" }]}
+          >
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
+              <Text accessibilityRole="header" style={styles.modalTitle}>
                 {showManual ? "Add Custom Food" : "Find Food"}
               </Text>
               <View
@@ -1724,6 +1895,9 @@ export default function FoodDiary() {
               >
                 {!showManual && (
                   <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Scan a food barcode"
+                    hitSlop={10}
                     onPress={() => setShowBarcodeScanner(true)}
                     activeOpacity={0.7}
                   >
@@ -1735,9 +1909,13 @@ export default function FoodDiary() {
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Close food search"
+                  hitSlop={10}
                   onPress={() => {
                     setShowFoodPicker(false);
                     setShowManual(false);
+                    setFoodActionFeedback(null);
                   }}
                   activeOpacity={0.7}
                 >
@@ -1749,6 +1927,13 @@ export default function FoodDiary() {
                 </TouchableOpacity>
               </View>
             </View>
+
+            {foodActionFeedback?.surface === "custom" ? (
+              <ActionStatus
+                {...foodActionFeedback}
+                onDismiss={() => setFoodActionFeedback(null)}
+              />
+            ) : null}
 
             {showManual ? (
               <ScrollView
@@ -1817,6 +2002,13 @@ export default function FoodDiary() {
 
                 {/* Optional fields toggle */}
                 <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    showOptionalFields
+                      ? "Hide optional nutrition fields"
+                      : "Show optional nutrition fields"
+                  }
+                  accessibilityState={{ expanded: showOptionalFields }}
                   onPress={() => setShowOptionalFields(!showOptionalFields)}
                   style={{
                     flexDirection: "row",
@@ -1867,32 +2059,41 @@ export default function FoodDiary() {
                 )}
 
                 <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
-                  <TouchableOpacity
-                    style={[
-                      styles.primaryButton,
-                      {
-                        flex: 1,
-                        backgroundColor: "transparent",
-                        borderWidth: 1,
-                        borderColor: theme.border,
-                      },
-                    ]}
-                    onPress={() => setShowManual(false)}
-                  >
-                    <Text style={{ color: theme.textLight }}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.primaryButton, { flex: 2 }]}
+                  <AppButton
+                    label="Cancel"
                     onPress={() => {
-                      if (!customName.trim())
-                        return alert("Required", "Enter a food name.");
-                      if (!customCalories)
-                        return alert("Required", "Enter calories.");
-                      if (!customProtein)
-                        return alert("Required", "Enter protein.");
-                      if (!customCarbs)
-                        return alert("Required", "Enter carbs.");
-                      if (!customFat) return alert("Required", "Enter fat.");
+                      setShowManual(false);
+                      setFoodActionFeedback(null);
+                    }}
+                    style={{ flex: 1 }}
+                    variant="secondary"
+                  />
+                  <AppButton
+                    label="Save & Log Food"
+                    loading={createCustomFoodMutation.isPending}
+                    style={{ flex: 2 }}
+                    onPress={() => {
+                      const missingField = !customName.trim()
+                        ? "food name"
+                        : !customCalories
+                          ? "calories"
+                          : !customProtein
+                            ? "protein"
+                            : !customCarbs
+                              ? "carbs"
+                              : !customFat
+                                ? "fat"
+                                : null;
+                      if (missingField) {
+                        setFoodActionFeedback({
+                          surface: "custom",
+                          status: "error",
+                          title: "Required information",
+                          message: `Enter ${missingField}.`,
+                        });
+                        return;
+                      }
+                      setFoodActionFeedback(null);
                       createCustomFoodMutation.mutate({
                         food_name: customName.trim(),
                         serving_description: customServingDesc.trim() || "100g",
@@ -1910,16 +2111,7 @@ export default function FoodDiary() {
                           : undefined,
                       });
                     }}
-                    disabled={createCustomFoodMutation.isPending}
-                  >
-                    {createCustomFoodMutation.isPending ? (
-                      <ActivityIndicator color={theme.white} />
-                    ) : (
-                      <Text style={styles.primaryButtonText}>
-                        Save & Log Food
-                      </Text>
-                    )}
-                  </TouchableOpacity>
+                  />
                 </View>
               </ScrollView>
             ) : (
@@ -1933,30 +2125,15 @@ export default function FoodDiary() {
                   autoFocus
                 />
 
-                <TouchableOpacity
-                  style={[
-                    styles.primaryButton,
-                    {
-                      marginHorizontal: 0,
-                      marginBottom: 12,
-                      backgroundColor: theme.primary + "12",
-                      borderWidth: 1.5,
-                      borderColor: theme.primary + "30",
-                    },
-                  ]}
-                  onPress={() => setShowManual(true)}
-                >
-                  <Text
-                    style={{
-                      color: theme.primary,
-                      fontSize: 13,
-                      fontWeight: "800",
-                      fontFamily: "PlusJakartaSans_800ExtraBold",
-                    }}
-                  >
-                    + Create New Custom Food
-                  </Text>
-                </TouchableOpacity>
+                <AppButton
+                  label="Create New Custom Food"
+                  onPress={() => {
+                    setFoodActionFeedback(null);
+                    setShowManual(true);
+                  }}
+                  style={{ marginBottom: 12 }}
+                  variant="secondary"
+                />
 
                 <ScrollView contentContainerStyle={{ gap: 8 }}>
                   {foodSearchQuery.isFetching ? (
@@ -1970,6 +2147,8 @@ export default function FoodDiary() {
                     foodSearchQuery.data.map((food: CustomFoodResponse) => (
                       <TouchableOpacity
                         key={food.id}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Select ${food.food_name}`}
                         style={styles.listCard}
                         activeOpacity={0.82}
                         onPress={() => handleSelectCustomFood(food)}
@@ -1996,6 +2175,9 @@ export default function FoodDiary() {
                             }}
                           >
                             <TouchableOpacity
+                              accessibilityRole="button"
+                              accessibilityLabel={`Delete custom food ${food.food_name}`}
+                              hitSlop={8}
                               onPress={(e) =>
                                 handleDeleteCustomFood(e, food.id)
                               }

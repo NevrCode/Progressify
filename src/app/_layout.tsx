@@ -7,8 +7,10 @@ import { ThemeProvider, useTheme } from "@/context/ThemeContext";
 import { usePatchNotes } from "@/hooks/usePatchNote";
 import { startOfflineSyncLifecycle } from "@/services/syncQueueService";
 import { shouldRetryApiError } from "@/utils/apiError";
+import { relativeLuminance } from "@/utils/color-contrast";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, usePathname, useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import {
   useFonts,
   PlusJakartaSans_400Regular,
@@ -19,6 +21,7 @@ import {
 } from "@expo-google-fonts/plus-jakarta-sans";
 import { useEffect, useMemo, useRef } from "react";
 import { View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 export default function RootLayout() {
@@ -47,24 +50,28 @@ export default function RootLayout() {
   );
   useEffect(() => startOfflineSyncLifecycle(), []);
   return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        <AlertProvider>
-          <DiaryProvider>
-            <QueryClientProvider client={queryClient}>
-              <AuthProvider>
-                <AppNavigator fontsLoaded={fontsLoaded} />
-              </AuthProvider>
-            </QueryClientProvider>
-          </DiaryProvider>
-        </AlertProvider>
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <AlertProvider>
+            <DiaryProvider>
+              <QueryClientProvider client={queryClient}>
+                <AuthProvider>
+                  <AppNavigator fontsLoaded={fontsLoaded} />
+                </AuthProvider>
+              </QueryClientProvider>
+            </DiaryProvider>
+          </AlertProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
 function AppNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
   const { theme } = useTheme();
+  const statusBarStyle =
+    relativeLuminance(theme.background) < 0.35 ? "light" : "dark";
   const authState = useAuthState();
   const pathname = usePathname();
   const router = useRouter();
@@ -106,23 +113,27 @@ function AppNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
 
   if (authState === "initializing" || !fontsLoaded) {
     return (
-      <View
-        style={{
-          flex: 1,
-          justifyContent: "center",
-          alignItems: "center",
-          backgroundColor: theme.background,
-          gap: 12,
-        }}
-      >
-        <ShimmerSkeleton width={52} height={52} borderRadius={16} />
-        <ShimmerSkeleton width={136} height={22} borderRadius={7} />
-      </View>
+      <>
+        <StatusBar style={statusBarStyle} />
+        <View
+          style={{
+            flex: 1,
+            justifyContent: "center",
+            alignItems: "center",
+            backgroundColor: theme.background,
+            gap: 12,
+          }}
+        >
+          <ShimmerSkeleton width={52} height={52} borderRadius={16} />
+          <ShimmerSkeleton width={136} height={22} borderRadius={7} />
+        </View>
+      </>
     );
   }
 
   return (
     <>
+      <StatusBar style={statusBarStyle} />
       <Stack screenOptions={{ headerShown: false }} />
       <PatchNotesPopup
         visible={showPopup}

@@ -94,20 +94,17 @@ Home should answer three questions immediately:
 
 ### Current gap
 
-New users must understand several independent features before their dashboards
-become useful. Empty screens can appear before users know what information they
-need to enter.
+Home now provides a resumable setup checklist based on real nutrition, workout,
+exercise, session, and food-history data. Users can collapse or dismiss it and
+reopen it from Profile.
 
 ### Recommended onboarding checklist
 
-1. Create or confirm the user profile
-2. Set body information
-3. Choose a training objective
-4. Choose a preferred workout split
-5. Set calorie and macro goals
-6. Add the first exercises
-7. Log the first workout
-8. Log the first meal
+1. Set the nutrition profile and goals
+2. Create or activate a workout program
+3. Add the first exercise progression
+4. Complete the first workout session
+5. Log the first food entry
 
 ### UX requirements
 
@@ -121,8 +118,9 @@ need to enter.
 
 ### Current gap
 
-Some empty areas explain that no data exists, but empty states are not yet a
-consistent product pattern.
+The shared `StatePanel` now standardizes the main Home, Gym Progression, Food
+Diary, Workout Programs, and Profile states. Remaining secondary modals and
+management screens should migrate as they are touched.
 
 ### Every empty state should communicate
 
@@ -141,6 +139,59 @@ consistent product pattern.
 - No weekly insight: explain that insights appear after sufficient activity
 
 ## 5. Add an insights layer
+
+### Implementation status
+
+The first explainable Home insight layer is implemented:
+
+- the existing estimated 1RM improvement remains the primary training insight;
+- latest training-day volume is compared with the preceding training day;
+- seven-day training consistency uses unique completed-session dates;
+- today's protein progress uses the current diary total and current goal;
+- recent diary consistency uses unique logged dates from the cached history;
+- every additional insight can reveal the calculation context through
+  `Why am I seeing this?`;
+- insights link to Gym Progression or Food Diary for the related detail.
+
+The calculations live in `src/utils/home-insights.ts` and are derived at
+runtime. They are not persisted as historical facts. The Home screen limits
+the number shown so that the dashboard remains focused.
+
+The Home weekly review is also implemented:
+
+- the current seven UTC calendar dates are compared with the preceding seven;
+- unique training days and `weight × reps` set volume are compared;
+- food diary days are compared only when the date-sorted paged history reaches
+  the complete 14-day window;
+- incomplete diary history is disclosed instead of being presented as an exact
+  result;
+- future-dated records are excluded from both periods.
+
+The review calculations live in `src/utils/weekly-review.ts`.
+
+Personal-record and plateau signals are implemented in the Home insight engine:
+
+- an estimated personal record requires at least three valid sessions and must
+  exceed every earlier estimated 1RM by at least 1%;
+- a plateau requires five valid sessions spanning at least 14 days, a latest
+  session within the last 14 days, and no more than a 3% estimated 1RM range;
+- future sessions and sets without valid weight and reps are ignored;
+- a single exercise cannot produce duplicate record, ordinary improvement, and
+  plateau messages;
+- both primary and additional insight placements expose their calculation
+  explanation.
+
+Progression charts now provide a shared screen-reader summary:
+
+- Gym Progression and Workout Session Management use the same accessible chart
+  frame and summary calculation;
+- multi-session charts announce the displayed date range, latest estimated
+  1RM, best estimated 1RM with its date, and overall change from the first
+  displayed session;
+- single-session charts explicitly say that more history is required;
+- invalid or empty histories do not produce fabricated chart trends;
+- the visual chart layout and right-aligned initial scroll behavior are
+  unchanged.
 
 ### Current gap
 
@@ -179,6 +230,34 @@ precalculated chart averages or progression trends as database facts.
 
 ## 6. Improve offline and synchronization transparency
 
+### Implementation status
+
+The first synchronization details panel is implemented on Profile:
+
+- the existing header badge remains the compact cross-screen indicator;
+- Profile shows online, offline, pending, syncing, synchronized, and failed
+  states with pending and failed counts;
+- the last successfully replayed queued-change time is stored per owner in the
+  device database and cleared with that owner's offline data;
+- pending changes can be processed immediately while online;
+- all failed changes can be retried in queue order;
+- failed changes can only be discarded after destructive confirmation;
+- the panel explains saved-locally, pending, synchronized, and failed states;
+- mutation bodies and other sensitive queued payloads are not exposed in the
+  panel.
+
+Per-item failed recovery is also implemented:
+
+- failed items expose only method, resource category, queued time, attempt
+  count, and a status-derived error category;
+- request bodies, raw URLs, URL identifiers, query parameters, tokens, and raw
+  backend error messages are never returned to the UI;
+- only the authenticated owner's failed items are read or changed;
+- the oldest failed item can be retried or discarded individually;
+- later failed items remain locked until earlier queue entries are resolved,
+  preserving mutation order;
+- per-item discard requires destructive confirmation.
+
 ### Current gap
 
 Offline synchronization exists, but users need a clearer understanding of
@@ -206,10 +285,37 @@ whether their information is safely stored and synchronized.
 
 ## 7. Standardize feedback and interaction states
 
+### Implementation status
+
+The first shared inline mutation-feedback pass is implemented:
+
+- `ActionStatus` provides reusable success, error, and informational feedback
+  with a polite live-region announcement and optional accessible dismissal;
+- workout-session update and deletion feedback stays next to the manager or
+  active edit modal;
+- failed session updates preserve the entered date, notes, and set values;
+- Food Diary now reports validation, confirmed success, recoverable failure,
+  and offline-queued local success for single-food logging, diary deletion,
+  custom foods, nutrition profiles, and manual goal overrides;
+- queued custom-food creation no longer treats a local queue receipt as a
+  server-created food, and queued nutrition-profile saving no longer tries to
+  read unavailable calculated fields;
+- meal-prep creation, editing, deletion, and diary logging place feedback in
+  the initiating form, detail sheet, log sheet, or section while preserving
+  failed draft data;
+- workout-program actions report feedback on the page or inside the modal that
+  initiated the action;
+- program form values are reset only by successful mutation handlers;
+- server-confirmed success and device-queued pending synchronization use
+  different messages;
+- destructive confirmation dialogs remain in place.
+
 ### Current gap
 
-Loading, disabled, validation, and error behavior exists, but not yet as a
-formal standard applied to every interactive component.
+Shared buttons, fields, synchronization badges, skeletons, and state panels now
+cover the main loading, disabled, validation, empty, error, offline, and success
+patterns. Remaining older management screens should adopt these primitives
+incrementally.
 
 ### Required states for controls
 
@@ -265,18 +371,15 @@ Each important chart should provide a readable summary such as:
 
 ### Current gap
 
-Several themes exist, but theme behavior is not yet completely systematic.
+Theme selection now persists, startup surfaces and the status bar respect the
+active palette, contrast utilities cover all palettes, the `tertiary` token is
+correctly named, and nutrition/status/skeleton colors have a semantic
+light/dark layer. Main dashboard cards now consistently use `theme.card`.
 
 ### Recommended work
 
-- Persist the selected theme across app restarts
-- Test contrast in every theme
-- Replace unnecessary hard-coded colors with semantic tokens
-- Make the startup screen use the active theme
-- Define semantic chart colors
-- Standardize card versus screen surface usage
-- Rename `teriary` to `tertiary` through a controlled migration
-- Verify skeleton colors in both dark and light themes
+- Review older nested/modal surfaces as their screens are touched
+- Continue replacing accidental hard-coded colors as screens are touched
 
 ### Product decision
 
@@ -353,7 +456,7 @@ mature design system must also state which choices are required for new work.
 
 - Define spacing, radius, typography, and interaction-state tokens
 - Implement shared buttons, icon buttons, headers, inputs, and navigators
-- Add theme persistence
+- Theme persistence (completed)
 - Fix font-weight mapping
 - Establish accessibility requirements
 

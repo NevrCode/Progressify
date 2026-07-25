@@ -13,7 +13,7 @@ export function ExerciseProgressionCardSkeletons() {
         <View
           key={index}
           style={{
-            backgroundColor: theme.background + "06",
+            backgroundColor: theme.card,
             borderColor: theme.primary + "20",
             borderWidth: 1.5,
             borderRadius: 16,

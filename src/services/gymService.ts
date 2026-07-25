@@ -2,36 +2,12 @@ import { getAccessToken } from "@/services/authSessionService";
 import { api } from "@/utils/api";
 import { getErrorMessage, toApiError } from "@/utils/apiError";
 
-export type SplitType = "PUSH" | "PULL" | "LEGS";
-
-export interface SplitSummaryDTO {
-  id: number;
-  split: string;
-  next_day?: string;
-  next_workout_date?: string;
-  exercises?: number;
-  exercise_count?: number;
-}
-
-export interface SplitWorkoutDTO {
-  id: number;
-  split: string;
-  date?: string;
-  workout_date?: string;
-  duration?: string;
-  exercises?: number;
-  exercise_count?: number;
-  total_volume?: number;
-  focus?: string;
-}
-
 export interface WorkoutSetDTO {
   id?: number;
   set_number: number;
   weight: number;
   reps: number;
   rir?: number;
-  split_workout_id?: number;
   session_id?: number;
 }
 
@@ -60,7 +36,6 @@ export interface ProgressPointDTO {
 export interface ExerciseProgressionDTO {
   id: number;
   catalog_exercise_id?: string | null;
-  split: string;
   name?: string;
   muscle_group?: string;
   target_rep_range?: string;
@@ -85,7 +60,6 @@ export interface ExerciseProgressionPageDTO {
 
 export interface GymExerciseProgressionRequestDTO {
   catalog_exercise_id: string | null;
-  split: SplitType;
   name: string;
   muscle_group: string;
   target_rep_range: string;
@@ -139,12 +113,10 @@ export const getGymDashboard = async () => {
 export const getExerciseProgressionPage = async ({
   page,
   limit,
-  split,
   search,
 }: {
   page: number;
   limit: number;
-  split?: SplitType;
   search?: string;
 }): Promise<ExerciseProgressionPageDTO> => {
   try {
@@ -165,7 +137,6 @@ export const getExerciseProgressionPage = async ({
       params: {
         page,
         limit,
-        ...(split ? { split } : {}),
         ...(search ? { search } : {}),
       },
     });
@@ -179,7 +150,6 @@ export const getExerciseProgressionPage = async ({
               exercise.name,
               exercise.muscle_group,
               exercise.notes,
-              exercise.split,
             ].some((value) => value?.toLowerCase().includes(keyword)),
           )
         : payload;
@@ -207,7 +177,10 @@ export const getExerciseProgressionPage = async ({
 export const deleteSessionProgression = async (id: number) => {
   try {
     const headers = await getAuthHeaders();
-    await api.delete(`/v1/gym/exercise-sessions/${id}`, { headers });
+    const response = await api.delete(`/v1/gym/exercise-sessions/${id}`, {
+      headers,
+    });
+    return response.data;
   } catch (error: any) {
     handleApiError(error, "Delete session Prog failed");
   }

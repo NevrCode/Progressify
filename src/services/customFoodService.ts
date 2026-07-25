@@ -1,4 +1,5 @@
 import { api } from "@/utils/api";
+import type { OfflineQueuedResponse } from "@/utils/offline-response";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export interface CustomFoodResponse {
@@ -37,13 +38,16 @@ export const searchCustomFoods = async (
 
 export const createCustomFood = async (
   dto: CustomFoodCreateRequest,
-): Promise<CustomFoodResponse> => {
+): Promise<CustomFoodResponse | OfflineQueuedResponse> => {
   const res = await api.post("/v1/custom-foods", dto);
   return res.data;
 };
 
-export const deleteCustomFood = async (id: number): Promise<void> => {
-  await api.delete(`/v1/custom-foods/${id}`);
+export const deleteCustomFood = async (
+  id: number,
+): Promise<void | OfflineQueuedResponse> => {
+  const res = await api.delete(`/v1/custom-foods/${id}`);
+  return res.data;
 };
 
 export const CUSTOM_FOOD_KEY = ["custom-foods"];

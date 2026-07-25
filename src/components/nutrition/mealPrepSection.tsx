@@ -1,9 +1,18 @@
 import { gymStyles } from "@/assets/styles/gym.style";
+import {
+  ActionStatus,
+  type ActionFeedback,
+} from "@/components/base/action-status";
+import { AppButton } from "@/components/base/app-button";
+import { ModalHeader } from "@/components/base/modal-header";
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
 import { ThemeType } from "@/constants/colors";
 import { useAlert } from "@/context/AlertContext";
 import { useDiaryContext } from "@/context/DairyContext";
 import { useTheme } from "@/context/ThemeContext";
+import { FONT_FAMILIES } from "@/constants/typography";
+import { toApiError } from "@/utils/apiError";
+import { isOfflineQueuedResponse } from "@/utils/offline-response";
 import {
   useCreateMealPrep,
   useDeleteMealPrep,
@@ -107,6 +116,8 @@ function PrepRow({
   const accent = ACCENT_COLORS[index % ACCENT_COLORS.length];
   return (
     <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityLabel={`Open meal prep ${prep.name}`}
       onPress={onPress}
       activeOpacity={0.75}
       style={{
@@ -179,6 +190,8 @@ function PrepDetailSheet({
   onEdit,
   onDelete,
   onLog,
+  feedback,
+  onDismissFeedback,
   theme,
   style,
 }: {
@@ -188,6 +201,8 @@ function PrepDetailSheet({
   onEdit: () => void;
   onDelete: () => void;
   onLog: () => void;
+  feedback?: ActionFeedback;
+  onDismissFeedback: () => void;
   theme: ThemeType;
   style: any;
 }) {
@@ -276,7 +291,13 @@ function PrepDetailSheet({
             />
           </View>
         </View>
-        <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={`Close ${prep.name} details`}
+          hitSlop={10}
+          onPress={onClose}
+          style={{ padding: 4 }}
+        >
           <MaterialIcons name="close" size={20} color={theme.textLight} />
         </TouchableOpacity>
       </View>
@@ -355,8 +376,15 @@ function PrepDetailSheet({
           </TouchableOpacity>
         )}
       </View>
+      {feedback ? (
+        <View style={{ marginTop: 12 }}>
+          <ActionStatus {...feedback} onDismiss={onDismissFeedback} />
+        </View>
+      ) : null}
       <View style={{ flexDirection: "row", gap: 8, marginTop: 16 }}>
         <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={`Log ${prep.name} to diary`}
           onPress={onLog}
           style={{
             flex: 2,
@@ -377,6 +405,8 @@ function PrepDetailSheet({
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={`Edit ${prep.name}`}
           onPress={onEdit}
           style={{
             flex: 1,
@@ -392,6 +422,8 @@ function PrepDetailSheet({
           <MaterialIcons name="edit" size={16} color={theme.primary} />
         </TouchableOpacity>
         <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={`Delete ${prep.name}`}
           onPress={onDelete}
           style={{
             flex: 1,
@@ -440,6 +472,9 @@ export function MealPrepSection() {
   const [editingItemKey, setEditingItemKey] = useState<string | null>(null);
   const [showLogModal, setShowLogModal] = useState(false);
   const [logMealType, setLogMealType] = useState<MealType>("LUNCH");
+  const [actionFeedback, setActionFeedback] = useState<
+    (ActionFeedback & { surface: "section" | "form" | "detail" | "log" }) | null
+  >(null);
 
   const updateGramation = (key: string, raw: string) => {
     const grams = Math.max(parseNumber(raw), 0);
@@ -479,6 +514,7 @@ export function MealPrepSection() {
   );
 
   const openCreate = () => {
+    setActionFeedback(null);
     setEditingPrep(null);
     setPrepName("");
     setPrepDesc("");
@@ -491,9 +527,11 @@ export function MealPrepSection() {
     setDraftItems([]);
     setPrepName("");
     setPrepDesc("");
+    setActionFeedback(null);
   };
 
   const openEdit = (prep: MealPrepResponse) => {
+    setActionFeedback(null);
     setSelectedPrep(null);
     setEditingPrep(prep);
     setPrepName(prep.name);
@@ -516,10 +554,24 @@ export function MealPrepSection() {
   };
 
   const savePrep = () => {
-    if (!prepName.trim())
-      return alert("Name required", "Give your meal prep a name.");
-    if (draftItems.length === 0)
-      return alert("Add foods", "Add at least one food item.");
+    if (!prepName.trim()) {
+      setActionFeedback({
+        surface: "form",
+        status: "error",
+        title: "Name required",
+        message: "Give your meal prep a name.",
+      });
+      return;
+    }
+    if (draftItems.length === 0) {
+      setActionFeedback({
+        surface: "form",
+        status: "error",
+        title: "Add foods",
+        message: "Add at least one food item.",
+      });
+      return;
+    }
 
     // Strip the client-side 'key' property to avoid backend Jackson deserialization errors
     const cleanedItems = draftItems.map(({ key, ...item }) => item);
@@ -529,18 +581,46 @@ export function MealPrepSection() {
       description: prepDesc.trim() || undefined,
       items: cleanedItems,
     };
+    setActionFeedback(null);
+    const operation = editingPrep ? "updated" : "created";
+    const handleSuccess = (result: unknown) => {
+      const queued = isOfflineQueuedResponse(result);
+      setFormOpen(false);
+      setEditingPrep(null);
+      setDraftItems([]);
+      setPrepName("");
+      setPrepDesc("");
+      setActionFeedback({
+        surface: "section",
+        status: queued ? "info" : "success",
+        title: queued ? "Meal prep saved locally" : `Meal prep ${operation}`,
+        message: queued
+          ? "The change is waiting in the device synchronization queue."
+          : `Your meal prep was ${operation} successfully.`,
+      });
+    };
+    const handleError = (error: unknown) =>
+      setActionFeedback({
+        surface: "form",
+        status: "error",
+        title: editingPrep
+          ? "Could not update meal prep"
+          : "Could not create meal prep",
+        message: toApiError(error).message,
+      });
+
     if (editingPrep)
       updateMutation.mutate(
         { id: editingPrep.id, dto },
         {
-          onSuccess: closeForm,
-          onError: (e: any) => alert("Update failed", e.message),
+          onSuccess: handleSuccess,
+          onError: handleError,
         },
       );
     else
       createMutation.mutate(dto, {
-        onSuccess: closeForm,
-        onError: (e: any) => alert("Create failed", e.message),
+        onSuccess: handleSuccess,
+        onError: handleError,
       });
   };
 
@@ -551,26 +631,62 @@ export function MealPrepSection() {
         text: "Delete",
         style: "destructive",
         onPress: () => {
-          deleteMutation.mutate(prep.id);
-          setSelectedPrep(null);
+          setActionFeedback(null);
+          deleteMutation.mutate(prep.id, {
+            onSuccess: (result) => {
+              const queued = isOfflineQueuedResponse(result);
+              setSelectedPrep(null);
+              setActionFeedback({
+                surface: "section",
+                status: queued ? "info" : "success",
+                title: queued ? "Deletion saved locally" : "Meal prep deleted",
+                message: queued
+                  ? "The meal prep will be removed after synchronization."
+                  : `"${prep.name}" was removed.`,
+              });
+            },
+            onError: (error) =>
+              setActionFeedback({
+                surface: "detail",
+                status: "error",
+                title: "Could not delete meal prep",
+                message: toApiError(error).message,
+              }),
+          });
         },
       },
     ]);
 
   const logPrep = () => {
     if (!selectedPrep) return;
+    setActionFeedback(null);
+    const prepName = selectedPrep.name;
     logMutation.mutate(
       {
         id: selectedPrep.id,
         dto: { date: selectedDate, meal_type: logMealType },
       },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
+          const queued = isOfflineQueuedResponse(result);
           setShowLogModal(false);
           setSelectedPrep(null);
-          alert("Logged ✓", `"${selectedPrep.name}" added to diary.`);
+          setActionFeedback({
+            surface: "section",
+            status: queued ? "info" : "success",
+            title: queued ? "Meal saved locally" : "Meal prep logged",
+            message: queued
+              ? `"${prepName}" is waiting to synchronize with the diary.`
+              : `"${prepName}" was added to the diary.`,
+          });
         },
-        onError: (e: any) => alert("Log failed", e.message),
+        onError: (error) =>
+          setActionFeedback({
+            surface: "log",
+            status: "error",
+            title: "Could not log meal prep",
+            message: toApiError(error).message,
+          }),
       },
     );
   };
@@ -580,6 +696,8 @@ export function MealPrepSection() {
       <View style={[style.sectionHeader, { marginBottom: 8 }]}>
         <Text style={style.sectionTitle}>Meal Preps</Text>
         <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={formOpen ? "Close meal prep form" : "Create meal prep"}
           style={style.inlineAction}
           onPress={formOpen ? closeForm : openCreate}
         >
@@ -594,11 +712,26 @@ export function MealPrepSection() {
         </TouchableOpacity>
       </View>
 
+      {actionFeedback?.surface === "section" ? (
+        <ActionStatus
+          {...actionFeedback}
+          onDismiss={() => setActionFeedback(null)}
+        />
+      ) : null}
+
       {formOpen && (
         <ShadowGlowCard style={foodDiaryCardStyle}>
           <Text style={style.sectionTitle}>
             {editingPrep ? `Editing: ${editingPrep.name}` : "New Meal Prep"}
           </Text>
+          {actionFeedback?.surface === "form" ? (
+            <View style={{ marginTop: 10 }}>
+              <ActionStatus
+                {...actionFeedback}
+                onDismiss={() => setActionFeedback(null)}
+              />
+            </View>
+          ) : null}
           <TextInput
             style={[style.input, { marginTop: 8 }]}
             placeholder="Prep name"
@@ -637,6 +770,9 @@ export function MealPrepSection() {
                       </Text>
                     </View>
                     <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={`Edit ${item.food_name}`}
+                      hitSlop={9}
                       onPress={() => {
                         setEditingItemKey(item.key);
                         setShowFoodPicker(true);
@@ -649,6 +785,9 @@ export function MealPrepSection() {
                       />
                     </TouchableOpacity>
                     <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${item.food_name} from meal prep`}
+                      hitSlop={9}
                       onPress={() => removeItem(item.key)}
                       style={{ marginLeft: 10 }}
                     >
@@ -660,6 +799,7 @@ export function MealPrepSection() {
                     </TouchableOpacity>
                   </View>
                   <TextInput
+                    accessibilityLabel={`${item.food_name} amount in grams`}
                     style={[style.input, { marginTop: 8 }]}
                     keyboardType="decimal-pad"
                     placeholder="Gramation (g)"
@@ -763,19 +903,12 @@ export function MealPrepSection() {
             <MaterialIcons name="search" size={16} color={theme.primary} />
             <Text style={style.inlineActionText}>Add Food</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[style.primaryButton, { marginTop: 12 }]}
+          <AppButton
+            label={editingPrep ? "Save Changes" : "Create Meal Prep"}
+            loading={createMutation.isPending || updateMutation.isPending}
             onPress={savePrep}
-            disabled={createMutation.isPending || updateMutation.isPending}
-          >
-            {createMutation.isPending || updateMutation.isPending ? (
-              <ActivityIndicator color={theme.white} />
-            ) : (
-              <Text style={style.primaryButtonText}>
-                {editingPrep ? "Save Changes" : "Create Meal Prep"}
-              </Text>
-            )}
-          </TouchableOpacity>
+            style={{ marginTop: 12 }}
+          />
         </ShadowGlowCard>
       )}
 
@@ -832,10 +965,17 @@ export function MealPrepSection() {
                 onEdit={() => openEdit(selectedPrep)}
                 onDelete={() => confirmDelete(selectedPrep)}
                 onLog={() => {
+                  setActionFeedback(null);
                   setShowLogModal(true);
                   setLogMealType("LUNCH");
                   setSelectedDate(formatDateForApi(new Date()));
                 }}
+                feedback={
+                  actionFeedback?.surface === "detail"
+                    ? actionFeedback
+                    : undefined
+                }
+                onDismissFeedback={() => setActionFeedback(null)}
                 theme={theme}
                 style={style}
               />
@@ -848,35 +988,31 @@ export function MealPrepSection() {
         visible={showLogModal}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowLogModal(false)}
+        onRequestClose={() => {
+          setShowLogModal(false);
+          setActionFeedback(null);
+        }}
       >
         <View style={style.modalBackdrop}>
-          <View style={[style.modalCard, { paddingBottom: 24 }]}>
-            <View style={style.modalHeader}>
-              <Text
-                style={[
-                  style.modalTitle,
-                  { fontFamily: "PlusJakartaSans_800ExtraBold" },
-                ]}
-              >
-                Log to Diary
-              </Text>
-              <TouchableOpacity
-                onPress={() => setShowLogModal(false)}
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 16,
-                  backgroundColor: theme.background,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderWidth: 0.5,
-                  borderColor: theme.border ?? "#eee",
-                }}
-              >
-                <MaterialIcons name="close" size={18} color={theme.textBlack} />
-              </TouchableOpacity>
-            </View>
+          <View
+            accessibilityViewIsModal
+            style={[style.modalCard, { paddingBottom: 24 }]}
+          >
+            <ModalHeader
+              closeLabel="Close log meal prep"
+              onClose={() => {
+                setShowLogModal(false);
+                setActionFeedback(null);
+              }}
+              style={style.modalHeader}
+              title="Log to Diary"
+            />
+            {actionFeedback?.surface === "log" ? (
+              <ActionStatus
+                {...actionFeedback}
+                onDismiss={() => setActionFeedback(null)}
+              />
+            ) : null}
             <Text
               style={{
                 fontSize: 12,
@@ -886,7 +1022,7 @@ export function MealPrepSection() {
                 letterSpacing: 0.8,
                 marginTop: 4,
                 marginBottom: 2,
-                fontFamily: "PlusJakartaSans_500Medium",
+                fontFamily: FONT_FAMILIES.bold,
               }}
             >
               Select Meal Type
@@ -905,6 +1041,9 @@ export function MealPrepSection() {
                 return (
                   <TouchableOpacity
                     key={m.value}
+                    accessibilityRole="radio"
+                    accessibilityLabel={m.label}
+                    accessibilityState={{ selected: active }}
                     style={{
                       flex: 1,
                       backgroundColor: active
@@ -927,8 +1066,8 @@ export function MealPrepSection() {
                         fontWeight: "700",
                         color: active ? mealColor : theme.textBlack,
                         fontFamily: active
-                          ? "PlusJakartaSans_700Bold"
-                          : "PlusJakartaSans_500Medium",
+                          ? FONT_FAMILIES.bold
+                          : FONT_FAMILIES.medium,
                       }}
                     >
                       {m.label}
@@ -949,14 +1088,17 @@ export function MealPrepSection() {
                   alignItems: "center",
                   justifyContent: "center",
                 }}
-                onPress={() => setShowLogModal(false)}
+                onPress={() => {
+                  setShowLogModal(false);
+                  setActionFeedback(null);
+                }}
               >
                 <Text
                   style={{
                     color: theme.textLight,
                     fontSize: 13,
                     fontWeight: "700",
-                    fontFamily: "PlusJakartaSans_500Medium",
+                    fontFamily: FONT_FAMILIES.bold,
                   }}
                 >
                   Cancel

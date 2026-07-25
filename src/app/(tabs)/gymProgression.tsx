@@ -2,16 +2,18 @@ import { gymStyles } from "@/assets/styles/gym.style";
 import { AppButton } from "@/components/base/app-button";
 import { FormField } from "@/components/base/form-field";
 import { IconButton } from "@/components/base/icon-button";
+import { ModalHeader } from "@/components/base/modal-header";
 import { PageHeader } from "@/components/base/page-header";
 import { PaginationNavigator } from "@/components/base/pagination-navigator";
-import { SegmentedControl } from "@/components/base/segmented-control";
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
+import { StatePanel } from "@/components/base/state-panel";
 import { TabScreenScrollView } from "@/components/base/tab-screen-scroll-view";
+import { ExerciseCatalogPicker } from "@/components/gym/exercise-catalog-picker";
+import { ProgressionChartFrame } from "@/components/gym/progression-chart-frame";
 import {
   EXERCISE_PAGE_SIZE,
   ExerciseProgressionCardSkeletons,
 } from "@/components/gym/exercise-progression-card-skeleton";
-import { ExerciseCatalogPicker } from "@/components/gym/exercise-catalog-picker";
 import { MuscleHeatmap } from "@/components/gym/MuscleHeatmap";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
@@ -24,6 +26,7 @@ import {
   calculateEstimatedOneRepMax,
   calculateWorkoutVolume,
 } from "@/utils/workoutMetrics";
+import { buildProgressionChartSummary } from "@/utils/progression-chart-summary";
 
 import {
   createExerciseProgression,
@@ -31,7 +34,6 @@ import {
   ExerciseProgressionDTO,
   ExerciseSessionDTO,
   GymExerciseProgressionRequestDTO,
-  SplitType,
   updateExerciseProgression,
 } from "@/services/gymService";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
@@ -61,7 +63,6 @@ type SessionProgressionPoint = {
   totalVolume: number;
   totalSets: number;
 };
-type SplitFilter = "ALL" | SplitType;
 type ModalKind = "exercise" | "set";
 type ModalMode = "create" | "edit";
 type ExerciseEntryStep = "catalog" | "details";
@@ -81,28 +82,6 @@ type ModalState =
       itemId?: number;
       parentExerciseId?: number;
     };
-
-const splitOptions: SplitType[] = ["PUSH", "PULL", "LEGS"];
-
-const normalizeSplit = (split?: string): SplitType => {
-  const normalized = split?.toUpperCase();
-
-  if (normalized === "PULL" || normalized === "LEGS") return normalized;
-  return "PUSH";
-};
-
-const displaySplit = (split?: string) => {
-  const normalized = normalizeSplit(split);
-  return normalized.charAt(0) + normalized.slice(1).toLowerCase();
-};
-
-const getExerciseName = (exercise: ExerciseProgressionDTO) =>
-  exercise.name ?? "Exercise";
-
-const getExerciseSessions = (exercise: ExerciseProgressionDTO) =>
-  exercise.exercise_sessions ?? [];
-
-const getSessionSets = (session: ExerciseSessionDTO) => session.sets ?? [];
 
 const formatSessionLabel = (value?: string) => {
   if (!value) return "Undated";
@@ -179,17 +158,13 @@ const formatDateForApi = (value: Date | string) => {
   ].join("-");
 };
 
-const getSessionDate = (session: ExerciseSessionDTO) =>
-  session.session_date ?? "";
-
 const buildSessionProgression = (
   exerciseSessions: ExerciseSessionDTO[],
 ): SessionProgressionPoint[] => {
   const points = exerciseSessions
     .map((session) => {
-      const sessionDate = getSessionDate(session);
-
-      const sessionSets = getSessionSets(session);
+      const sessionDate = session.session_date ?? "";
+      const sessionSets = session.sets ?? [];
 
       if (!sessionDate || sessionSets.length === 0) {
         return null;
@@ -284,7 +259,6 @@ export default function GymProgression() {
   const [expandedExerciseId, setExpandedExerciseId] = useState<number | null>(
     null,
   );
-  const [activeSplit, setActiveSplit] = useState<SplitFilter>("ALL");
   const [exercisePage, setExercisePage] = useState(0);
   const [deletingExerciseId, setDeletingExerciseId] = useState<number | null>(
     null,
@@ -299,7 +273,6 @@ export default function GymProgression() {
 
   const [exerciseForm, setExerciseForm] = useState({
     catalog_exercise_id: null as string | null,
-    split: "PUSH" as SplitType,
     name: "",
     muscle_group: "",
     target_rep_range: "",
@@ -319,10 +292,10 @@ export default function GymProgression() {
     let best = 0;
     let muscleName: string = "";
     for (const exercise of exerciseProgressions) {
-      const sessions = getExerciseSessions(exercise);
-      for (const session of sessions) {
-        const sets = getSessionSets(session);
-        for (const set of sets) {
+      const sessions = exercise.exercise_sessions;
+      for (const session of sessions ?? []) {
+        const sets = session.sets;
+        for (const set of sets ?? []) {
           const est1RM = set.weight * (1 + set.reps / 30);
           if (est1RM > best) {
             best = est1RM;
@@ -337,10 +310,10 @@ export default function GymProgression() {
   const totalVolume = useMemo(() => {
     let volume = 0;
     for (const exercise of exerciseProgressions) {
-      const sessions = getExerciseSessions(exercise);
-      for (const session of sessions) {
-        const sets = getSessionSets(session);
-        for (const set of sets) {
+      const sessions = exercise.exercise_sessions;
+      for (const session of sessions ?? []) {
+        const sets = session.sets;
+        for (const set of sets ?? []) {
           volume += calculateWorkoutVolume(set.weight, set.reps);
         }
       }
@@ -390,8 +363,7 @@ export default function GymProgression() {
     setExerciseEntryStep(item ? "details" : "catalog");
     setExerciseForm({
       catalog_exercise_id: item?.catalog_exercise_id ?? null,
-      split: normalizeSplit(item?.split),
-      name: item ? getExerciseName(item) : "",
+      name: item?.name ?? "",
       muscle_group: item?.muscle_group ?? "",
       target_rep_range: item?.target_rep_range ?? "",
       last_session_date: item?.last_session_date ?? "",
@@ -409,7 +381,6 @@ export default function GymProgression() {
   const progressionPageQuery = useExerciseProgressionPage({
     page: exercisePage,
     limit: EXERCISE_PAGE_SIZE,
-    split: activeSplit === "ALL" ? undefined : activeSplit,
     search: deferredSearch || undefined,
   });
   const pagedExercises = progressionPageQuery.data?.data ?? [];
@@ -442,7 +413,6 @@ export default function GymProgression() {
           id: modalState.itemId,
           payload: {
             catalog_exercise_id: exerciseForm.catalog_exercise_id,
-            split: exerciseForm.split,
             name: exerciseForm.name,
             muscle_group: exerciseForm.muscle_group,
             target_rep_range: exerciseForm.target_rep_range,
@@ -461,33 +431,6 @@ export default function GymProgression() {
   };
 
   const modalSaving = exerciseMutation.isPending;
-
-  const renderSplitSelector = (
-    selected: SplitType,
-    onChange: (value: SplitType) => void,
-  ) => (
-    <View style={styles.chipRow}>
-      {splitOptions.map((option) => {
-        const active = selected === option;
-        return (
-          <TouchableOpacity
-            key={option}
-            style={[styles.filterChip, active && styles.filterChipActive]}
-            onPress={() => onChange(option)}
-          >
-            <Text
-              style={[
-                styles.filterChipText,
-                active && styles.filterChipTextActive,
-              ]}
-            >
-              {displaySplit(option)}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
 
   const renderModalBody = () => {
     if (!modalState.visible || !modalState.kind) return null;
@@ -570,7 +513,7 @@ export default function GymProgression() {
                 selectable
                 style={{
                   color: theme.textLight,
-                  fontSize: 10,
+                  fontSize: 11,
                   fontFamily: "PlusJakartaSans_500Medium",
                 }}
               >
@@ -595,10 +538,9 @@ export default function GymProgression() {
               onPress={() => setExerciseEntryStep("catalog")}
             />
           )}
-          {renderSplitSelector(exerciseForm.split, (split) =>
-            setExerciseForm((current) => ({ ...current, split })),
-          )}
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Choose session date"
             onPress={() => setOpenDate(true)}
             // style={styles.input}
           >
@@ -692,14 +634,13 @@ export default function GymProgression() {
     return (
       <SafeAreaProvider>
         <SafeAreaView style={styles.safeArea}>
-          <View style={styles.errorState}>
-            <Text style={styles.errorTitle}>Could not load gym data</Text>
-            <Text style={styles.errorText}>
-              The page is ready, but the backend response failed. Check the API
-              shape and try again.
-            </Text>
-            <AppButton label="Retry" onPress={() => refetch()} />
-          </View>
+          <StatePanel
+            variant="error"
+            title="Could not load gym data"
+            message="The backend did not return the progression data. Check your connection and try again."
+            primaryAction={{ label: "Retry", onPress: () => refetch() }}
+            style={{ margin: 20 }}
+          />
         </SafeAreaView>
       </SafeAreaProvider>
     );
@@ -720,33 +661,23 @@ export default function GymProgression() {
         }
       >
         {/* ── Header ── */}
-        <PageHeader
-          eyebrow="Progressify"
-          title="Progression"
-          icon={
-            <MaterialCommunityIcons
-              name="dumbbell"
-              size={24}
-              color={theme.primary}
-            />
-          }
-        />
+        <PageHeader eyebrow="Progressify" title="Progression" />
 
         <View
           style={{
             flexDirection: "row",
             justifyContent: "space-between",
-            backgroundColor: theme.primary + "06",
-            borderRadius: 14,
+            backgroundColor: theme.card,
+            borderRadius: 16,
             padding: 14,
-            borderWidth: 1.5,
-            borderColor: theme.primary + "20",
+            borderWidth: 1,
+            borderColor: theme.primary + "30",
           }}
         >
           <View style={{ flex: 1, alignItems: "center" }}>
             <Text
               style={{
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: "700",
                 fontFamily: "PlusJakartaSans_700Bold",
                 color: theme.textLight,
@@ -776,7 +707,7 @@ export default function GymProgression() {
           <View style={{ flex: 1, alignItems: "center" }}>
             <Text
               style={{
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: "700",
                 fontFamily: "PlusJakartaSans_700Bold",
                 color: theme.textLight,
@@ -821,7 +752,7 @@ export default function GymProgression() {
           <View style={{ flex: 1, alignItems: "center" }}>
             <Text
               style={{
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: "700",
                 fontFamily: "PlusJakartaSans_700Bold",
                 color: theme.textLight,
@@ -850,6 +781,9 @@ export default function GymProgression() {
 
         {/* ── Start Workout launcher card ── */}
         <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Open workout programs"
+          accessibilityHint="Choose a routine or start a workout"
           onPress={() => router.push("/(pages)/programs")}
           activeOpacity={0.8}
           style={{ marginBottom: 12 }}
@@ -858,10 +792,10 @@ export default function GymProgression() {
             style={{
               flexDirection: "row",
               alignItems: "center",
-              backgroundColor: theme.card + "30",
+              backgroundColor: theme.card,
               borderRadius: 16,
               padding: 16,
-              borderWidth: 1.5,
+              borderWidth: 1,
               borderColor: theme.primary + "30",
               shadowColor: theme.shadow,
               shadowOffset: { width: 0, height: 4 },
@@ -870,23 +804,6 @@ export default function GymProgression() {
               elevation: 2,
             }}
           >
-            <View
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 10,
-                backgroundColor: theme.primary + "12",
-                justifyContent: "center",
-                alignItems: "center",
-                marginRight: 12,
-              }}
-            >
-              <MaterialCommunityIcons
-                name="dumbbell"
-                size={20}
-                color={theme.primary}
-              />
-            </View>
             <View style={{ flex: 1 }}>
               <Text
                 style={{
@@ -918,6 +835,8 @@ export default function GymProgression() {
 
         {!checking && hasActiveSession && storedSession && (
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={`Resume ${storedSession.routineName ?? "active workout"}`}
             style={{
               flexDirection: "row",
               alignItems: "center",
@@ -953,7 +872,7 @@ export default function GymProgression() {
                 fontWeight: "800",
               }}
             >
-              Active {displaySplit(storedSession.split)} Session
+              Active {storedSession.routineName ?? "Manual Workout"}
             </Text>
             <Text
               style={{
@@ -966,6 +885,8 @@ export default function GymProgression() {
               Resume →
             </Text>
             <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Discard active workout"
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               onPress={(e) => {
                 e.stopPropagation();
@@ -978,20 +899,29 @@ export default function GymProgression() {
         )}
 
         <MuscleHeatmap exercises={exerciseProgressions} />
-
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Exercise progression</Text>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Add exercise"
+            style={styles.inlineAction}
+            onPress={() => openExerciseModal()}
+          >
+            <MaterialIcons name="add" size={18} color={theme.primary} />
+            <Text style={styles.inlineActionText}>Add exercise</Text>
+          </TouchableOpacity>
+        </View>
         {/* ── Search Input Bar ── */}
         <View
           style={{
-            backgroundColor: theme.background,
+            backgroundColor: theme.card,
             width: "100%",
-            borderWidth: 1.5,
+            borderWidth: 1,
             borderColor: theme.border,
             flexDirection: "row",
             alignItems: "center",
             paddingHorizontal: 14,
-            paddingVertical: 4,
             borderRadius: 24,
-            marginBottom: 12,
             shadowColor: theme.shadow,
             shadowOffset: { width: 0, height: 4 },
             shadowOpacity: 0.03,
@@ -1023,6 +953,9 @@ export default function GymProgression() {
           />
           {search !== "" && (
             <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Clear exercise search"
+              hitSlop={8}
               onPress={() => {
                 setSearch("");
                 setExercisePage(0);
@@ -1033,52 +966,27 @@ export default function GymProgression() {
           )}
         </View>
 
-        {/* ── Split Pill Switcher ── */}
-        <SegmentedControl
-          accessibilityLabel="Exercise split"
-          value={activeSplit}
-          options={(["ALL", ...splitOptions] as SplitFilter[]).map((split) => ({
-            value: split,
-            label: split === "ALL" ? "All" : displaySplit(split),
-          }))}
-          onChange={(split) => {
-            setActiveSplit(split);
-            setExercisePage(0);
-          }}
-        />
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Exercise progression</Text>
-          <TouchableOpacity
-            style={styles.inlineAction}
-            onPress={() => openExerciseModal()}
-          >
-            <MaterialIcons name="add" size={18} color={theme.primary} />
-            <Text style={styles.inlineActionText}>Add exercise</Text>
-          </TouchableOpacity>
-        </View>
-
         {progressionPageQuery.isLoading ? (
           <ExerciseProgressionCardSkeletons />
         ) : progressionPageQuery.error ? (
-          <View style={styles.subEmptyCard}>
-            <Text style={styles.subEmptyText}>
-              Could not load this exercise page.
-            </Text>
-            <TouchableOpacity
-              style={[styles.primaryButton, { marginTop: 12 }]}
-              onPress={() => progressionPageQuery.refetch()}
-            >
-              <Text style={styles.primaryButtonText}>Retry</Text>
-            </TouchableOpacity>
-          </View>
+          <StatePanel
+            variant="error"
+            compact
+            title="Exercise page unavailable"
+            message="This page of exercise progressions could not be loaded."
+            primaryAction={{
+              label: "Retry",
+              onPress: () => progressionPageQuery.refetch(),
+              accessibilityHint: "Retries loading this exercise page",
+            }}
+          />
         ) : pagedExercises.length ? (
           pagedExercises.map((exercise) => {
-            const exerciseSessions = getExerciseSessions(exercise);
+            const exerciseSessions = exercise.exercise_sessions ?? [];
             const latestSession = [...exerciseSessions].sort(
               (a, b) =>
-                toDateSortValue(getSessionDate(b)) -
-                toDateSortValue(getSessionDate(a)),
+                toDateSortValue(b.session_date) -
+                toDateSortValue(a.session_date),
             )[0];
 
             const latestSessionSets = latestSession?.sets ?? [];
@@ -1086,17 +994,24 @@ export default function GymProgression() {
               buildSessionProgression(exerciseSessions);
             const hasSessionHistory = sessionProgression.length > 0;
             const trend = get1RMTrend(sessionProgression);
+            const chartSummary = buildProgressionChartSummary(
+              exercise.name ?? "Exercise",
+              sessionProgression,
+            );
+            const expanded = expandedExerciseId === exercise.id;
 
             return (
               <ShadowGlowCard
                 key={exercise.id}
                 style={{
-                  backgroundColor: theme.background,
                   borderColor: theme.primary + "20",
-                  borderWidth: 1.5,
+                  borderWidth: 1,
                 }}
               >
                 <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={`${expanded ? "Collapse" : "Expand"} ${exercise.name ?? "exercise"} progression`}
+                  accessibilityState={{ expanded }}
                   style={{
                     flex: 1,
                     flexDirection: "row",
@@ -1120,9 +1035,40 @@ export default function GymProgression() {
                           flexWrap: "wrap",
                         }}
                       >
-                        <Text style={styles.exerciseName}>
-                          {getExerciseName(exercise)}
-                        </Text>
+                        <Text style={styles.exerciseName}>{exercise.name}</Text>
+                      </View>
+
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          gap: 6,
+                          marginTop: 6,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        {exercise.muscle_group && (
+                          <View
+                            style={{
+                              backgroundColor: theme.primary + "10",
+                              borderRadius: 8,
+                              paddingHorizontal: 6,
+                              paddingVertical: 2,
+                              borderWidth: 1,
+                              borderColor: theme.primary + "20",
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 11,
+                                fontWeight: "800",
+                                color: theme.primary,
+                                textTransform: "capitalize",
+                              }}
+                            >
+                              {exercise.muscle_group}
+                            </Text>
+                          </View>
+                        )}
                         {trend && (
                           <View
                             style={{
@@ -1140,7 +1086,7 @@ export default function GymProgression() {
                           >
                             <Text
                               style={{
-                                fontSize: 9,
+                                fontSize: 11,
                                 fontWeight: "800",
                                 color: trend.isPositive
                                   ? theme.income
@@ -1153,86 +1099,10 @@ export default function GymProgression() {
                         )}
                       </View>
 
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          gap: 6,
-                          marginTop: 6,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <View
-                          style={{
-                            backgroundColor: theme.primary + "10",
-                            borderRadius: 8,
-                            paddingHorizontal: 6,
-                            paddingVertical: 2,
-                            borderWidth: 1,
-                            borderColor: theme.primary + "20",
-                          }}
-                        >
-                          <Text
-                            style={{
-                              fontSize: 9,
-                              fontWeight: "800",
-                              color: theme.primary,
-
-                              textTransform: "capitalize",
-                            }}
-                          >
-                            {displaySplit(exercise.split)}
-                          </Text>
-                        </View>
-                        {exercise.muscle_group && (
-                          <View
-                            style={{
-                              backgroundColor: theme.primary + "10",
-                              borderRadius: 8,
-                              paddingHorizontal: 6,
-                              paddingVertical: 2,
-                              borderWidth: 1,
-                              borderColor: theme.primary + "20",
-                            }}
-                          >
-                            <Text
-                              style={{
-                                fontSize: 9,
-                                fontWeight: "800",
-                                color: theme.primary,
-                              }}
-                            >
-                              {exercise.muscle_group}
-                            </Text>
-                          </View>
-                        )}
-                        {exercise.target_rep_range && (
-                          <View
-                            style={{
-                              backgroundColor: theme.primary + "10",
-                              borderRadius: 8,
-                              paddingHorizontal: 6,
-                              paddingVertical: 2,
-                              borderWidth: 1,
-                              borderColor: theme.primary + "20",
-                            }}
-                          >
-                            <Text
-                              style={{
-                                fontSize: 9,
-                                fontWeight: "800",
-                                color: theme.primary,
-                              }}
-                            >
-                              {exercise.target_rep_range} reps
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-
                       <Text style={[styles.exerciseSubMeta, { marginTop: 6 }]}>
                         Last session:{" "}
                         {latestSession
-                          ? getDayMonthYear(getSessionDate(latestSession))
+                          ? getDayMonthYear(latestSession.session_date)
                           : "-"}
                       </Text>
                     </View>
@@ -1245,7 +1115,7 @@ export default function GymProgression() {
                         }}
                       >
                         <IconButton
-                          accessibilityLabel={`Edit ${getExerciseName(exercise)}`}
+                          accessibilityLabel={`Edit ${exercise.name ?? ""}`}
                           onPress={() => openExerciseModal(exercise)}
                           icon={
                             <MaterialIcons
@@ -1256,7 +1126,7 @@ export default function GymProgression() {
                           }
                         />
                         <IconButton
-                          accessibilityLabel={`Delete ${getExerciseName(exercise)}`}
+                          accessibilityLabel={`Delete ${exercise.name ?? ""}`}
                           variant="destructive"
                           loading={deletingExerciseId === exercise.id}
                           onPress={() =>
@@ -1308,7 +1178,8 @@ export default function GymProgression() {
 
                     {hasSessionHistory ? (
                       <>
-                        <View
+                        <ProgressionChartFrame
+                          summary={chartSummary}
                           style={[
                             styles.chartBlock,
                             {
@@ -1324,12 +1195,14 @@ export default function GymProgression() {
                             areaChart
                             curved
                             isAnimated
-                            data={[...sessionProgression].map((point) => ({
-                              value: Number(point.estimated1RM.toFixed(1)),
-                              label: getDayMonth(point.sessionDate),
-                              dataPointText: `${point.estimated1RM.toFixed(1)}`,
-                            }))}
-                            height={220}
+                             data={[...sessionProgression].map((point) => ({
+                               value: Number(point.estimated1RM.toFixed(1)),
+                               label: getDayMonth(point.sessionDate),
+                               dataPointText: `${point.estimated1RM.toFixed(1)}`,
+                             }))}
+                             scrollToEnd
+                             scrollAnimation={false}
+                             height={220}
                             spacing={56}
                             initialSpacing={18}
                             endSpacing={18}
@@ -1407,15 +1280,20 @@ export default function GymProgression() {
                               },
                             }}
                           />
-                        </View>
+                        </ProgressionChartFrame>
                       </>
                     ) : (
-                      <View style={styles.subEmptyCard}>
-                        <Text style={styles.subEmptyText}>
-                          Record exercise sessions with sets to see your
-                          progression graph over time.
-                        </Text>
-                      </View>
+                      <StatePanel
+                        variant="empty"
+                        compact
+                        embedded
+                        title="No progression history"
+                        message="Record exercise sessions with sets to build this graph over time."
+                        primaryAction={{
+                          label: "Manage sessions",
+                          onPress: () => manageWorkoutSession(exercise),
+                        }}
+                      />
                     )}
 
                     <View
@@ -1428,6 +1306,8 @@ export default function GymProgression() {
                         Latest workout session
                       </Text>
                       <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel={`Manage workout sessions for ${exercise.name ?? "exercise"}`}
                         style={styles.inlineAction}
                         onPress={() => manageWorkoutSession(exercise)}
                       >
@@ -1461,14 +1341,17 @@ export default function GymProgression() {
                         ))}
                       </View>
                     ) : (
-                      <View style={styles.subEmptyCard}>
-                        <Text style={styles.subEmptyText}>
-                          Add set rows to capture changing weight and reps
-                          inside the latest workout. Historical graphing should
-                          come from session records, not from this flat set list
-                          alone.
-                        </Text>
-                      </View>
+                      <StatePanel
+                        variant="empty"
+                        compact
+                        embedded
+                        title="No sets in the latest session"
+                        message="Add sets to record weight, repetitions, and RIR for this workout."
+                        primaryAction={{
+                          label: "Manage sets",
+                          onPress: () => manageWorkoutSession(exercise),
+                        }}
+                      />
                     )}
 
                     <View style={styles.saveAndNoteRow}>
@@ -1489,13 +1372,15 @@ export default function GymProgression() {
             );
           })
         ) : (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>No exercises yet</Text>
-            <Text style={styles.emptyText}>
-              Create an exercise progression first, then attach sets and graph
-              points to it.
-            </Text>
-          </View>
+          <StatePanel
+            variant="empty"
+            title="No exercises yet"
+            message="Add an exercise progression, then record workout sessions to build its history."
+            primaryAction={{
+              label: "Add exercise",
+              onPress: () => openExerciseModal(),
+            }}
+          />
         )}
 
         {!progressionPageQuery.isLoading &&
@@ -1521,22 +1406,17 @@ export default function GymProgression() {
           style={{ flex: 1 }}
         >
           <View style={styles.modalBackdrop}>
-            <View style={styles.modalCard}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>{getModalTitle()}</Text>
-                <TouchableOpacity onPress={closeModal}>
-                  <MaterialIcons
-                    name="close"
-                    size={22}
-                    color={theme.textLight}
-                  />
-                </TouchableOpacity>
-              </View>
+            <View accessibilityViewIsModal style={styles.modalCard}>
+              <ModalHeader
+                closeLabel="Close exercise form"
+                onClose={closeModal}
+                style={styles.modalHeader}
+                title={getModalTitle()}
+              />
 
               {renderModalBody()}
 
-              {modalState.mode === "edit" ||
-              exerciseEntryStep === "details" ? (
+              {modalState.mode === "edit" || exerciseEntryStep === "details" ? (
                 <View style={styles.modalActions}>
                   <AppButton
                     label="Cancel"

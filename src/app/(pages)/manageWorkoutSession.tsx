@@ -1,5 +1,12 @@
 import { gymStyles } from "@/assets/styles/gym.style";
+import { AppButton } from "@/components/base/app-button";
+import {
+  ActionStatus,
+  type ActionFeedback,
+} from "@/components/base/action-status";
+import { ModalHeader } from "@/components/base/modal-header";
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
+import { ProgressionChartFrame } from "@/components/gym/progression-chart-frame";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
@@ -7,6 +14,9 @@ import {
   calculateEstimatedOneRepMax,
   calculateWorkoutVolume,
 } from "@/utils/workoutMetrics";
+import { buildProgressionChartSummary } from "@/utils/progression-chart-summary";
+import { toApiError } from "@/utils/apiError";
+import { isOfflineQueuedResponse } from "@/utils/offline-response";
 import {
   deleteSessionProgression,
   ExerciseProgressionDTO,
@@ -139,6 +149,8 @@ export default function ManageWorkoutSession() {
   const [sessionDate, setSessionDate] = useState("");
   const [notes, setNotes] = useState("");
   const [editableSets, setEditableSets] = useState<EditableSet[]>([]);
+  const [actionFeedback, setActionFeedback] =
+    useState<ActionFeedback | null>(null);
 
   const {
     data: dashboard,
@@ -165,6 +177,14 @@ export default function ManageWorkoutSession() {
     [exercise],
   );
   const sessionPoints = useMemo(() => buildSessionPoints(sessions), [sessions]);
+  const chartSummary = useMemo(
+    () =>
+      buildProgressionChartSummary(
+        getExerciseName(exercise),
+        sessionPoints,
+      ),
+    [exercise, sessionPoints],
+  );
 
   const updateSessionMutation = useMutation({
     mutationFn: async ({
@@ -186,6 +206,7 @@ export default function ManageWorkoutSession() {
   });
 
   const openEditModal = (session: ExerciseSessionDTO) => {
+    setActionFeedback(null);
     setEditingSession(session);
     setSessionDate(getSessionDate(session));
     setNotes(session.notes ?? "");
@@ -197,6 +218,7 @@ export default function ManageWorkoutSession() {
     setSessionDate("");
     setNotes("");
     setEditableSets([]);
+    setActionFeedback(null);
   };
 
   const updateSetField = (
@@ -275,21 +297,38 @@ export default function ManageWorkoutSession() {
 
     const payload = buildPayload();
     if (typeof payload === "string") {
-      alert("Session not ready", payload);
+      setActionFeedback({
+        status: "error",
+        title: "Session not ready",
+        message: payload,
+      });
       return;
     }
 
+    setActionFeedback(null);
     try {
-      await updateSessionMutation.mutateAsync({
+      const result = await updateSessionMutation.mutateAsync({
         id: editingSession.id,
         payload,
       });
       closeEditModal();
-    } catch (saveError: any) {
-      alert(
-        "Update failed",
-        saveError?.message || "The session could not be updated.",
-      );
+      setActionFeedback({
+        status: isOfflineQueuedResponse(result) ? "info" : "success",
+        title: isOfflineQueuedResponse(result)
+          ? "Session saved locally"
+          : "Session updated",
+        message: isOfflineQueuedResponse(result)
+          ? "This update is pending synchronization and remains available in the device queue."
+          : "The workout session and its sets were saved.",
+      });
+    } catch (saveError) {
+      setActionFeedback({
+        status: "error",
+        title: "Update failed",
+        message:
+          toApiError(saveError).message ||
+          "The session could not be updated.",
+      });
     }
   };
 
@@ -303,13 +342,27 @@ export default function ManageWorkoutSession() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
+            setActionFeedback(null);
             try {
-              await deleteSessionMutation.mutateAsync(session.id);
-            } catch (deleteError: any) {
-              alert(
-                "Delete failed",
-                deleteError?.message || "The session could not be deleted.",
-              );
+              const result =
+                await deleteSessionMutation.mutateAsync(session.id);
+              setActionFeedback({
+                status: isOfflineQueuedResponse(result) ? "info" : "success",
+                title: isOfflineQueuedResponse(result)
+                  ? "Deletion saved locally"
+                  : "Session deleted",
+                message: isOfflineQueuedResponse(result)
+                  ? "The deletion is pending synchronization in the device queue."
+                  : "The session was removed from progression history.",
+              });
+            } catch (deleteError) {
+              setActionFeedback({
+                status: "error",
+                title: "Delete failed",
+                message:
+                  toApiError(deleteError).message ||
+                  "The session could not be deleted.",
+              });
             }
           },
         },
@@ -340,12 +393,10 @@ export default function ManageWorkoutSession() {
               Open this page from an exercise progression so the app knows which
               sessions to manage.
             </Text>
-            <TouchableOpacity
-              style={styles.primaryButton}
+            <AppButton
+              label="Go back"
               onPress={() => router.back()}
-            >
-              <Text style={styles.primaryButtonText}>Go back</Text>
-            </TouchableOpacity>
+            />
           </View>
         </SafeAreaView>
       </SafeAreaProvider>
@@ -365,10 +416,22 @@ export default function ManageWorkoutSession() {
             <Text style={styles.eyebrow}>Workout Sessions</Text>
             <Text style={styles.title}>{getExerciseName(exercise)}</Text>
           </View>
-          <TouchableOpacity style={styles.headerBadge} onPress={router.back}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            style={styles.headerBadge}
+            onPress={router.back}
+          >
             <MaterialIcons name="arrow-back" size={22} color={theme.white} />
           </TouchableOpacity>
         </View>
+
+        {actionFeedback && !editingSession ? (
+          <ActionStatus
+            {...actionFeedback}
+            onDismiss={() => setActionFeedback(null)}
+          />
+        ) : null}
 
         <View style={styles.heroCard}>
           <View style={styles.heroTopRow}>
@@ -417,7 +480,10 @@ export default function ManageWorkoutSession() {
         </View>
 
         {sessionPoints.length ? (
-          <View style={styles.exerciseCard}>
+          <ProgressionChartFrame
+            summary={chartSummary}
+            style={styles.exerciseCard}
+          >
             <LineChart
               areaChart
               curved
@@ -462,7 +528,7 @@ export default function ManageWorkoutSession() {
               textShiftY={-14}
               textShiftX={-10}
             />
-          </View>
+          </ProgressionChartFrame>
         ) : (
           <View style={styles.emptyCard}>
             <Text style={styles.emptyTitle}>No graph yet</Text>
@@ -504,7 +570,12 @@ export default function ManageWorkoutSession() {
                     )}
                   </View>
                   <View style={styles.cardActionIcons}>
-                    <TouchableOpacity onPress={() => openEditModal(session)}>
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={`Edit session from ${session.session_date}`}
+                      hitSlop={9}
+                      onPress={() => openEditModal(session)}
+                    >
                       <MaterialIcons
                         name="edit"
                         size={18}
@@ -512,6 +583,9 @@ export default function ManageWorkoutSession() {
                       />
                     </TouchableOpacity>
                     <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete session from ${session.session_date}`}
+                      hitSlop={9}
                       onPress={() => confirmDeleteSession(session)}
                     >
                       <MaterialIcons
@@ -569,52 +643,20 @@ export default function ManageWorkoutSession() {
             }}
           >
             {/* Header */}
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 14,
-              }}
-            >
-              <View>
-                <Text
-                  style={{
-                    fontSize: 20,
-                    fontWeight: "900",
-                    fontFamily: "PlusJakartaSans_800ExtraBold",
-                    color: theme.textBlack,
-                    letterSpacing: -0.5,
-                  }}
-                >
-                  Edit Session
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 12,
-                    fontWeight: "700",
-                    fontFamily: "PlusJakartaSans_700Bold",
-                    color: theme.textLight,
-                    marginTop: 2,
-                  }}
-                >
-                  Adjust stats and details below
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={closeEditModal}
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 16,
-                  backgroundColor: theme.primary + "12",
-                  justifyContent: "center",
-                  alignItems: "center",
-                }}
-              >
-                <MaterialIcons name="close" size={18} color={theme.primary} />
-              </TouchableOpacity>
-            </View>
+            <ModalHeader
+              closeLabel="Close edit session"
+              onClose={closeEditModal}
+              style={{ marginBottom: 14 }}
+              supportingText="Adjust stats and details below"
+              title="Edit Session"
+            />
+
+            {actionFeedback ? (
+              <ActionStatus
+                {...actionFeedback}
+                onDismiss={() => setActionFeedback(null)}
+              />
+            ) : null}
 
             <ScrollView contentContainerStyle={{ gap: 12 }} showsVerticalScrollIndicator={false}>
               {/* Date Input */}
@@ -722,6 +764,8 @@ export default function ManageWorkoutSession() {
                   Logged Sets
                 </Text>
                 <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Add set"
                   style={{
                     flexDirection: "row",
                     alignItems: "center",
@@ -849,6 +893,7 @@ export default function ManageWorkoutSession() {
                     {/* Weight Input */}
                     <View style={{ flex: 2.2, paddingHorizontal: 4 }}>
                       <TextInput
+                        accessibilityLabel={`Set ${idx + 1} weight in kilograms`}
                         style={{
                           backgroundColor: theme.card,
                           borderRadius: 8,
@@ -873,6 +918,7 @@ export default function ManageWorkoutSession() {
                     {/* Reps Input */}
                     <View style={{ flex: 1.8, paddingHorizontal: 4 }}>
                       <TextInput
+                        accessibilityLabel={`Set ${idx + 1} repetitions`}
                         style={{
                           backgroundColor: theme.card,
                           borderRadius: 8,
@@ -897,6 +943,7 @@ export default function ManageWorkoutSession() {
                     {/* RIR Input */}
                     <View style={{ flex: 1.8, paddingHorizontal: 4 }}>
                       <TextInput
+                        accessibilityLabel={`Set ${idx + 1} repetitions in reserve`}
                         style={{
                           backgroundColor: theme.card,
                           borderRadius: 8,
@@ -920,6 +967,9 @@ export default function ManageWorkoutSession() {
 
                     {/* Delete Action */}
                     <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete set ${idx + 1}`}
+                      hitSlop={9}
                       onPress={() => removeEditableSet(set.localId)}
                       style={{
                         flex: 1,
@@ -946,57 +996,19 @@ export default function ManageWorkoutSession() {
                 marginTop: 14,
               }}
             >
-              <TouchableOpacity
-                style={{
-                  flex: 1,
-                  paddingVertical: 12,
-                  borderRadius: 14,
-                  borderWidth: 1.5,
-                  borderColor: theme.border,
-                  justifyContent: "center",
-                  alignItems: "center",
-                }}
+              <AppButton
+                label="Cancel"
                 onPress={closeEditModal}
-              >
-                <Text
-                  style={{
-                    fontSize: 14,
-                    fontWeight: "800",
-                    fontFamily: "PlusJakartaSans_800ExtraBold",
-                    color: theme.textLight,
-                  }}
-                >
-                  Cancel
-                </Text>
-              </TouchableOpacity>
+                style={{ flex: 1 }}
+                variant="secondary"
+              />
 
-              <TouchableOpacity
-                style={{
-                  flex: 1,
-                  backgroundColor: theme.primary,
-                  paddingVertical: 12,
-                  borderRadius: 14,
-                  justifyContent: "center",
-                  alignItems: "center",
-                }}
+              <AppButton
+                label="Save Changes"
+                loading={updateSessionMutation.isPending}
                 onPress={saveSession}
-                disabled={updateSessionMutation.isPending}
-              >
-                {updateSessionMutation.isPending ? (
-                  <ActivityIndicator color={theme.white} />
-                ) : (
-                  <Text
-                    style={{
-                      fontSize: 14,
-                      fontWeight: "800",
-                      fontFamily: "PlusJakartaSans_800ExtraBold",
-                      color: theme.white,
-                    }}
-                  >
-                    Save Changes
-                  </Text>
-                )}
-              </TouchableOpacity>
+                style={{ flex: 1 }}
+              />
             </View>
           </ShadowGlowCard>
         </View>

@@ -1,7 +1,15 @@
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
 import { ThemeType } from "@/constants/colors";
 import { useTheme } from "@/context/ThemeContext";
+import { catalogExercises } from "@/data/exercise-catalog";
 import { ExerciseProgressionDTO } from "@/services/gymService";
+import {
+  calculateWeeklyMuscleVolume,
+  getMuscleIntensity,
+  getMuscleIntensityLabel,
+  MUSCLE_INTENSITY_COLORS,
+  type MuscleContribution,
+} from "@/utils/muscle-heatmap";
 import React, { useMemo, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Body, { ExtendedBodyPart, Slug } from "react-native-body-highlighter";
@@ -15,171 +23,123 @@ export const MuscleHeatmap: React.FC<MuscleHeatmapProps> = ({ exercises }) => {
   const styles = style(theme);
   const [selectedMuscle, setSelectedMuscle] = useState<{
     name: string;
-    sets: number;
+    setEquivalents: number;
+    contributions: MuscleContribution[];
   } | null>(null);
 
-  const muscleSets = useMemo(() => {
-    const counts: Record<string, number> = {
-      chest: 0,
-      back: 0,
-      shoulders: 0,
-      biceps: 0,
-      triceps: 0,
-      abs: 0,
-      quads: 0,
-      hamstrings: 0,
-      calves: 0,
-    };
+  const catalogById = useMemo(
+    () => new Map(catalogExercises.map((exercise) => [exercise.id, exercise])),
+    [],
+  );
+  const weeklyVolume = useMemo(
+    () => calculateWeeklyMuscleVolume({ exercises, catalogById }),
+    [catalogById, exercises],
+  );
 
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    const minTime = sevenDaysAgo.getTime();
-
-    for (const ex of exercises) {
-      const muscle = (ex.muscle_group ?? "").toLowerCase();
-      let key = "";
-      if (muscle.includes("chest")) key = "chest";
-      else if (muscle.includes("back") || muscle.includes("lat")) key = "back";
-      else if (muscle.includes("shoulder") || muscle.includes("delt"))
-        key = "shoulders";
-      else if (muscle.includes("bicep")) key = "biceps";
-      else if (muscle.includes("tricep")) key = "triceps";
-      else if (muscle.includes("abs") || muscle.includes("core")) key = "abs";
-      else if (
-        muscle.includes("quad") ||
-        muscle.includes("thigh") ||
-        muscle.includes("leg")
-      )
-        key = "quads";
-      else if (muscle.includes("hamstring")) key = "hamstrings";
-      else if (muscle.includes("calf") || muscle.includes("calves"))
-        key = "calves";
-
-      if (!key) continue;
-
-      const sessions = ex.exercise_sessions ?? [];
-      for (const session of sessions) {
-        const dateStr = session.session_date ?? "";
-        if (!dateStr) continue;
-        const time = new Date(dateStr).getTime();
-        if (time >= minTime) {
-          const sets = session.sets ?? [];
-          counts[key] += sets.length;
-        }
-      }
-    }
-
-    return counts;
-  }, [exercises]);
-
-  // 2. Map sets count to intensity values (1, 2, 3) for the highlighter package
   const highlightedData = useMemo(() => {
-    const list: { slug: Slug; intensity: number }[] = [];
+    return Object.entries(weeklyVolume.bodyRegionTotals).flatMap(
+      ([slug, setEquivalents]) => {
+        const intensity = getMuscleIntensity(setEquivalents);
+        return intensity > 0 ? [{ slug: slug as Slug, intensity }] : [];
+      },
+    );
+  }, [weeklyVolume.bodyRegionTotals]);
+  const formatSetEquivalents = (value: number) =>
+    Number.isInteger(value) ? String(value) : value.toFixed(1);
 
-    const getIntensity = (sets: number) => {
-      if (sets === 0) return 0;
-      if (sets <= 4) return 1;
-      if (sets <= 12) return 2;
-      return 3;
+  const formatBodyPartName = (slug: Slug) => {
+    const names: Partial<Record<Slug, string>> = {
+      abs: "Abdominals",
+      adductors: "Adductors",
+      deltoids: "Shoulders",
+      forearm: "Forearms",
+      gluteal: "Glutes",
+      hamstring: "Hamstrings",
+      "lower-back": "Lower back",
+      obliques: "Abdominals",
+      quadriceps: "Quadriceps",
+      trapezius: "Traps",
+      "upper-back": "Upper back",
     };
-
-    const addMuscle = (slugs: Slug[], sets: number) => {
-      const intensity = getIntensity(sets);
-      if (intensity > 0) {
-        for (const slug of slugs) {
-          list.push({ slug, intensity });
-        }
-      }
-    };
-
-    addMuscle(["chest"], muscleSets.chest);
-    addMuscle(["deltoids"], muscleSets.shoulders);
-    addMuscle(["biceps"], muscleSets.biceps);
-    addMuscle(["triceps"], muscleSets.triceps);
-    addMuscle(["forearm"], muscleSets.biceps);
-    addMuscle(["abs", "obliques"], muscleSets.abs);
-    addMuscle(["quadriceps"], muscleSets.quads);
-    addMuscle(["hamstring", "gluteal"], muscleSets.hamstrings);
-    addMuscle(["calves"], muscleSets.calves);
-    addMuscle(["trapezius", "upper-back", "lower-back"], muscleSets.back);
-
-    return list;
-  }, [muscleSets]);
-
-  // 3. Define volume labels based on set count
-  const getVolumeLabel = (sets: number) => {
-    if (sets === 0) return { label: "Inactive", color: theme.primary + "80" };
-    if (sets <= 4) return { label: "Low Volume", color: "#F2994A" };
-    if (sets <= 12) return { label: "Optimal Volume", color: "#27AE60" };
-    return { label: "High Volume", color: "#219653" };
+    return (
+      names[slug] ??
+      slug
+        .split("-")
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ")
+    );
   };
+  const accessibleSummary = Object.entries(weeklyVolume.bodyRegionTotals)
+    .filter(([, setEquivalents]) => setEquivalents > 0)
+    .map(
+      ([slug, setEquivalents]) =>
+        `${formatBodyPartName(slug as Slug)}, ${formatSetEquivalents(setEquivalents)} set equivalents, ${getMuscleIntensityLabel(getMuscleIntensity(setEquivalents))}`,
+    );
+  const accessibleSummaryLabel = accessibleSummary.length
+    ? `Weekly muscle volume. ${accessibleSummary.join(". ")}.`
+    : "Weekly muscle volume. No muscle volume recorded in the last seven days.";
 
   const handleBodyPartPress = (part: ExtendedBodyPart) => {
     if (!part.slug) return;
-
-    let displayName = part.slug.charAt(0).toUpperCase() + part.slug.slice(1);
-    let key = "";
-
-    if (part.slug === "chest") {
-      key = "chest";
-    } else if (part.slug === "deltoids") {
-      displayName = "Shoulders";
-      key = "shoulders";
-    } else if (part.slug === "biceps" || part.slug === "forearm") {
-      displayName = "Biceps";
-      key = "biceps";
-    } else if (part.slug === "triceps") {
-      key = "triceps";
-    } else if (part.slug === "abs" || part.slug === "obliques") {
-      displayName = "Abs / Core";
-      key = "abs";
-    } else if (part.slug === "quadriceps") {
-      displayName = "Quads";
-      key = "quads";
-    } else if (part.slug === "hamstring" || part.slug === "gluteal") {
-      displayName = "Hamstrings / Glutes";
-      key = "hamstrings";
-    } else if (part.slug === "calves") {
-      key = "calves";
-    } else if (["trapezius", "upper-back", "lower-back"].includes(part.slug)) {
-      displayName = "Back & Traps";
-      key = "back";
-    }
-
-    if (key) {
-      setSelectedMuscle({
-        name: displayName,
-        sets: muscleSets[key] ?? 0,
-      });
-    }
+    setSelectedMuscle({
+      name: formatBodyPartName(part.slug),
+      setEquivalents: weeklyVolume.bodyRegionTotals[part.slug] ?? 0,
+      contributions: weeklyVolume.bodyRegionContributions[part.slug] ?? [],
+    });
   };
 
-  const intensityColors = ["#F2994A", "#27AE60", "#219653"];
+  const selectedIntensity = getMuscleIntensity(
+    selectedMuscle?.setEquivalents ?? 0,
+  );
+  const selectedColor =
+    selectedIntensity === 0
+      ? theme.textLight
+      : MUSCLE_INTENSITY_COLORS[selectedIntensity - 1];
 
   return (
     <ShadowGlowCard
       style={[
         styles.container,
         {
-          backgroundColor: theme.primary + "06",
-          borderColor: theme.primary + "20",
-          borderWidth: 1.5,
+          borderColor: theme.primary + "30",
+          borderWidth: 1,
         },
       ]}
     >
       <View style={styles.header}>
         <Text style={styles.title}>Weekly Volume Heatmap</Text>
-        <Text style={styles.subtitle}>Set count totals over last 7 days</Text>
+        <Text style={styles.subtitle}>
+          Primary and secondary set equivalents over the last 7 days
+        </Text>
+        <View style={styles.legend}>
+          {[
+            { label: "Low", color: MUSCLE_INTENSITY_COLORS[0] },
+            { label: "Moderate", color: MUSCLE_INTENSITY_COLORS[1] },
+            { label: "Target", color: MUSCLE_INTENSITY_COLORS[2] },
+          ].map((item) => (
+            <View key={item.label} style={styles.legendItem}>
+              <View
+                style={[styles.legendDot, { backgroundColor: item.color }]}
+              />
+              <Text style={styles.legendLabel}>{item.label}</Text>
+            </View>
+          ))}
+        </View>
       </View>
 
-      <View style={styles.avatarRow}>
+      <View
+        accessible
+        accessibilityRole="image"
+        accessibilityLabel={accessibleSummaryLabel}
+        style={styles.avatarRow}
+      >
         {/* FRONT VIEW */}
         <View style={styles.avatarColumn}>
           <Text style={styles.viewLabel}>Front</Text>
           <View style={styles.bodyContainer}>
             <Body
               data={highlightedData}
-              colors={intensityColors}
+              colors={MUSCLE_INTENSITY_COLORS}
               side="front"
               gender="male"
               scale={0.9}
@@ -198,7 +158,7 @@ export const MuscleHeatmap: React.FC<MuscleHeatmapProps> = ({ exercises }) => {
           <View style={styles.bodyContainer}>
             <Body
               data={highlightedData}
-              colors={intensityColors}
+              colors={MUSCLE_INTENSITY_COLORS}
               side="back"
               gender="male"
               scale={0.9}
@@ -215,16 +175,22 @@ export const MuscleHeatmap: React.FC<MuscleHeatmapProps> = ({ exercises }) => {
       {/* Dynamic Detail Tooltip Panel */}
       {selectedMuscle ? (
         <View
+          accessibilityLiveRegion="polite"
           style={[
             styles.tooltipCard,
-            { borderColor: theme.border, backgroundColor: theme.card },
+            { borderColor: theme.border, backgroundColor: theme.background },
           ]}
         >
           <View style={styles.tooltipHeader}>
             <Text style={[styles.tooltipTitle, { color: theme.text }]}>
               {selectedMuscle.name}
             </Text>
-            <TouchableOpacity onPress={() => setSelectedMuscle(null)}>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Close muscle details"
+              hitSlop={10}
+              onPress={() => setSelectedMuscle(null)}
+            >
               <Text style={{ color: theme.textLight, fontSize: 11 }}>
                 Close
               </Text>
@@ -232,39 +198,51 @@ export const MuscleHeatmap: React.FC<MuscleHeatmapProps> = ({ exercises }) => {
           </View>
           <View style={styles.tooltipContent}>
             <Text style={[styles.tooltipValue, { color: theme.primary }]}>
-              {selectedMuscle.sets} sets{" "}
+              {formatSetEquivalents(selectedMuscle.setEquivalents)}{" "}
               <Text style={{ color: theme.textLight, fontSize: 13 }}>
-                this week
+                set equivalents
               </Text>
             </Text>
             <View
               style={[
                 styles.statusBadge,
                 {
-                  backgroundColor:
-                    getVolumeLabel(selectedMuscle.sets).color + "1A",
+                  backgroundColor: selectedColor + "1A",
                 },
               ]}
             >
-              <Text
-                style={[
-                  styles.statusText,
-                  { color: getVolumeLabel(selectedMuscle.sets).color },
-                ]}
-              >
-                {getVolumeLabel(selectedMuscle.sets).label}
+              <Text style={[styles.statusText, { color: selectedColor }]}>
+                {getMuscleIntensityLabel(selectedIntensity)}
               </Text>
             </View>
           </View>
+          {selectedMuscle.contributions.length > 0 ? (
+            <Text style={styles.contributionText}>
+              {selectedMuscle.contributions
+                .map(
+                  ({ muscle, setEquivalents }) =>
+                    `${muscle}: ${formatSetEquivalents(setEquivalents)}`,
+                )
+                .join(" · ")}
+            </Text>
+          ) : null}
         </View>
       ) : (
         <View style={styles.emptyTooltip}>
           <Text style={{ color: theme.textLight, fontSize: 11 }}>
-            Tap any highlighted muscle group to see total working sets logged
-            this week.
+            Tap a muscle group to see its catalog-based weekly exposure.
           </Text>
         </View>
       )}
+      {weeklyVolume.unmappedExerciseCount > 0 ? (
+        <Text style={styles.unmappedText}>
+          {weeklyVolume.unmappedExerciseCount} custom or legacy{" "}
+          {weeklyVolume.unmappedExerciseCount === 1
+            ? "exercise needs"
+            : "exercises need"}{" "}
+          a canonical muscle assignment.
+        </Text>
+      ) : null}
     </ShadowGlowCard>
   );
 };
@@ -289,6 +267,27 @@ const style = (theme: ThemeType) =>
       fontSize: 11,
       opacity: 0.6,
       marginTop: 2,
+    },
+    legend: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 12,
+      marginTop: 10,
+    },
+    legendItem: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: 5,
+    },
+    legendDot: {
+      borderRadius: 4,
+      height: 8,
+      width: 8,
+    },
+    legendLabel: {
+      color: theme.textLight,
+      fontSize: 11,
+      fontWeight: "600",
     },
     avatarRow: {
       flexDirection: "row",
@@ -346,13 +345,26 @@ const style = (theme: ThemeType) =>
       paddingVertical: 3,
     },
     statusText: {
-      fontSize: 10,
+      fontSize: 11,
       fontWeight: "700",
+    },
+    contributionText: {
+      color: theme.textLight,
+      fontSize: 11,
+      lineHeight: 16,
+      textTransform: "capitalize",
     },
     emptyTooltip: {
       alignItems: "center",
       justifyContent: "center",
       paddingVertical: 10,
+      opacity: 0.8,
+    },
+    unmappedText: {
+      color: theme.textLight,
+      fontSize: 11,
+      lineHeight: 16,
+      marginTop: 8,
       opacity: 0.8,
     },
   });

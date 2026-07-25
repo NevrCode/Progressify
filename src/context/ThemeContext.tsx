@@ -1,10 +1,33 @@
-import { THEMES } from "@/constants/colors";
-import React, { createContext, useContext, useState } from "react";
+import {
+  isThemeName,
+  THEMES,
+  type ThemeType,
+  type ThemeName,
+} from "@/constants/colors";
+import "expo-sqlite/localStorage/install";
+import React, { createContext, useCallback, useContext, useState } from "react";
 
-type ThemeName = keyof typeof THEMES;
+export const THEME_STORAGE_KEY = "progressify.theme";
+
+export const readStoredThemeName = (): ThemeName => {
+  try {
+    const storedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+    return storedTheme && isThemeName(storedTheme) ? storedTheme : "darkGym";
+  } catch {
+    return "darkGym";
+  }
+};
+
+export const persistThemeName = (themeName: ThemeName) => {
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, themeName);
+  } catch {
+    // Keep theme switching functional when device storage is unavailable.
+  }
+};
 
 interface ThemeContextType {
-  theme: typeof THEMES.darkGym;
+  theme: ThemeType;
   themeName: ThemeName;
   setThemeName: (name: ThemeName) => void;
 }
@@ -16,7 +39,12 @@ const ThemeContext = createContext<ThemeContextType>({
 });
 
 export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
-  const [themeName, setThemeName] = useState<ThemeName>("darkGym");
+  const [themeName, setThemeNameState] =
+    useState<ThemeName>(readStoredThemeName);
+  const setThemeName = useCallback((nextThemeName: ThemeName) => {
+    setThemeNameState(nextThemeName);
+    persistThemeName(nextThemeName);
+  }, []);
 
   return (
     <ThemeContext.Provider

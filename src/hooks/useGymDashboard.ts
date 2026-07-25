@@ -1,7 +1,6 @@
 import {
   getExerciseProgressionPage,
   getGymDashboard,
-  SplitType,
 } from "@/services/gymService";
 import { useQuery } from "@tanstack/react-query";
 
@@ -15,15 +14,13 @@ export const useGymDashboard = () => {
 export const useExerciseProgressionPage = ({
   page,
   limit,
-  split,
   search,
 }: {
   page: number;
   limit: number;
-  split?: SplitType;
   search?: string;
 }) =>
   useQuery({
-    queryKey: ["gym", "exercise-progressions", { page, limit, split, search }],
-    queryFn: () => getExerciseProgressionPage({ page, limit, split, search }),
+    queryKey: ["gym", "exercise-progressions", { page, limit, search }],
+    queryFn: () => getExerciseProgressionPage({ page, limit, search }),
   });

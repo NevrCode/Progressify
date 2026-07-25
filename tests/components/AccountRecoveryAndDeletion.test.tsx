@@ -99,7 +99,10 @@ describe("account recovery and deletion states", () => {
   it("rejects an incomplete reset link and mismatched passwords", async () => {
     mockResetToken = undefined;
     const missingToken = await render(<ResetPasswordScreen />);
-    expect(missingToken.getByText("Change password").parent?.props.accessibilityState.disabled).toBe(true);
+    expect(
+      missingToken.getByRole("button", { name: "Change password" }).props
+        .accessibilityState.disabled,
+    ).toBe(true);
     await missingToken.unmount();
 
     mockResetToken = "reset-token";

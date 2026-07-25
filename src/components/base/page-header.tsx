@@ -2,12 +2,7 @@ import { SyncStatusBadge } from "@/components/base/SyncStatusBadge";
 import { IconButton } from "@/components/base/icon-button";
 import { useTheme } from "@/context/ThemeContext";
 import { ReactNode } from "react";
-import {
-  StyleProp,
-  Text,
-  View,
-  ViewStyle,
-} from "react-native";
+import { StyleProp, Text, View, ViewStyle } from "react-native";
 
 type PageHeaderBaseProps = {
   eyebrow: string;

@@ -89,11 +89,15 @@ export function BarcodeScannerModal({
       transparent
       onRequestClose={onClose}
     >
-      <View style={styles.container}>
+      <View accessibilityViewIsModal style={styles.container}>
         {/* Header Overlay */}
         <View style={[styles.header, { backgroundColor: "rgba(0,0,0,0.7)" }]}>
-          <Text style={styles.headerTitle}>Barcode Scanner</Text>
+          <Text accessibilityRole="header" style={styles.headerTitle}>
+            Barcode Scanner
+          </Text>
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Close barcode scanner"
             style={[
               styles.closeButton,
               { backgroundColor: "rgba(255,255,255,0.15)" },
@@ -121,6 +125,8 @@ export function BarcodeScannerModal({
               Camera permission is required to scan barcodes.
             </Text>
             <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Grant camera permission"
               style={[styles.permissionBtn, { backgroundColor: theme.primary }]}
               onPress={requestPermission}
             >

@@ -1,4 +1,8 @@
 import { ThemeType } from "@/constants/colors";
+import {
+  getNutritionAccents,
+  getThemeSemantics,
+} from "@/constants/semantic-colors";
 import { DailyMacroProgress } from "@/services/nutritionService";
 import { Text, View } from "react-native";
 import { PieChart } from "react-native-gifted-charts";
@@ -12,13 +16,6 @@ interface MacroDonutChartProps {
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-
-const MACRO_COLORS = {
-  protein: "#3498db",
-  carbohydrate: "#2ecc71",
-  fat: "#e74c3c",
-  remaining: "#2e2e2e",
-};
 
 const MACRO_LABELS = {
   protein: "Protein",
@@ -86,6 +83,8 @@ export function MacroDonutChart({
   theme,
   style,
 }: MacroDonutChartProps) {
+  const macroColors = getNutritionAccents(theme.background);
+  const semantics = getThemeSemantics(theme);
   const p = progress.protein.consumed;
   const c = progress.carbohydrate.consumed;
   const f = progress.fat.consumed;
@@ -97,24 +96,24 @@ export function MacroDonutChart({
       ? [
           {
             value: p,
-            color: MACRO_COLORS.protein,
+            color: macroColors.protein,
             text: "",
           },
           {
             value: c,
-            color: MACRO_COLORS.carbohydrate,
+            color: macroColors.carbohydrate,
             text: "",
           },
           {
             value: f,
-            color: MACRO_COLORS.fat,
+            color: macroColors.fat,
             text: "",
           },
         ]
       : [
           {
             value: 1,
-            color: MACRO_COLORS.remaining,
+            color: theme.border,
             text: "",
           },
         ];
@@ -157,7 +156,7 @@ export function MacroDonutChart({
         }}
       >
         <LegendItem
-          color={MACRO_COLORS.protein}
+          color={macroColors.protein}
           label={MACRO_LABELS.protein}
           consumed={progress.protein.consumed}
           goal={progress.protein.goal}
@@ -172,7 +171,7 @@ export function MacroDonutChart({
           }}
         />
         <LegendItem
-          color={MACRO_COLORS.carbohydrate}
+          color={macroColors.carbohydrate}
           label={MACRO_LABELS.carbohydrate}
           consumed={progress.carbohydrate.consumed}
           goal={progress.carbohydrate.goal}
@@ -187,7 +186,7 @@ export function MacroDonutChart({
           }}
         />
         <LegendItem
-          color={MACRO_COLORS.fat}
+          color={macroColors.fat}
           label={MACRO_LABELS.fat}
           consumed={progress.fat.consumed}
           goal={progress.fat.goal}
@@ -223,9 +222,9 @@ export function MacroDonutChart({
             width: `${Math.min(progress.calories.percentage, 100)}%`,
             backgroundColor:
               progress.calories.percentage > 110
-                ? "#e74c3c"
+                ? semantics.danger
                 : progress.calories.percentage >= 85
-                  ? "#2ecc71"
+                  ? semantics.success
                   : theme.primary,
           }}
         />

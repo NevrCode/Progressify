@@ -1,7 +1,7 @@
 # Progressify UI Design System
 
 > Code-based documentation of the current React Native / Expo interface.
-> Last reviewed: 22 July 2026.
+> Last reviewed: 24 July 2026.
 
 ## 1. Product UI identity
 
@@ -29,12 +29,12 @@ Theme values live in `src/constants/colors.ts` and are provided through
 | --- | --- | --- |
 | `primary` | `#00E676` | Main accent, active controls, progress, icons |
 | `secondary` | `#00C853` | Secondary green accent |
-| `teriary` | `#1B5E20` | Supporting accent; token name is currently misspelled |
+| `tertiary` | `#1B5E20` | Supporting accent |
 | `background` | `#0A0A0A` | Screen and navigation background |
 | `card` | `#161616` | Elevated card surface |
 | `textBlack` | `#FAFAFA` | High-emphasis headings and primary values |
 | `text` | `#E0E0E0` | Standard body text |
-| `textLight` | `#6B6B6B` | Captions, metadata, inactive navigation |
+| `textLight` | `#929292` | Captions, metadata, inactive navigation |
 | `border` | `#1E1E1E` | Card, input, divider, and control outlines |
 | `white` | `#FFFFFF` | Text placed on strong accent backgrounds |
 | `income` | `#69F0AE` | Positive trends and success values |
@@ -46,6 +46,26 @@ Most translucent states are produced by appending an alpha value to a theme
 color, for example `theme.primary + "15"` for a subtle selected background and
 `theme.primary + "30"` for an accent border.
 
+Status and data-visualization colors live in
+`src/constants/semantic-colors.ts`. `getThemeSemantics(theme)` provides
+`success`, `danger`, `warning`, `info`, selected, and disabled states that adapt
+to light and dark card surfaces. `getNutritionAccents(background)` provides the
+stable calorie, protein, carbohydrate, fat, and water palette without binding
+those meanings to a single theme. `getSkeletonColors(theme)` supplies verified
+base and highlight colors for light and dark loading surfaces.
+
+### Contrast baseline
+
+- Normal text targets a minimum 4.5:1 contrast ratio.
+- Large text and nonessential graphical details target at least 3:1.
+- Every theme's `textLight` token is verified against both `background` and
+  `card`.
+- Primary buttons calculate the highest-contrast foreground from the available
+  light and dark theme neutrals instead of assuming that white or the screen
+  background is always readable.
+- Important labels are 11px or larger; 9–10px remains reserved for
+  nonessential chart details that also have an accessible text alternative.
+
 ### Other available themes
 
 - `coffee`: warm brown on cream;
@@ -55,8 +75,10 @@ color, for example `theme.primary + "15"` for a subtle selected background and
 - `green`: bright green on near-white;
 - `darkGym`: neon green on black.
 
-Theme switching is held in React state. The selected theme is not currently
-persisted across a full app restart.
+Theme switching is held in React state and synchronously hydrated from
+Expo SQLite-backed `localStorage`. The selected key is
+`progressify.theme`, so the active theme survives a full app restart without a
+light-to-dark flash after the first render.
 
 ## 3. Typography
 
@@ -69,6 +91,11 @@ Loaded weights:
 - 600 SemiBold;
 - 700 Bold;
 - 800 ExtraBold.
+
+Font-family names are centralized in `src/constants/typography.ts`.
+`createWithFont` maps weight 600 to the actual
+`PlusJakartaSans_600SemiBold` face rather than synthesizing it from the
+500-weight font.
 
 The shared style helper maps requested weights as follows:
 
@@ -166,45 +193,41 @@ Examples:
 
 ## 7. Homepage structure
 
-The Home screen is an overview rather than a complete editing surface. Its
-current structure is:
+The Home screen is a unified Today dashboard rather than a complete editing
+surface or a Nutrition/Training switcher. Its current structure is:
 
-1. header and greeting;
-2. high-level navigation/summary actions;
-3. nutrition area labelled `Today's Fuel`;
-4. `Daily Progress` nutrition card;
-5. body-profile card when profile information exists;
-6. water tracking;
-7. training area;
-8. `Weekly Streak` card;
-9. `Recent Progress` card;
-10. split summary.
+1. greeting and full current date;
+2. one contextual workout action;
+3. compact Calories, Protein, Water, and Training metrics;
+4. seven-day training summary and one calculated insight;
+5. the two most recent completed exercise activities;
+6. a local retry banner when one or more dashboard sources fail.
 
-### Daily Progress card
+The contextual action resumes a locally stored active session first. Without an
+active session, it opens the user's active program so they can choose a routine.
+If no program exists, it opens the manual workout flow. The app does not invent
+a scheduled “today routine” because the current program model has no weekday
+schedule.
 
-- Uses a centered macro/calorie visualization.
-- Macro values are arranged beneath or around the visualization according to
-  the real loaded card layout.
-- Provides a call to action when nutrition data or a profile is unavailable.
-- Uses a layout-matched skeleton while the nutrition query is initially loading.
+### Today summary
 
-### Body Profile card
+- Uses live diary progress for calories and protein.
+- Uses the user-scoped local water total.
+- Provides compact `−250 ml`, `+250 ml`, and `+500 ml` water controls directly
+  below the Today metrics.
+- Gives each metric a stable semantic accent: orange calories, purple protein,
+  blue water, and theme-green training.
+- Uses completed session dates for the seven-day training figure.
+- Keeps the four metrics visible together without a segmented mode switch.
+- Uses a layout-matched skeleton while initial data is unavailable.
 
-- Displays current physical/profile data as compact labelled values.
-- Links to the full nutrition profile workflow.
-- Does not appear when profile information is unavailable.
+### Recent activity card
 
-### Weekly Streak card
-
-- Summarizes recent training consistency.
-- Uses strong numeric emphasis and compact supporting labels.
-
-### Recent Progress card
-
-- Shows recent exercises and calculated training progression.
+- Shows the two most recently completed exercise sessions.
 - Links to the complete Gym Progression screen.
-- Uses card-row skeletons during initial loading and preserves cached content
-  during background refetching.
+- Shows calculated estimated 1RM when the latest session has valid sets.
+- Uses compact card-row skeletons during initial loading and preserves cached
+  content during background refetching.
 
 ## 8. Gym Progression screen
 
@@ -219,7 +242,7 @@ Current order:
 4. active-session resume banner when applicable;
 5. weekly muscle-volume heatmap with front and back body views;
 6. exercise search field;
-7. All / Push / Pull / Legs segmented filter;
+7. searchable, paginated exercise progression list;
 8. Exercise Progression heading and add action;
 9. five exercise cards per page;
 10. connected pagination navigator above the floating tab bar.
@@ -230,7 +253,7 @@ The collapsed card contains:
 
 - exercise name;
 - positive or negative estimated-1RM trend badge when available;
-- split, muscle group, and target-rep chips;
+- muscle group and target-rep chips;
 - most recent session date;
 - expand/collapse affordance;
 - edit and delete actions.
@@ -238,6 +261,8 @@ The collapsed card contains:
 The expanded card contains:
 
 - dynamically calculated session progression chart;
+- a horizontally scrollable chart that initially opens at the newest/rightmost
+  session without animating through older history;
 - session/set details;
 - weight, repetitions, and RIR values;
 - exercise notes when present.
@@ -251,7 +276,7 @@ averages.
 - The control is one bordered surface inspired by the Food Diary date navigator.
 - It has a left chevron, up to seven centered page numbers, and a right chevron.
 - The current page uses a subtle accent background and bold accent text.
-- Changing search or split returns to page one.
+- Changing search returns to page one.
 - Loading a new uncached page shows five skeleton cards in place of the list.
 
 ## 9. Food Diary screen
@@ -281,6 +306,9 @@ This is the reference layout for simple previous/next navigation:
 
 - Consumed, Goal, and Remaining calorie values form the top summary row.
 - Protein, carbohydrate, and fat appear as labelled progress bars.
+- Nutrition accents match Home: orange for calories, purple for protein, blue
+  for carbohydrate, and warm yellow for fat. Status colors remain reserved for
+  on-track and over-goal feedback.
 - Additional macro rows can be expanded.
 - Profile and goal override actions remain compact secondary buttons.
 
@@ -311,6 +339,8 @@ cards.
 | `TabScreenScrollView` | Automatic safe-area handling and floating-tab-bar clearance |
 | `AppButton` | Primary, secondary, destructive, and ghost button variants |
 | `IconButton` | Accessible 44px icon-only action and local loading state |
+| `ModalHeader` | Accessible modal title, optional supporting text, and compact close action |
+| `SelectionCard` | Labelled radio-style card for descriptive choices |
 | `FormField` | Labelled input, helper text, validation error, and accessories |
 | `DateNavigator` | Connected previous/date/next control |
 | `PaginationNavigator` | Connected arrows and numbered page selection |
@@ -321,23 +351,50 @@ cards.
 | `ProgressBar` | Themeable animated progress visualization |
 | `SyncStatusBadge` | Communicates offline synchronization state |
 | `ShimmerSkeleton` | Theme-aware loading placeholder |
+| `StatePanel` | Empty, error, offline, and success messaging with optional actions |
+| `OnboardingChecklist` | Resumable first-use progress derived from real user data |
 | `FadeSlideIn` | Entrance treatment for dashboard sections |
 | `AnimatedTabIcon` | Active tab pill, icon, and animated label |
 | `MacroDonutChart` | Nutrition macro/calorie visualization |
 | `WaterTracker` | Water progress and adjustment UI |
 | `MuscleHeatmap` | Seven-day front/back muscle volume visualization |
 | `WeekStreak` | Training consistency summary |
-| `SplitSummaryCard` | Push/Pull/Legs overview |
 
 ## 12. Loading and feedback
 
 The modern loading convention is to preserve the page structure and replace
 only unavailable data with shimmer placeholders.
 
+Completed loading, empty, and failed states are separate concepts:
+
+- `ShimmerSkeleton` is used only while data is genuinely unresolved.
+- `StatePanel` explains empty, error, offline, and success outcomes.
+- Every actionable empty state provides one direct next step.
+- Embedded state panels remove their own card border when already inside a
+  containing card.
+- Error and offline variants announce updates through a polite accessibility
+  live region without blocking unrelated content.
+
+### First-use checklist
+
+Home shows a resumable five-step checklist until the initial product journey is
+complete. Completion is derived from existing server data rather than
+duplicated local flags:
+
+- nutrition profile exists;
+- an active workout program exists;
+- at least one exercise progression exists;
+- at least one recorded workout session exists;
+- food history contains at least one entry.
+
+Only presentation preference is stored locally. Users can collapse or dismiss
+the checklist, and Profile provides a **Setup checklist** action that reopens it
+in review mode even after all five steps are complete.
+
 `ShimmerSkeleton` currently:
 
-- uses the theme border as its base;
-- passes a translucent primary-colored gradient over the placeholder;
+- uses verified light/dark semantic base and highlight colors;
+- passes the highlight color over the base placeholder;
 - completes one shimmer pass every 1.3 seconds;
 - repeats until the data is ready;
 - respects system reduced-motion preferences;
@@ -381,25 +438,38 @@ Screens distinguish between:
 React Query defaults currently cache successful queries as fresh for five
 minutes and retain inactive query data for 24 hours.
 
+### Accessibility baseline
+
+- Shared buttons expose an accessible name plus disabled and busy state.
+- Icon-only controls keep a compact visual size while providing at least a
+  44×44 effective touch area through their visual bounds or hit slop.
+- `IconButton` supports 26–44px visual controls; its hit slop is calculated
+  from the visual size, so dense workout rows remain compact without creating a
+  difficult touch target.
+- Page numbers and segmented options expose their selected state.
+- Expandable controls expose whether their content is expanded.
+- Form errors use polite live announcements and remain attached to the input
+  through its accessibility hint.
+- Workout set, rest-timer, meal, modal, authentication, and destructive account
+  actions identify their exact operation rather than announcing only an icon.
+- Progression charts and the weekly muscle heatmap provide concise text
+  alternatives for screen-reader users.
+- Modal content is marked as modal so background controls do not compete for
+  accessibility focus.
+
 ## 15. Current inconsistencies and review items
 
 These are observations of the existing code, not yet-approved redesigns:
 
-1. **Theme persistence:** theme changes do not survive an app restart.
-2. **Token spelling:** `teriary` should eventually be migrated to `tertiary`.
-3. **Font mapping:** 600 maps to the 500 font even though a 600 font is loaded.
-4. **Startup screen:** authentication/font initialization still uses a generic
-   white screen and green spinner instead of the active theme.
-5. **Card colors:** some screen cards override `theme.card` with
-   `theme.background` or translucent variants, producing slightly different
-   surface hierarchy between screens.
-6. **Shadow implementation:** the shared card still uses legacy platform shadow
+1. **Nested surface colors:** some older modal and inset components still need
+   review to confirm whether `background` or `card` is intentional.
+2. **Shadow implementation:** the shared card still uses legacy platform shadow
    properties and elevation.
-7. **Icon system:** icons come from multiple Material and Font Awesome families;
+3. **Icon system:** icons come from multiple Material and Font Awesome families;
    size and visual weight should be checked whenever a new icon is introduced.
-8. **Inline styles:** several major screens repeat header and control styling
+4. **Inline styles:** several major screens repeat header and control styling
    inline instead of using a shared page-header or navigator component.
-9. **Bottom navigation clearance:** each long tab screen must explicitly reserve
+5. **Bottom navigation clearance:** each long tab screen must explicitly reserve
    space for the absolutely positioned tab bar.
 10. **Accessibility:** some interactive icon-only buttons have labels, but this
     should be audited consistently across all older controls and modals.
@@ -438,7 +508,7 @@ or standard text-field styling inside a screen—use their shared primitives.
 - `assets/styles/fontHelper.ts` — font-family mapping
 - `src/components/base/` — shared card, progress, status, and skeleton primitives
 - `src/components/home/` — Home-specific loading structures
-- `src/components/gym/` — progression, heatmap, streak, and split components
+- `src/components/gym/` — progression, heatmap, streak, and exercise catalog components
 - `src/components/nutrition/` — diary, macro, meal-prep, water, and food-search UI
 - `src/app/(tabs)/home.tsx` — Home composition
 - `src/app/(tabs)/gymProgression.tsx` — Gym composition

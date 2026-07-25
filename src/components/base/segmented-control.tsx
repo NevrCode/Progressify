@@ -41,6 +41,7 @@ export function SegmentedControl<T extends string>({
             key={option.value}
             accessibilityRole="radio"
             accessibilityLabel={option.label}
+            accessibilityHint={`Select ${option.label}`}
             accessibilityState={{ selected }}
             activeOpacity={0.76}
             onPress={() => onChange(option.value)}

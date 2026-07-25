@@ -89,6 +89,7 @@ export const FormField = forwardRef<TextInput, FormFieldProps>(
         </View>
         {description ? (
           <Text
+            accessibilityLiveRegion={error ? "polite" : "none"}
             style={{
               color: error ? theme.expense : theme.textLight,
               fontSize: 11,

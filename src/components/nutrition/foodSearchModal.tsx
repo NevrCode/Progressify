@@ -1,14 +1,19 @@
 import { gymStyles } from "@/assets/styles/gym.style";
+import {
+  ActionStatus,
+  type ActionFeedback,
+} from "@/components/base/action-status";
+import { AppButton } from "@/components/base/app-button";
+import { ModalHeader } from "@/components/base/modal-header";
 import { ThemeType } from "@/constants/colors";
-import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import {
   CustomFoodResponse,
   useCreateCustomFood,
   useCustomFoodSearch,
 } from "@/services/customFoodService";
-import {
-} from "@/services/foodDiaryService";
+import { toApiError } from "@/utils/apiError";
+import { isOfflineQueuedResponse } from "@/utils/offline-response";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useState } from "react";
 import {
@@ -50,12 +55,16 @@ function ManualFoodForm({
   onSave,
   onCancel,
   isSaving,
+  feedback,
+  onFeedback,
 }: {
   theme: ThemeType;
   style: any;
   onSave: (data: any) => void;
   onCancel: () => void;
   isSaving: boolean;
+  feedback: ActionFeedback | null;
+  onFeedback: (feedback: ActionFeedback | null) => void;
 }) {
   const [name, setName] = useState("");
   const [servingDesc, setServingDesc] = useState("100g");
@@ -66,17 +75,30 @@ function ManualFoodForm({
   const [fat, setFat] = useState("");
   const [fiber, setFiber] = useState("");
   const [sodium, setSodium] = useState("");
-  const { alert } = useAlert();
-
   const [showOptional, setShowOptional] = useState(false);
 
   const handleSave = () => {
-    if (!name.trim()) return alert("Required", "Enter a food name.");
-    if (!calories) return alert("Required", "Enter calories.");
-    if (!protein) return alert("Required", "Enter protein.");
-    if (!carbs) return alert("Required", "Enter carbohydrates.");
-    if (!fat) return alert("Required", "Enter fat.");
+    const missingField = !name.trim()
+      ? "food name"
+      : !calories
+        ? "calories"
+        : !protein
+          ? "protein"
+          : !carbs
+            ? "carbohydrates"
+            : !fat
+              ? "fat"
+              : null;
+    if (missingField) {
+      onFeedback({
+        status: "error",
+        title: "Required information",
+        message: `Enter ${missingField}.`,
+      });
+      return;
+    }
 
+    onFeedback(null);
     onSave({
       food_name: name.trim(),
       serving_description: servingDesc.trim() || "100g",
@@ -92,6 +114,12 @@ function ManualFoodForm({
 
   return (
     <View>
+      {feedback ? (
+        <ActionStatus
+          {...feedback}
+          onDismiss={() => onFeedback(null)}
+        />
+      ) : null}
       <View style={{ gap: 8, marginTop: 8 }}>
         <TextInput
           style={style.input}
@@ -160,6 +188,13 @@ function ManualFoodForm({
 
         {/* Optional macros toggle */}
         <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={
+            showOptional
+              ? "Hide optional nutrition fields"
+              : "Show optional nutrition fields"
+          }
+          accessibilityState={{ expanded: showOptional }}
           onPress={() => setShowOptional(!showOptional)}
           style={{
             flexDirection: "row",
@@ -200,17 +235,12 @@ function ManualFoodForm({
         )}
       </View>
 
-      <TouchableOpacity
-        style={[style.primaryButton, { marginTop: 12 }]}
+      <AppButton
+        label="Save & Use Food"
+        loading={isSaving}
         onPress={handleSave}
-        disabled={isSaving}
-      >
-        {isSaving ? (
-          <ActivityIndicator color={theme.white} />
-        ) : (
-          <Text style={style.primaryButtonText}>Save & Use Food</Text>
-        )}
-      </TouchableOpacity>
+        style={{ marginTop: 12 }}
+      />
     </View>
   );
 }
@@ -230,6 +260,8 @@ function CustomFoodRow({
 }) {
   return (
     <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityLabel={`Select ${food.food_name}`}
       style={[
         style.listCard,
         { borderLeftWidth: 3, borderLeftColor: theme.primary },
@@ -258,7 +290,7 @@ function CustomFoodRow({
             >
               <Text
                 style={{
-                  fontSize: 10,
+                  fontSize: 11,
                   color: theme.primary,
                   fontWeight: "700",
                 }}
@@ -292,10 +324,11 @@ export function FoodSearchModal({
 }: FoodSearchModalProps) {
   const { theme } = useTheme();
   const style = gymStyles(theme);
-  const { alert } = useAlert();
 
   const [search, setSearch] = useState("");
   const [showManual, setShowManual] = useState(false);
+  const [actionFeedback, setActionFeedback] =
+    useState<ActionFeedback | null>(null);
 
   const createCustomMutation = useCreateCustomFood();
 
@@ -324,18 +357,33 @@ export function FoodSearchModal({
   };
 
   const handleManualSave = (data: any) => {
+    setActionFeedback(null);
     createCustomMutation.mutate(data, {
-      onSuccess: (saved: CustomFoodResponse) => {
+      onSuccess: (saved) => {
+        if (isOfflineQueuedResponse(saved)) {
+          setActionFeedback({
+            status: "info",
+            title: "Custom food saved locally",
+            message:
+              "It can be added to this meal prep after synchronization completes.",
+          });
+          return;
+        }
         handleCustomFoodSelect(saved);
-        alert("Saved!", `"${saved.food_name}" saved to your custom foods.`);
       },
-      onError: (e: any) => alert("Save failed", e.message),
+      onError: (error) =>
+        setActionFeedback({
+          status: "error",
+          title: "Could not save custom food",
+          message: toApiError(error).message,
+        }),
     });
   };
 
   const handleClose = () => {
     setSearch("");
     setShowManual(false);
+    setActionFeedback(null);
     onClose();
   };
 
@@ -350,16 +398,17 @@ export function FoodSearchModal({
       onRequestClose={handleClose}
     >
       <View style={style.modalBackdrop}>
-        <View style={[style.modalCard, { maxHeight: "90%" }]}>
+        <View
+          accessibilityViewIsModal
+          style={[style.modalCard, { maxHeight: "90%" }]}
+        >
           {/* Header */}
-          <View style={style.modalHeader}>
-            <Text style={style.modalTitle}>
-              {showManual ? "Add Custom Food" : "Find Food"}
-            </Text>
-            <TouchableOpacity onPress={handleClose}>
-              <MaterialIcons name="close" size={22} color={theme.textBlack} />
-            </TouchableOpacity>
-          </View>
+          <ModalHeader
+            closeLabel="Close food search"
+            onClose={handleClose}
+            style={style.modalHeader}
+            title={showManual ? "Add Custom Food" : "Find Food"}
+          />
 
           {showManual ? (
             /* ── Manual entry form ─────────────────────────────────────── */
@@ -368,8 +417,13 @@ export function FoodSearchModal({
                 theme={theme}
                 style={style}
                 onSave={handleManualSave}
-                onCancel={() => setShowManual(false)}
+                onCancel={() => {
+                  setShowManual(false);
+                  setActionFeedback(null);
+                }}
                 isSaving={createCustomMutation.isPending}
+                feedback={actionFeedback}
+                onFeedback={setActionFeedback}
               />
             </ScrollView>
           ) : (
@@ -475,6 +529,12 @@ export function FoodSearchModal({
                         {fatSecretQuery.data?.map((food) => (
                           <TouchableOpacity
                             key={food.food_id}
+                            accessibilityRole="button"
+                            accessibilityLabel={`View ${food.food_name}`}
+                            accessibilityState={{
+                              disabled: foodDetailMutation.isPending,
+                              busy: foodDetailMutation.isPending,
+                            }}
                             style={style.listCard}
                             activeOpacity={0.82}
                             onPress={() => foodDetailMutation.mutate(food)}
@@ -520,6 +580,8 @@ export function FoodSearchModal({
 
                 {/* Add manually button — always visible at bottom */}
                 <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Add food manually"
                   style={[
                     style.filterChip,
                     {
@@ -529,7 +591,10 @@ export function FoodSearchModal({
                       gap: 6,
                     },
                   ]}
-                  onPress={() => setShowManual(true)}
+                  onPress={() => {
+                    setActionFeedback(null);
+                    setShowManual(true);
+                  }}
                 >
                   <MaterialIcons name="add" size={15} color={theme.primary} />
                   <Text

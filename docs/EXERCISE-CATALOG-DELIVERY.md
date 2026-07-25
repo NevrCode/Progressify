@@ -15,7 +15,7 @@ independently releasable.
 | 5 | Display and manage the user's single active program | Implemented locally |
 | 6 | Add routines and planned exercises alongside the existing split | Implemented locally |
 | 7 | Start existing workout sessions from a routine | Implemented locally |
-| 8 | Retire the legacy split field after the compatibility window | Planned |
+| 8 | Retire the legacy split field and split-only read models | Implemented locally |
 
 Programs and routines are intentionally outside PR 1 and PR 2. The catalog can
 therefore ship first without changing existing workout data or behavior.
@@ -64,8 +64,8 @@ request remains authoritative.
 5. Selecting a result opens a preview containing instructions and available
    exercise metadata.
 6. **Use exercise** prefills the existing form.
-7. The user supplies existing progression-specific values such as split and
-   target reps, then saves through the current workflow.
+7. The user supplies progression-specific values such as target reps, then saves
+   through the current workflow.
 
 ### Components
 
@@ -158,7 +158,8 @@ chooses their own exercises.
 Database migration V12 creates an active PPL program for every user who already
 has gym progressions. It maps each legacy progression into a planned exercise in
 the corresponding Push, Pull, or Legs routine without changing its ID or history.
-The old `split` column remains available during this compatibility release.
+Migration V13 retires the compatibility column after the migrated routines and
+planned-exercise links are in place.
 
 ### API surface
 
@@ -170,6 +171,28 @@ All endpoints are authenticated and live below `/v1/gym`:
 - start a routine-backed workout session;
 - complete the workout-session parent after its exercise sessions are saved.
 
+### Workout program screen hierarchy
+
+The active program screen prioritizes performing a workout over editing the
+program:
+
+1. active program identity;
+2. a horizontally scrollable `Choose today's workout` launcher containing every
+   routine, exercise count, short exercise preview, and direct Start action;
+3. a collapsed `Manage program` action;
+4. detailed exercise lists, add/remove controls, routine creation, completion,
+   and program switching only after management is opened;
+5. manual workout remains available as the fallback.
+
+This keeps later routines such as Legs immediately reachable without scrolling
+through every exercise in earlier routines.
+
+Detailed management lists intentionally show only the exercise name. Repeated
+default prescriptions such as `3 sets · 8–12 reps · RIR 2` are omitted so
+routines remain compact. Swiping an exercise row to the right reveals its
+destructive Delete action; the same delete operation is exposed as an
+accessibility action for users who cannot perform the gesture.
+
 ### Compatibility and rollout
 
 1. Deploy the backend and V12 migration first.
@@ -179,9 +202,9 @@ All endpoints are authenticated and live below `/v1/gym`:
 4. Keep the manual workout path as a fallback during the compatibility window.
 5. Monitor creation and completion of routine-backed sessions before PR 8.
 
-### PR 8 split-retirement gates
+### PR 8 split-retirement gates (completed)
 
-Do not remove `split` merely because PR 4-7 is deployed. PR 8 starts only when:
+The split field was retired after these gates were confirmed:
 
 - supported frontend versions no longer require `split` to create or navigate
   exercises;
@@ -190,7 +213,26 @@ Do not remove `split` merely because PR 4-7 is deployed. PR 8 starts only when:
   production;
 - rollback no longer depends on an app version that reads the split field.
 
-PR 8 should then stop writing `split`, make it optional in compatibility DTOs,
-remove split-based UI and queries, run a final data audit, and only drop the
-database column in a later migration. This staged removal prevents older clients
-from breaking during rollout.
+PR 8 stops writing and returning `split`, removes split-based UI and queries, and
+uses V13 as the final schema cleanup after the V12 compatibility migration.
+
+## PR 8 — Legacy split retirement
+
+Workout organization now belongs exclusively to programs, routines, and planned
+exercises. Exercise progressions are reusable movements and no longer carry a
+Push, Pull, or Legs classification.
+
+- Gym Progression lists all movements through search and pagination.
+- Creating or editing a progression no longer asks for a split.
+- Manual workouts select directly from all available progressions.
+- Routine-backed navigation no longer supplies a fake Push value.
+- Active-session recovery persists the routine name or `Manual Workout`.
+- Home and progression screens no longer show split labels or recommendations.
+- The API no longer accepts, returns, or filters progression data by split.
+- Migration V13 removes the progression split column, its indexes and constraint,
+  plus the unused `gym_split_summaries` and `gym_split_workouts` tables.
+- PPL and Bro Split remain available as optional program templates; their routine
+  names do not impose a classification on the exercises they contain.
+
+Progression IDs, catalog links, exercise sessions, sets, calculated metrics, and
+charts are unchanged by this migration.

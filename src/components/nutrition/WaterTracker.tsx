@@ -1,4 +1,8 @@
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
+import {
+  getNutritionAccents,
+  getThemeSemantics,
+} from "@/constants/semantic-colors";
 import { useTheme } from "@/context/ThemeContext";
 import { getWaterIntake, logWaterIntake } from "@/services/waterService";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -17,6 +21,8 @@ const WATER_GOAL = 2000; // 2000 ml default
 
 export function WaterTracker() {
   const { theme } = useTheme();
+  const nutritionAccents = getNutritionAccents(theme.background);
+  const semantics = getThemeSemantics(theme);
   const [waterAmount, setWaterAmount] = useState(0);
   const todayStr = new Date().toISOString().split("T")[0];
 
@@ -97,7 +103,6 @@ export function WaterTracker() {
       style={[
         styles.card,
         {
-          backgroundColor: theme.background,
           borderColor: theme.primary + "20",
           borderWidth: 1.5,
         },
@@ -106,7 +111,11 @@ export function WaterTracker() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTitleRow}>
-          <MaterialCommunityIcons name="water" size={20} color="#3498db" />
+          <MaterialCommunityIcons
+            name="water"
+            size={20}
+            color={nutritionAccents.water}
+          />
           <Text style={[styles.title, { color: theme.textBlack }]}>
             Daily Water
           </Text>
@@ -158,14 +167,19 @@ export function WaterTracker() {
                   <Svg width="240" height="25" viewBox="0 0 240 25" fill="none">
                     <Path
                       d="M0 15 C30 10, 30 20, 60 15 C90 10, 90 20, 120 15 C150 10, 150 20, 180 15 C210 10, 210 20, 240 15 L240 25 L0 25 Z"
-                      fill="#3498db"
+                      fill={nutritionAccents.water}
                       opacity="0.85"
                     />
                   </Svg>
                 </Animated.View>
 
                 {/* Solid blue base water */}
-                <View style={styles.solidWater} />
+                <View
+                  style={[
+                    styles.solidWater,
+                    { backgroundColor: nutritionAccents.water },
+                  ]}
+                />
               </Animated.View>
             </View>
 
@@ -208,9 +222,9 @@ export function WaterTracker() {
           <TouchableOpacity
             style={[
               styles.toolbarCircleButton,
-              styles.minusButton,
               {
-                borderColor: theme.expense + "30",
+                backgroundColor: semantics.danger + "14",
+                borderColor: semantics.danger + "30",
                 opacity: waterAmount <= 0 ? 0.4 : 1,
               },
             ]}
@@ -221,7 +235,7 @@ export function WaterTracker() {
             <MaterialCommunityIcons
               name="minus"
               size={16}
-              color={theme.expense}
+              color={semantics.danger}
             />
           </TouchableOpacity>
 
@@ -359,7 +373,6 @@ const styles = StyleSheet.create({
   solidWater: {
     height: 160,
     width: "100%",
-    backgroundColor: "#3498db",
   },
   labelContainer: {
     position: "absolute",
@@ -419,9 +432,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     alignItems: "center",
     justifyContent: "center",
-  },
-  minusButton: {
-    backgroundColor: "rgba(231, 76, 60, 0.08)",
   },
   pillRow: {
     flexDirection: "row",

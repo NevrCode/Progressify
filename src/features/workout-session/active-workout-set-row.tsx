@@ -1,6 +1,8 @@
 import { IconButton } from "@/components/base/icon-button";
 import type { ThemeType } from "@/constants/colors";
+import { useUnitPreference } from "@/context/UnitPreferenceContext";
 import type { DraftSet } from "@/features/workout-session/drafts";
+import { formatMassInput, massUnitLabel, parseMassInput } from "@/utils/measurement-units";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { Text, TextInput, TouchableOpacity, View } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
@@ -31,6 +33,7 @@ export function ActiveWorkoutSetRow({
   onDuplicate,
   onRemove,
 }: Props) {
+  const { measurementSystem } = useUnitPreference();
   const locked = disabled || set.completed;
   const runAndClose = (methods: SwipeableMethods, action: () => void) => {
     methods.close();
@@ -115,10 +118,17 @@ export function ActiveWorkoutSetRow({
         {(["weight", "reps", "rir"] as const).map((field) => (
           <View key={field} style={{ flex: field === "weight" ? 2.2 : 1.8, paddingHorizontal: 4 }}>
             <TextInput
-              accessibilityLabel={`Set ${set.set_number} ${field === "weight" ? "weight in kilograms" : field === "reps" ? "repetitions" : "repetitions in reserve"} for ${exerciseName}`}
+              accessibilityLabel={`Set ${set.set_number} ${field === "weight" ? `weight in ${massUnitLabel(measurementSystem)}` : field === "reps" ? "repetitions" : "repetitions in reserve"} for ${exerciseName}`}
               editable={!locked}
               keyboardType="numeric"
-              onChangeText={(value) => onChange(field, value)}
+              onChangeText={(value) => {
+                if (field !== "weight") {
+                  onChange(field, value);
+                  return;
+                }
+                const canonicalWeight = parseMassInput(value, measurementSystem);
+                onChange("weight", canonicalWeight == null ? "" : String(canonicalWeight));
+              }}
               style={{
                 backgroundColor: theme.card,
                 borderColor: set.completed ? theme.income : theme.border,
@@ -130,7 +140,7 @@ export function ActiveWorkoutSetRow({
                 paddingVertical: 6,
                 textAlign: "center",
               }}
-              value={set[field]}
+              value={field === "weight" ? formatMassInput(set.weight ? Number(set.weight) : undefined, measurementSystem) : set[field]}
             />
           </View>
         ))}

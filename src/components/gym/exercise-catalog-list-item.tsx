@@ -1,17 +1,22 @@
 import { useTheme } from "@/context/ThemeContext";
 import type { CatalogExercise } from "@/types/exercise-catalog";
+import { MaterialIcons } from "@expo/vector-icons";
 import { memo } from "react";
 import { Text, TouchableOpacity, View } from "react-native";
 
 type ExerciseCatalogListItemProps = {
   exercise: CatalogExercise;
   onPress: (exercise: CatalogExercise) => void;
+  favorite?: boolean;
+  onToggleFavorite?: (exercise: CatalogExercise, favorite: boolean) => void;
 };
 
 export const ExerciseCatalogListItem = memo(
   function ExerciseCatalogListItem({
     exercise,
     onPress,
+    favorite = false,
+    onToggleFavorite,
   }: ExerciseCatalogListItemProps) {
     const { theme } = useTheme();
 
@@ -83,6 +88,23 @@ export const ExerciseCatalogListItem = memo(
               .join(" · ")}
           </Text>
         </View>
+        {onToggleFavorite ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={`${favorite ? "Remove" : "Add"} ${exercise.name} ${favorite ? "from" : "to"} favorite exercises`}
+            hitSlop={8}
+            onPress={(event) => {
+              event.stopPropagation();
+              onToggleFavorite(exercise, !favorite);
+            }}
+          >
+            <MaterialIcons
+              name={favorite ? "star" : "star-border"}
+              size={22}
+              color={favorite ? theme.primary : theme.textLight}
+            />
+          </TouchableOpacity>
+        ) : null}
         <Text
           importantForAccessibility="no"
           style={{ color: theme.primary, fontSize: 20 }}

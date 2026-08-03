@@ -1,6 +1,8 @@
 import { gymStyles } from "@/assets/styles/gym.style";
 import { AppButton } from "@/components/base/app-button";
+import { useUnitPreference } from "@/context/UnitPreferenceContext";
 import type { ThemeType } from "@/constants/colors";
+import { displayMass, massUnitLabel } from "@/utils/measurement-units";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Text, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -22,6 +24,7 @@ export function ActiveWorkoutCompletion({
   onDone,
   theme,
 }: Props) {
+  const { measurementSystem } = useUnitPreference();
   const styles = gymStyles(theme);
   return (
     <SafeAreaProvider>
@@ -30,7 +33,7 @@ export function ActiveWorkoutCompletion({
           <MaterialCommunityIcons name="check-circle" size={72} color={theme.primary} />
           <Text style={[styles.title, { textAlign: "center", marginTop: 16 }]}>Session Complete</Text>
           <Text style={[styles.exerciseMeta, { textAlign: "center", marginTop: 8 }]}>
-            {routineName ?? "Manual Workout"} | {elapsed} | {totalSets} sets | {totalVolume} vol
+            {routineName ?? "Manual Workout"} | {elapsed} | {totalSets} sets | {displayMass(totalVolume, measurementSystem, 0)} {massUnitLabel(measurementSystem)}-reps
           </Text>
           <AppButton
             label="Done"

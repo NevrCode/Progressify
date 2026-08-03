@@ -2,6 +2,8 @@ import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
 import { getThemeSemantics } from "@/constants/semantic-colors";
 import { FONT_FAMILIES } from "@/constants/typography";
 import { useTheme } from "@/context/ThemeContext";
+import { useUnitPreference } from "@/context/UnitPreferenceContext";
+import { displayMass, massUnitLabel } from "@/utils/measurement-units";
 import type { WeeklyReview, WeeklyReviewMetric } from "@/utils/weekly-review";
 import { StyleSheet, Text, View } from "react-native";
 
@@ -35,7 +37,10 @@ export function WeeklyReviewCard({
   nutritionHistoryLoading = false,
 }: WeeklyReviewCardProps) {
   const { theme } = useTheme();
+  const { measurementSystem } = useUnitPreference();
   const semantics = getThemeSemantics(theme);
+  const volume = displayMass(review.trainingVolume.current, measurementSystem, 0);
+  const volumeUnit = `${massUnitLabel(measurementSystem)}-reps`;
 
   return (
     <ShadowGlowCard
@@ -88,9 +93,9 @@ export function WeeklyReviewCard({
         <View
           accessibilityLabel={`${compactNumber(
             review.trainingVolume.current,
-          )} kilograms recorded volume, ${comparisonLabel(
+          )} ${volumeUnit} recorded volume, ${comparisonLabel(
             review.trainingVolume,
-            "kg",
+            volumeUnit,
             true,
           )}`}
           style={[
@@ -105,10 +110,10 @@ export function WeeklyReviewCard({
             Set volume
           </Text>
           <Text selectable style={[styles.metricValue, { color: theme.text }]}>
-            {compactNumber(review.trainingVolume.current)}
+            {compactNumber(volume)} {massUnitLabel(measurementSystem)}
           </Text>
           <Text style={[styles.metricDelta, { color: theme.textLight }]}>
-            {comparisonLabel(review.trainingVolume, "kg", true)}
+            {comparisonLabel(review.trainingVolume, volumeUnit, true)}
           </Text>
         </View>
 

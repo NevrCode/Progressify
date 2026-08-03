@@ -17,6 +17,7 @@ import {
 import { MuscleHeatmap } from "@/components/gym/MuscleHeatmap";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useUnitPreference } from "@/context/UnitPreferenceContext";
 import { useActiveSession } from "@/hooks/useActiveSession";
 import {
   useExerciseProgressionPage,
@@ -28,6 +29,7 @@ import {
 } from "@/utils/workoutMetrics";
 import { isWorkingSet } from "@/types/workout-set";
 import { buildProgressionChartSummary } from "@/utils/progression-chart-summary";
+import { displayMass, formatMass, massUnitLabel, type MeasurementSystem } from "@/utils/measurement-units";
 
 import {
   createExerciseProgression,
@@ -224,6 +226,7 @@ const buildSessionProgression = (
 
 const get1RMTrend = (
   points: SessionProgressionPoint[],
+  measurementSystem: MeasurementSystem,
 ): { value: string; isPositive: boolean } | null => {
   if (points.length < 2) return null;
   const latest = points[points.length - 1];
@@ -237,7 +240,7 @@ const get1RMTrend = (
   if (Math.abs(diff) < 0.1) return null;
 
   return {
-    value: `${diff > 0 ? "+" : ""}${diff.toFixed(1)}kg (${diff > 0 ? "+" : ""}${pct.toFixed(0)}%)`,
+    value: `${diff > 0 ? "+" : "-"}${displayMass(Math.abs(diff), measurementSystem)} ${massUnitLabel(measurementSystem)} (${diff > 0 ? "+" : ""}${pct.toFixed(0)}%)`,
     isPositive: diff > 0,
   };
 };
@@ -245,6 +248,7 @@ const get1RMTrend = (
 export default function GymProgression() {
   const router = useRouter();
   const { theme } = useTheme();
+  const { measurementSystem } = useUnitPreference();
   const styles = gymStyles(theme);
   const queryClient = useQueryClient();
   const { storedSession, hasActiveSession, checking, refresh, discard } =
@@ -727,7 +731,7 @@ export default function GymProgression() {
               }}
               numberOfLines={1}
             >
-              {best1RM > 0 ? `${best1RM.toFixed(0)} kg` : "-"}
+              {best1RM > 0 ? formatMass(best1RM, measurementSystem, 0) : "-"}
             </Text>
             {best1RM > 0 && bestMuscleName ? (
               <Text
@@ -994,10 +998,11 @@ export default function GymProgression() {
             const sessionProgression =
               buildSessionProgression(exerciseSessions);
             const hasSessionHistory = sessionProgression.length > 0;
-            const trend = get1RMTrend(sessionProgression);
+            const trend = get1RMTrend(sessionProgression, measurementSystem);
             const chartSummary = buildProgressionChartSummary(
               exercise.name ?? "Exercise",
               sessionProgression,
+              { formatValue: (kilograms) => formatMass(kilograms, measurementSystem) },
             );
             const expanded = expandedExerciseId === exercise.id;
 
@@ -1172,7 +1177,7 @@ export default function GymProgression() {
                         <Text
                           style={[styles.subsectionTitle, { marginBottom: 8 }]}
                         >
-                          Session progression
+                          Session progression ({massUnitLabel(measurementSystem)})
                         </Text>
                       </View>
                     </View>
@@ -1197,9 +1202,9 @@ export default function GymProgression() {
                             curved
                             isAnimated
                              data={[...sessionProgression].map((point) => ({
-                               value: Number(point.estimated1RM.toFixed(1)),
+                               value: displayMass(point.estimated1RM, measurementSystem),
                                label: getDayMonth(point.sessionDate),
-                               dataPointText: `${point.estimated1RM.toFixed(1)}`,
+                               dataPointText: `${displayMass(point.estimated1RM, measurementSystem)}`,
                              }))}
                              scrollToEnd
                              scrollAnimation={false}
@@ -1233,7 +1238,7 @@ export default function GymProgression() {
                             maxValue={
                               Math.max(
                                 ...sessionProgression.map(
-                                  (p) => p.estimated1RM,
+                                  (p) => displayMass(p.estimated1RM, measurementSystem),
                                 ),
                               ) + 5
                             }
@@ -1326,7 +1331,7 @@ export default function GymProgression() {
                       <View style={[styles.setTable, { marginBottom: 12 }]}>
                         <View style={styles.setTableHeader}>
                           <Text style={styles.setHeaderText}>Set</Text>
-                          <Text style={styles.setHeaderText}>Weight</Text>
+                          <Text style={styles.setHeaderText}>Weight ({massUnitLabel(measurementSystem)})</Text>
                           <Text style={styles.setHeaderText}>Reps</Text>
                           <Text style={styles.setHeaderText}>RIR</Text>
                         </View>
@@ -1344,7 +1349,7 @@ export default function GymProgression() {
                                 ? `W${set.set_number}`
                                 : `#${set.set_number}`}
                             </Text>
-                            <Text style={styles.setValue}>{set.weight}kg</Text>
+                            <Text style={styles.setValue}>{formatMass(set.weight, measurementSystem)}</Text>
                             <Text style={styles.setValue}>{set.reps}</Text>
                             <Text style={styles.setValue}>{set.rir ?? 0}</Text>
                           </View>

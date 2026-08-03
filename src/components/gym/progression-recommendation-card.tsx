@@ -1,6 +1,8 @@
 import { AppButton } from "@/components/base/app-button";
 import { useTheme } from "@/context/ThemeContext";
+import { useUnitPreference } from "@/context/UnitPreferenceContext";
 import type { ProgressionRecommendationDTO } from "@/services/gymService";
+import { formatMass } from "@/utils/measurement-units";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Text, View } from "react-native";
 
@@ -26,6 +28,7 @@ export function ProgressionRecommendationCard({
   onApply,
 }: Props) {
   const { theme } = useTheme();
+  const { measurementSystem } = useUnitPreference();
 
   if (
     !recommendation ||
@@ -35,7 +38,7 @@ export function ProgressionRecommendationCard({
     return null;
   }
 
-  const target = `${recommendation.suggested_weight} kg × ${recommendation.target_reps_min}-${recommendation.target_reps_max}`;
+  const target = `${formatMass(recommendation.suggested_weight, measurementSystem)} × ${recommendation.target_reps_min}-${recommendation.target_reps_max}`;
 
   return (
     <View

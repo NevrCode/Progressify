@@ -11,6 +11,7 @@ import { completeDraftSetOnce } from "@/features/workout-session/set-completion-
 import { getSupersetRestDecision } from "@/features/workout-session/superset-round-controller";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useUnitPreference } from "@/context/UnitPreferenceContext";
 import {
   ACTIVE_SESSION_DRAFT_VERSION,
   appendExerciseDraftSet,
@@ -45,6 +46,7 @@ import {
   saveActiveSession,
 } from "@/services/sessionStorage";
 import { completeWorkoutSession } from "@/services/workoutProgramService";
+import { formatMass, type MeasurementSystem } from "@/utils/measurement-units";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -75,6 +77,7 @@ const getRandomInt = () => Math.floor(Math.random() * 100);
 
 const getLastSessionHint = (
   exercise: ExerciseProgressionDTO,
+  measurementSystem: MeasurementSystem,
 ): string | null => {
   const sessions = exercise.exercise_sessions ?? [];
   if (!sessions.length) return null;
@@ -88,13 +91,14 @@ const getLastSessionHint = (
   const sets = (latest.sets ?? []).sort((a, b) => a.set_number - b.set_number);
   if (!sets.length) return null;
 
-  const summary = sets.map((s) => `${s.weight}kg × ${s.reps}`).join(", ");
+  const summary = sets.map((s) => `${formatMass(s.weight, measurementSystem)} × ${s.reps}`).join(", ");
 
   return summary;
 };
 
 export default function ActiveWorkoutSession() {
   const { theme } = useTheme();
+  const { measurementSystem } = useUnitPreference();
   const styles = gymStyles(theme);
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -1016,7 +1020,7 @@ export default function ActiveWorkoutSession() {
                       {exercise.target_rep_range ?? "-"}
                     </Text>
                     {(() => {
-                      const hint = getLastSessionHint(exercise);
+                      const hint = getLastSessionHint(exercise, measurementSystem);
                       if (!hint) return null;
                       return (
                         <Text

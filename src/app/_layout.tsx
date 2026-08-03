@@ -4,6 +4,7 @@ import { AlertProvider, useAlert } from "@/context/AlertContext";
 import { AuthProvider, useAuthState } from "@/context/AuthContext";
 import { DiaryProvider } from "@/context/DairyContext";
 import { ThemeProvider, useTheme } from "@/context/ThemeContext";
+import { UnitPreferenceProvider } from "@/context/UnitPreferenceContext";
 import { usePatchNotes } from "@/hooks/usePatchNote";
 import { startOfflineSyncLifecycle } from "@/services/syncQueueService";
 import { shouldRetryApiError } from "@/utils/apiError";
@@ -132,7 +133,7 @@ function AppNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
   }
 
   return (
-    <>
+    <UnitPreferenceProvider enabled={authState === "authenticated"}>
       <StatusBar style={statusBarStyle} />
       <Stack screenOptions={{ headerShown: false }} />
       <PatchNotesPopup
@@ -140,6 +141,6 @@ function AppNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
         patch={latestPatch}
         onDismiss={markAsSeen}
       />
-    </>
+    </UnitPreferenceProvider>
   );
 }

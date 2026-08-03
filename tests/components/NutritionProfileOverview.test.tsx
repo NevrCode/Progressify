@@ -32,9 +32,9 @@ describe("NutritionProfileOverview", () => {
     );
 
     expect(screen.getByText("Weight")).toBeTruthy();
-    expect(screen.getByText("72.5kg")).toBeTruthy();
+    expect(screen.getByText("72.5 kg")).toBeTruthy();
     expect(screen.getByText("Height")).toBeTruthy();
-    expect(screen.getByText("178cm")).toBeTruthy();
+    expect(screen.getByText("178 cm")).toBeTruthy();
     expect(screen.getByText("TDEE")).toBeTruthy();
     expect(screen.getByText("2684")).toBeTruthy();
     expect(screen.getByText("Goal")).toBeTruthy();

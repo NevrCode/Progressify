@@ -43,6 +43,11 @@ const menuSections: { title: string; items: MenuItem[] }[] = [
         description: "Theme and display options",
       },
       {
+        icon: "straighten",
+        label: "Measurements",
+        description: "Metric or imperial units",
+      },
+      {
         icon: "checklist",
         label: "Setup checklist",
         description: "Review your first steps",
@@ -177,6 +182,7 @@ export default function Profile() {
               item={item}
               onPress={() => {
                 if (item.label === "Appearance") router.push("/appearance");
+                if (item.label === "Measurements") router.push("/measurementPreferences");
                 if (item.label === "Setup checklist") {
                   setOnboardingPreference("review");
                   router.push("/home");

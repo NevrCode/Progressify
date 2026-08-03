@@ -18,6 +18,10 @@ jest.mock("@/context/ThemeContext", () => ({
     },
   }),
 }));
+jest.mock("@/services/discoveryService", () => ({
+  useDiscoveryFeed: () => ({ data: { favorites: [], recent: [] } }),
+  useToggleDiscoveryFavorite: () => ({ mutate: jest.fn() }),
+}));
 
 const exercises: CatalogExercise[] = [
   {
@@ -107,5 +111,12 @@ describe("ExerciseCatalogPicker", () => {
       screen.getByRole("button", { name: "Create custom exercise" }),
     );
     expect(onCreateCustom).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers an accessible favorite toggle for each catalog exercise", async () => {
+    const screen = await render(
+      <ExerciseCatalogPicker exercises={exercises} onCreateCustom={jest.fn()} onUseExercise={jest.fn()} />,
+    );
+    expect(screen.getByRole("button", { name: "Add Bench Press to favorite exercises" })).toBeTruthy();
   });
 });

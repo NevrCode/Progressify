@@ -1,5 +1,7 @@
 import type { ThemeType } from "@/constants/colors";
+import { useUnitPreference } from "@/context/UnitPreferenceContext";
 import type { UserProfileResponse } from "@/services/nutritionService";
+import { formatHeight, formatMass } from "@/utils/measurement-units";
 import { Text, View } from "react-native";
 
 type NutritionProfileOverviewProps = {
@@ -50,6 +52,7 @@ export function NutritionProfileOverview({
   profile,
   theme,
 }: NutritionProfileOverviewProps) {
+  const { measurementSystem } = useUnitPreference();
   return (
     <View
       style={{
@@ -63,9 +66,9 @@ export function NutritionProfileOverview({
         marginBottom: 8,
       }}
     >
-      <ProfileMetric label="Weight" value={`${profile.weight_kg}kg`} theme={theme} />
+      <ProfileMetric label="Weight" value={formatMass(profile.weight_kg, measurementSystem)} theme={theme} />
       <Divider theme={theme} />
-      <ProfileMetric label="Height" value={`${profile.height_cm}cm`} theme={theme} />
+      <ProfileMetric label="Height" value={formatHeight(profile.height_cm, measurementSystem)} theme={theme} />
       <Divider theme={theme} />
       <ProfileMetric
         label="TDEE"

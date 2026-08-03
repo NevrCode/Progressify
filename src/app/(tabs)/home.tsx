@@ -11,6 +11,7 @@ import { InsightCard } from "@/components/home/insight-card";
 import { OnboardingChecklist } from "@/components/home/onboarding-checklist";
 import { WeeklyReviewCard } from "@/components/home/weekly-review-card";
 import { useTheme } from "@/context/ThemeContext";
+import { useUnitPreference } from "@/context/UnitPreferenceContext";
 import { homeScreenStyles as styles } from "@/assets/styles/home-screen.style";
 import { useActiveSession } from "@/hooks/useActiveSession";
 import { FOOD_DIARY_QUERY_KEY } from "@/hooks/useFoodDiary";
@@ -47,6 +48,7 @@ import {
   type OnboardingStep,
 } from "@/utils/onboarding";
 import { toApiError } from "@/utils/apiError";
+import { formatMass } from "@/utils/measurement-units";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
@@ -94,6 +96,7 @@ const getLatestEstimated1RM = (exercise: ExerciseProgressionDTO) => {
 
 export default function HomeScreen() {
   const { theme } = useTheme();
+  const { measurementSystem } = useUnitPreference();
   const router = useRouter();
   const queryClient = useQueryClient();
   const [primaryInsightExplanationVisible, setPrimaryInsightExplanationVisible] =
@@ -634,7 +637,7 @@ export default function HomeScreen() {
                     <Text
                       style={[styles.activityValue, { color: theme.primary }]}
                     >
-                      {getLatestEstimated1RM(exercise).toFixed(0)} kg
+                      {formatMass(getLatestEstimated1RM(exercise), measurementSystem, 0)}
                     </Text>
                   ) : null}
                 </View>

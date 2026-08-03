@@ -65,7 +65,7 @@ describe("WeeklyReviewCard", () => {
     ).toBeTruthy();
     expect(screen.getByText("Jul 18–24 vs Jul 11–17")).toBeTruthy();
     expect(screen.getByLabelText(/3 training days/)).toBeTruthy();
-    expect(screen.getByLabelText(/12.0k kilograms recorded volume/)).toBeTruthy();
+    expect(screen.getByLabelText(/12.0k kg-reps recorded volume/)).toBeTruthy();
     expect(screen.getByLabelText(/5 food diary days/)).toBeTruthy();
   });
 

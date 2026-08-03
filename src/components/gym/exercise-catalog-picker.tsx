@@ -4,13 +4,15 @@ import { ExerciseCatalogListItem } from "@/components/gym/exercise-catalog-list-
 import { ExerciseCatalogPreview } from "@/components/gym/exercise-catalog-preview";
 import { useTheme } from "@/context/ThemeContext";
 import { catalogExercises } from "@/data/exercise-catalog";
+import { type DiscoveryItem, useDiscoveryFeed, useToggleDiscoveryFavorite } from "@/services/discoveryService";
 import type { CatalogExercise } from "@/types/exercise-catalog";
+import { rankDiscovery } from "@/utils/discovery-ranking";
 import {
   filterCatalogExercises,
   getCatalogFilterOptions,
 } from "@/utils/exercise-catalog-filter";
 import { useDeferredValue, useMemo, useState } from "react";
-import { FlatList, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { SectionList, ScrollView, Text, TouchableOpacity, View } from "react-native";
 
 type ExerciseCatalogPickerProps = {
   exercises?: readonly CatalogExercise[];
@@ -27,6 +29,17 @@ type FilterStripProps = {
   value: string | null;
   onChange: (value: string | null) => void;
 };
+
+type CatalogDiscoveryItem = CatalogExercise & {
+  resource_type: "exercise";
+  resource_id: string;
+};
+
+const asDiscoveryItem = (exercise: CatalogExercise): CatalogDiscoveryItem => ({
+  ...exercise,
+  resource_type: "exercise",
+  resource_id: `catalog:${exercise.id}`,
+});
 
 function FilterStrip({
   label,
@@ -112,6 +125,8 @@ export function ExerciseCatalogPicker({
   const [equipment, setEquipment] = useState<string | null>(null);
   const [selectedExercise, setSelectedExercise] =
     useState<CatalogExercise | null>(null);
+  const discoveryQuery = useDiscoveryFeed("exercise");
+  const favoriteMutation = useToggleDiscoveryFavorite("exercise");
 
   const filterOptions = useMemo(
     () => getCatalogFilterOptions(exercises),
@@ -125,6 +140,25 @@ export function ExerciseCatalogPicker({
         equipment,
       }),
     [deferredQuery, equipment, exercises, primaryMuscle],
+  );
+  const rankedExercises = useMemo(() => {
+    const byResourceID = new Map(
+      exercises.map((exercise) => {
+        const item = asDiscoveryItem(exercise);
+        return [item.resource_id, item] as const;
+      }),
+    );
+    const resolve = (item: DiscoveryItem) => byResourceID.get(item.resource_id);
+    return rankDiscovery(
+      (discoveryQuery.data?.favorites ?? []).map(resolve).filter(Boolean) as CatalogDiscoveryItem[],
+      (discoveryQuery.data?.recent ?? []).map(resolve).filter(Boolean) as CatalogDiscoveryItem[],
+      filteredExercises.map(asDiscoveryItem),
+    );
+  }, [discoveryQuery.data, exercises, filteredExercises]);
+
+  const favoriteIDs = useMemo(
+    () => new Set((discoveryQuery.data?.favorites ?? []).map((item) => item.resource_id)),
+    [discoveryQuery.data],
   );
 
   if (selectedExercise) {
@@ -219,14 +253,44 @@ export function ExerciseCatalogPicker({
         ) : null}
       </View>
 
-      <FlatList
-        data={filteredExercises}
-        keyExtractor={(exercise) => exercise.id}
+      <SectionList
+        sections={[
+          { title: "Favorites", data: rankedExercises.favorites },
+          { title: "Recent", data: rankedExercises.recent },
+          { title: hasFilters ? "Matches" : "All exercises", data: rankedExercises.matches },
+        ].filter((section) => section.data.length > 0)}
+        keyExtractor={(exercise) => exercise.resource_id}
         renderItem={({ item }) => (
           <ExerciseCatalogListItem
             exercise={item}
-            onPress={setSelectedExercise}
+            onPress={(exercise) => {
+              setSelectedExercise(exercises.find(({ id }) => id === exercise.id) ?? exercise);
+            }}
+            favorite={favoriteIDs.has(item.resource_id)}
+            onToggleFavorite={(exercise, favorite) => favoriteMutation.mutate({
+              favorite,
+              input: {
+                resource_type: "exercise",
+                resource_id: `catalog:${exercise.id}`,
+                display_name: exercise.name,
+                subtitle: [exercise.primaryMuscle, exercise.equipment].filter(Boolean).join(" · "),
+              },
+            })}
           />
+        )}
+        renderSectionHeader={({ section }) => (
+          <Text
+            style={{
+              color: theme.textLight,
+              fontSize: 10,
+              fontFamily: "PlusJakartaSans_700Bold",
+              letterSpacing: 0.6,
+              marginTop: 4,
+              textTransform: "uppercase",
+            }}
+          >
+            {section.title}
+          </Text>
         )}
         style={{ height: 300 }}
         contentContainerStyle={{ gap: 8, paddingBottom: 4 }}

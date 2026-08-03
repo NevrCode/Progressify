@@ -14,6 +14,11 @@ export type ProgressionChartSummary = {
   accessibilityLabel: string;
 };
 
+export type ProgressionChartSummaryOptions = {
+  /** Values supplied by the gym API are canonical kilograms. */
+  formatValue?: (kilograms: number) => string;
+};
+
 const parseDate = (value: string) => {
   const dateKey = value.slice(0, 10);
   const time = new Date(`${dateKey}T00:00:00Z`).getTime();
@@ -33,7 +38,9 @@ const formatKilograms = (value: number) => `${value.toFixed(1)} kilograms`;
 export const buildProgressionChartSummary = (
   exerciseName: string,
   points: ProgressionChartPoint[],
+  options: ProgressionChartSummaryOptions = {},
 ): ProgressionChartSummary => {
+  const formatValue = options.formatValue ?? formatKilograms;
   const validPoints = points
     .map((point) => {
       const parsedDate = parseDate(point.sessionDate);
@@ -70,7 +77,7 @@ export const buildProgressionChartSummary = (
       latestDate: latest.dateKey,
       accessibilityLabel: `${baseSummary} on ${formatDate(
         latest.dateKey,
-      )}. Estimated one-rep max ${formatKilograms(
+      )}. Estimated one-rep max ${formatValue(
         latest.estimated1RM,
       )}. More sessions are needed to calculate an overall change.`,
     };
@@ -90,7 +97,7 @@ export const buildProgressionChartSummary = (
   const changeSummary =
     changeDirection === "unchanged"
       ? "Overall estimated one-rep max is unchanged from the first displayed session."
-      : `Overall estimated one-rep max ${changeDirection} by ${formatKilograms(
+      : `Overall estimated one-rep max ${changeDirection} by ${formatValue(
           Math.abs(overallChange),
         )}, or ${Math.abs(overallChangePercentage ?? 0).toFixed(
           0,
@@ -106,9 +113,9 @@ export const buildProgressionChartSummary = (
     latestDate: latest.dateKey,
     accessibilityLabel: `${baseSummary} from ${formatDate(
       first.dateKey,
-    )} to ${formatDate(latest.dateKey)}. Latest ${formatKilograms(
+    )} to ${formatDate(latest.dateKey)}. Latest ${formatValue(
       latest.estimated1RM,
-    )}. Best ${formatKilograms(best.estimated1RM)} on ${formatDate(
+    )}. Best ${formatValue(best.estimated1RM)} on ${formatDate(
       best.dateKey,
     )}. ${changeSummary}`,
   };

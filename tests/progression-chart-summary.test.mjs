@@ -62,3 +62,19 @@ test("announces an unchanged overall result without a false percentage", () => {
   assert.match(summary.accessibilityLabel, /is unchanged/);
   assert.doesNotMatch(summary.accessibilityLabel, /percent/);
 });
+
+test("uses the selected display formatter while leaving chart metrics canonical", () => {
+  const summary = buildProgressionChartSummary(
+    "Bench press",
+    [
+      { sessionDate: "2026-07-10", estimated1RM: 100 },
+      { sessionDate: "2026-07-24", estimated1RM: 110 },
+    ],
+    { formatValue: (kilograms) => `${(kilograms * 2.20462262).toFixed(1)} pounds` },
+  );
+
+  assert.equal(summary.latestValue, 110);
+  assert.match(summary.accessibilityLabel, /Latest 242\.5 pounds/);
+  assert.match(summary.accessibilityLabel, /increased by 22\.0 pounds/);
+  assert.doesNotMatch(summary.accessibilityLabel, /kilograms/);
+});

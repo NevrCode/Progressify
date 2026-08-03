@@ -1,5 +1,6 @@
 import { gymStyles } from "@/assets/styles/gym.style";
 import { AppButton } from "@/components/base/app-button";
+import { DateOnlyField } from "@/components/base/date-only-field";
 import {
   ActionStatus,
   type ActionFeedback,
@@ -9,6 +10,7 @@ import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
 import { ProgressionChartFrame } from "@/components/gym/progression-chart-frame";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useUnitPreference } from "@/context/UnitPreferenceContext";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
 import {
   calculateEstimatedOneRepMax,
@@ -16,6 +18,8 @@ import {
 } from "@/utils/workoutMetrics";
 import { isWorkingSet, normalizeWorkoutSetType, type WorkoutSetType } from "@/types/workout-set";
 import { buildProgressionChartSummary } from "@/utils/progression-chart-summary";
+import { buildCanonicalWorkoutSetRequest } from "@/features/workout-session/canonical-set-request";
+import { displayMass, formatMass, formatMassInput, massUnitLabel, parseMassInput } from "@/utils/measurement-units";
 import { toApiError } from "@/utils/apiError";
 import { isOfflineQueuedResponse } from "@/utils/offline-response";
 import {
@@ -138,6 +142,7 @@ const createEditableSet = (set: WorkoutSetDTO, index: number): EditableSet => ({
 
 export default function ManageWorkoutSession() {
   const { theme } = useTheme();
+  const { measurementSystem } = useUnitPreference();
   const styles = gymStyles(theme);
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -182,8 +187,9 @@ export default function ManageWorkoutSession() {
       buildProgressionChartSummary(
         getExerciseName(exercise),
         sessionPoints,
+        { formatValue: (kilograms) => formatMass(kilograms, measurementSystem) },
       ),
-    [exercise, sessionPoints],
+    [exercise, measurementSystem, sessionPoints],
   );
 
   const updateSessionMutation = useMutation({
@@ -279,13 +285,13 @@ export default function ManageWorkoutSession() {
       return "Keep at least one set in the session.";
     }
 
-    const sets = editableSets.map((set, index) => ({
+    const sets = editableSets.map((set, index) => buildCanonicalWorkoutSetRequest({
       id: set.id,
-      set_number: index + 1,
-      weight: Number(set.weight),
-      reps: Number(set.reps),
-      rir: Number(set.rir || 0),
-      set_type: set.set_type,
+      setNumber: index + 1,
+      weightKg: set.weight,
+      reps: set.reps,
+      rir: set.rir,
+      setType: set.set_type,
     }));
     const invalidSet = sets.find(
       (set) =>
@@ -471,7 +477,7 @@ export default function ManageWorkoutSession() {
               <Text style={styles.heroStatLabel}>Best est. 1RM</Text>
               <Text style={styles.heroStatValue}>
                 {sessionPoints.length
-                  ? `${Math.max(...sessionPoints.map((point) => point.estimated1RM)).toFixed(1)}kg`
+                  ? formatMass(Math.max(...sessionPoints.map((point) => point.estimated1RM)), measurementSystem)
                   : "-"}
               </Text>
             </View>
@@ -480,7 +486,7 @@ export default function ManageWorkoutSession() {
               <Text style={styles.heroStatLabel}>Top set</Text>
               <Text style={styles.heroStatValue}>
                 {sessionPoints.length
-                  ? `${sessionPoints[0].topWeight}kg x ${sessionPoints[0].bestReps}`
+                  ? `${formatMass(sessionPoints[0].topWeight, measurementSystem)} x ${sessionPoints[0].bestReps}`
                   : "-"}
               </Text>
             </View>
@@ -490,7 +496,7 @@ export default function ManageWorkoutSession() {
         <View style={styles.sectionHeader}>
           <View>
             <Text style={styles.sectionTitle}>Progress graph</Text>
-            <Text style={styles.sectionMeta}>Estimated 1RM by session</Text>
+            <Text style={styles.sectionMeta}>Estimated 1RM ({massUnitLabel(measurementSystem)}) by session</Text>
           </View>
         </View>
 
@@ -504,9 +510,9 @@ export default function ManageWorkoutSession() {
               curved
               isAnimated
               data={sessionPoints.map((point) => ({
-                value: Number(point.estimated1RM.toFixed(1)),
+                value: displayMass(point.estimated1RM, measurementSystem),
                 label: formatDateForDisplay(point.sessionDate),
-                dataPointText: point.estimated1RM.toFixed(1),
+                dataPointText: String(displayMass(point.estimated1RM, measurementSystem)),
               }))}
               height={220}
               spacing={56}
@@ -533,7 +539,7 @@ export default function ManageWorkoutSession() {
               }}
               noOfSections={4}
               maxValue={
-                Math.max(...sessionPoints.map((point) => point.estimated1RM)) +
+                Math.max(...sessionPoints.map((point) => displayMass(point.estimated1RM, measurementSystem))) +
                 5
               }
               dataPointsColor={theme.primary}
@@ -572,7 +578,7 @@ export default function ManageWorkoutSession() {
                       {formatDateForDisplay(sessionDateValue)}
                     </Text>
                     <Text style={styles.exerciseMeta}>
-                      {sets.filter(isWorkingSet).length} working / {sets.length} total sets | {totalVolume} working volume
+                      {sets.filter(isWorkingSet).length} working / {sets.length} total sets | {displayMass(totalVolume, measurementSystem, 0)} {massUnitLabel(measurementSystem)}-reps working volume
                     </Text>
                     {!!session.notes && (
                       <Text style={styles.exerciseSubMeta}>
@@ -611,7 +617,7 @@ export default function ManageWorkoutSession() {
                 <View style={styles.setTable}>
                   <View style={styles.setTableHeader}>
                     <Text style={styles.setHeaderText}>Set</Text>
-                    <Text style={styles.setHeaderText}>Weight</Text>
+                    <Text style={styles.setHeaderText}>Weight ({massUnitLabel(measurementSystem)})</Text>
                     <Text style={styles.setHeaderText}>Reps</Text>
                     <Text style={styles.setHeaderText}>RIR</Text>
                   </View>
@@ -627,7 +633,7 @@ export default function ManageWorkoutSession() {
                           ? `W${set.set_number}`
                           : `#${set.set_number}`}
                       </Text>
-                      <Text style={styles.setValue}>{set.weight}kg</Text>
+                      <Text style={styles.setValue}>{formatMass(set.weight, measurementSystem)}</Text>
                       <Text style={styles.setValue}>{set.reps}</Text>
                       <Text style={styles.setValue}>{set.rir ?? 0}</Text>
                     </View>
@@ -679,52 +685,11 @@ export default function ManageWorkoutSession() {
             ) : null}
 
             <ScrollView contentContainerStyle={{ gap: 12 }} showsVerticalScrollIndicator={false}>
-              {/* Date Input */}
-              <View>
-                <Text
-                  style={{
-                    fontSize: 11,
-                    fontWeight: "800",
-                    fontFamily: "PlusJakartaSans_800ExtraBold",
-                    color: theme.textLight,
-                    textTransform: "uppercase",
-                    letterSpacing: 1,
-                    marginBottom: 6,
-                  }}
-                >
-                  Session Date
-                </Text>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    backgroundColor: theme.background,
-                    borderRadius: 14,
-                    borderWidth: 1.5,
-                    borderColor: theme.border,
-                    paddingHorizontal: 12,
-                  }}
-                >
-                  <MaterialCommunityIcons
-                    name="calendar-month"
-                    size={18}
-                    color={theme.primary}
-                    style={{ marginRight: 8 }}
-                  />
-                  <TextInput
-                    style={{
-                      flex: 1,
-                      color: theme.textBlack,
-                      fontSize: 14,
-                      paddingVertical: 10,
-                      fontWeight: "600",
-                    }}
-                    placeholder="YYYY-MM-DD"
-                    value={sessionDate}
-                    onChangeText={setSessionDate}
-                  />
-                </View>
-              </View>
+              <DateOnlyField
+                label="Session date"
+                value={sessionDate}
+                onChange={setSessionDate}
+              />
 
               {/* Notes Input */}
               <View>
@@ -854,7 +819,7 @@ export default function ManageWorkoutSession() {
                       textAlign: "center",
                     }}
                   >
-                    WEIGHT
+                    WEIGHT ({massUnitLabel(measurementSystem)})
                   </Text>
                   <Text
                     style={{
@@ -934,7 +899,7 @@ export default function ManageWorkoutSession() {
                     {/* Weight Input */}
                     <View style={{ flex: 2.2, paddingHorizontal: 4 }}>
                       <TextInput
-                        accessibilityLabel={`Set ${idx + 1} weight in kilograms`}
+                        accessibilityLabel={`Set ${idx + 1} weight in ${massUnitLabel(measurementSystem)}`}
                         style={{
                           backgroundColor: theme.card,
                           borderRadius: 8,
@@ -947,12 +912,13 @@ export default function ManageWorkoutSession() {
                           textAlign: "center",
                         }}
                         keyboardType="decimal-pad"
-                        placeholder="kg"
+                        placeholder={massUnitLabel(measurementSystem)}
                         placeholderTextColor={theme.textLight}
-                        value={set.weight}
-                        onChangeText={(value) =>
-                          updateSetField(set.localId, "weight", value)
-                        }
+                        value={formatMassInput(set.weight ? Number(set.weight) : undefined, measurementSystem)}
+                        onChangeText={(value) => {
+                          const canonicalWeight = parseMassInput(value, measurementSystem);
+                          updateSetField(set.localId, "weight", canonicalWeight == null ? "" : String(canonicalWeight));
+                        }}
                       />
                     </View>
 

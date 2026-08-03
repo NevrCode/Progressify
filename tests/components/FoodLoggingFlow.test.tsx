@@ -20,6 +20,10 @@ jest.mock("@/services/foodDiaryService", () => ({
 jest.mock("@/hooks/useFoodDiary", () => ({
   FOOD_DIARY_QUERY_KEY: ["food-diary"],
 }));
+jest.mock("@/services/discoveryService", () => ({
+  useDiscoveryFeed: () => ({ data: { favorites: [], recent: [] } }),
+  useToggleDiscoveryFavorite: () => ({ mutate: jest.fn() }),
+}));
 jest.mock("@/context/AlertContext", () => ({
   useAlert: () => ({ alert: jest.fn() }),
 }));

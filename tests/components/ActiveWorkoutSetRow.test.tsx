@@ -101,7 +101,7 @@ describe("ActiveWorkoutSetRow", () => {
 
   it("locks values and completion after a set is completed while keeping copy and remove available", async () => {
     const { screen } = await renderRow({ set: { ...baseSet, completed: true } });
-    expect(screen.getByLabelText("Set 1 weight in kilograms for Bench press").props.editable).toBe(false);
+    expect(screen.getByLabelText("Set 1 weight in kg for Bench press").props.editable).toBe(false);
     expect(screen.getAllByRole("button", { name: "Complete set 1" })[0].props.accessibilityState.disabled).toBe(true);
     expect(screen.getAllByRole("button", { name: "Duplicate set 1" })[0].props.accessibilityState?.disabled).not.toBe(true);
     await screen.unmount();

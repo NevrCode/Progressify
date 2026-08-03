@@ -28,6 +28,7 @@ import {
 import { useAlert } from "@/context/AlertContext";
 import { useDiaryContext } from "@/context/DairyContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useUnitPreference } from "@/context/UnitPreferenceContext";
 import {
   FOOD_DIARY_QUERY_KEY,
   useFoodDiarySummary,
@@ -52,6 +53,13 @@ import {
 } from "@/services/nutritionService";
 import { toApiError } from "@/utils/apiError";
 import { isOfflineQueuedResponse } from "@/utils/offline-response";
+import {
+  centimetresToFeetAndInches,
+  formatMassInput,
+  massUnitLabel,
+  parseHeightInput,
+  parseMassInput,
+} from "@/utils/measurement-units";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -199,6 +207,7 @@ export function MacroBar({
 // ── MacroBar component ────────────────────────────────────────────────────────
 export default function FoodDiary() {
   const { theme } = useTheme();
+  const { measurementSystem } = useUnitPreference();
   const nutritionAccents = getNutritionAccents(theme.background);
   const semantics = getThemeSemantics(theme);
   const styles = gymStyles(theme);
@@ -221,8 +230,12 @@ export default function FoodDiary() {
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [step, setStep] = useState(0); // 0=body, 1=activity, 2=goal
 
-  const [weight, setWeight] = useState(profile?.weight_kg?.toString() ?? "");
+  const [weight, setWeight] = useState(
+    formatMassInput(profile?.weight_kg, measurementSystem),
+  );
   const [height, setHeight] = useState(profile?.height_cm?.toString() ?? "");
+  const [heightFeet, setHeightFeet] = useState("");
+  const [heightInches, setHeightInches] = useState("");
   const [age, setAge] = useState(profile?.age?.toString() ?? "");
   const [gender, setGender] = useState<Gender>(profile?.gender ?? "MALE");
   const [activity, setActivity] = useState<ActivityLevel>(
@@ -252,8 +265,17 @@ export default function FoodDiary() {
 
   const openForm = () => {
     setFoodActionFeedback(null);
-    setWeight(profile?.weight_kg?.toString() ?? "");
-    setHeight(profile?.height_cm?.toString() ?? "");
+    setWeight(formatMassInput(profile?.weight_kg, measurementSystem));
+    if (measurementSystem === "IMPERIAL" && profile?.height_cm != null) {
+      const imperialHeight = centimetresToFeetAndInches(profile.height_cm);
+      setHeightFeet(String(imperialHeight.feet));
+      setHeightInches(String(imperialHeight.inches));
+      setHeight("");
+    } else {
+      setHeight(profile?.height_cm?.toString() ?? "");
+      setHeightFeet("");
+      setHeightInches("");
+    }
     setAge(profile?.age?.toString() ?? "");
     setGender(profile?.gender ?? "MALE");
     setActivity(profile?.activity_level ?? "MODERATELY_ACTIVE");
@@ -277,9 +299,14 @@ export default function FoodDiary() {
   };
 
   const saveProfile = () => {
-    const w = parseFloat(weight),
-      h = parseFloat(height),
-      a = parseInt(age);
+    const w = parseMassInput(weight, measurementSystem);
+    const h = parseHeightInput(
+      height,
+      measurementSystem,
+      heightFeet,
+      heightInches,
+    );
+    const a = parseInt(age);
     if (!w || !h || !a) {
       setFoodActionFeedback({
         surface: "profile",
@@ -547,21 +574,46 @@ export default function FoodDiary() {
                     ))}
                   </View>
                   <FormField
-                    label="Weight"
-                    placeholder="Weight (kg)"
+                    label={`Weight (${massUnitLabel(measurementSystem)})`}
+                    placeholder={`Weight (${massUnitLabel(measurementSystem)})`}
                     placeholderTextColor={theme.textLight}
                     keyboardType="decimal-pad"
                     value={weight}
                     onChangeText={setWeight}
                   />
-                  <FormField
-                    label="Height"
-                    placeholder="Height (cm)"
-                    placeholderTextColor={theme.textLight}
-                    keyboardType="decimal-pad"
-                    value={height}
-                    onChangeText={setHeight}
-                  />
+                  {measurementSystem === "IMPERIAL" ? (
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      <FormField
+                        accessibilityLabel="Height in feet"
+                        containerStyle={{ flex: 1 }}
+                        label="Height (ft)"
+                        keyboardType="number-pad"
+                        placeholder="ft"
+                        placeholderTextColor={theme.textLight}
+                        value={heightFeet}
+                        onChangeText={setHeightFeet}
+                      />
+                      <FormField
+                        accessibilityLabel="Height in inches"
+                        containerStyle={{ flex: 1 }}
+                        label="Height (in)"
+                        keyboardType="number-pad"
+                        placeholder="in"
+                        placeholderTextColor={theme.textLight}
+                        value={heightInches}
+                        onChangeText={setHeightInches}
+                      />
+                    </View>
+                  ) : (
+                    <FormField
+                      label="Height (cm)"
+                      placeholder="Height (cm)"
+                      placeholderTextColor={theme.textLight}
+                      keyboardType="decimal-pad"
+                      value={height}
+                      onChangeText={setHeight}
+                    />
+                  )}
                   <FormField
                     label="Age"
                     placeholder="Age"

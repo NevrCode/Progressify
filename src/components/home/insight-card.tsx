@@ -2,7 +2,7 @@ import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
 import { getThemeSemantics } from "@/constants/semantic-colors";
 import { FONT_FAMILIES } from "@/constants/typography";
 import { useTheme } from "@/context/ThemeContext";
-import type { HomeInsight, InsightTone } from "@/utils/home-insights";
+import type { HomeInsight } from "@/utils/home-insights";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -10,19 +10,6 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 type InsightCardProps = {
   insight: HomeInsight;
   onPress: () => void;
-};
-
-const iconForTone = (tone: InsightTone) => {
-  switch (tone) {
-    case "positive":
-      return "trending-up";
-    case "warning":
-      return "alert-circle-outline";
-    case "info":
-      return "lightbulb-outline";
-    default:
-      return "chart-line";
-  }
 };
 
 export function InsightCard({ insight, onPress }: InsightCardProps) {
@@ -44,21 +31,6 @@ export function InsightCard({ insight, onPress }: InsightCardProps) {
       style={styles.card}
     >
       <View style={styles.heading}>
-        <View
-          style={[
-            styles.icon,
-            {
-              backgroundColor: accent + "14",
-              borderColor: accent + "30",
-            },
-          ]}
-        >
-          <MaterialCommunityIcons
-            name={iconForTone(insight.tone)}
-            size={20}
-            color={accent}
-          />
-        </View>
         <View style={styles.titleGroup}>
           <Text style={[styles.category, { color: accent }]}>
             {insight.category}

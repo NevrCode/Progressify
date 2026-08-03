@@ -20,10 +20,14 @@ test("shared primitives preserve accessible names, state, and touch targets", ()
 
 test("workout controls identify destructive actions and rest timer state", () => {
   const workout = read("../src/app/(pages)/activeWorkoutSession.tsx");
+  const setRow = read("../src/features/workout-session/active-workout-set-row.tsx");
+  const restTimer = read("../src/components/gym/rest-timer-overlay.tsx");
 
-  assert.match(workout, /accessibilityLabel=\{`Delete set \$\{set\.set_number\}`\}/);
-  assert.match(workout, /accessibilityLabel="Dismiss rest timer"/);
-  assert.match(workout, /accessibilityLiveRegion="polite"/);
+  assert.match(setRow, /accessibilityLabel=\{`Remove set \$\{set\.set_number\}`\}/);
+  assert.match(setRow, /accessibilityLabel=\{`Duplicate set \$\{set\.set_number\}`\}/);
+  assert.match(setRow, /accessibilityLabel=\{`Complete set \$\{set\.set_number\}`\}/);
+  assert.match(restTimer, /accessibilityLabel="Dismiss rest timer"/);
+  assert.match(restTimer, /accessibilityLiveRegion="polite"/);
   assert.match(workout, /accessibilityLabel="Exit active workout"/);
 });
 

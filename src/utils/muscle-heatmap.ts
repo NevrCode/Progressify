@@ -204,7 +204,10 @@ export const calculateWeeklyMuscleVolume = ({
         ) {
           return total;
         }
-        return total + (session.sets?.length ?? 0);
+        return (
+          total +
+          (session.sets ?? []).filter((set) => set.set_type !== "WARMUP").length
+        );
       },
       0,
     );

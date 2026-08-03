@@ -70,6 +70,25 @@ describe("ExerciseCatalogPicker", () => {
     expect(onUseExercise).toHaveBeenCalledWith(exercises[0]);
   });
 
+  it("keeps catalog results visible when the search key is submitted", async () => {
+    const screen = await render(
+      <ExerciseCatalogPicker
+        exercises={exercises}
+        onCreateCustom={jest.fn()}
+        onUseExercise={jest.fn()}
+      />,
+    );
+    const searchField = screen.getByLabelText("Search exercise catalog");
+
+    expect(searchField.props.submitBehavior).toBe("submit");
+    await fireEvent.changeText(searchField, "bench");
+    await fireEvent(searchField, "submitEditing", {
+      nativeEvent: { text: "bench" },
+    });
+
+    expect(screen.getByLabelText("View Bench Press")).toBeTruthy();
+  });
+
   it("offers custom creation when no result matches", async () => {
     const onCreateCustom = jest.fn();
     const screen = await render(

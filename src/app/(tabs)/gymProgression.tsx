@@ -24,8 +24,9 @@ import {
 } from "@/hooks/useGymDashboard";
 import {
   calculateEstimatedOneRepMax,
-  calculateWorkoutVolume,
+  calculateWorkingSetVolume,
 } from "@/utils/workoutMetrics";
+import { isWorkingSet } from "@/types/workout-set";
 import { buildProgressionChartSummary } from "@/utils/progression-chart-summary";
 
 import {
@@ -158,13 +159,16 @@ const formatDateForApi = (value: Date | string) => {
   ].join("-");
 };
 
+const normalizeOptionalDate = (value?: string) =>
+  value?.trim() ? value : undefined;
+
 const buildSessionProgression = (
   exerciseSessions: ExerciseSessionDTO[],
 ): SessionProgressionPoint[] => {
   const points = exerciseSessions
     .map((session) => {
       const sessionDate = session.session_date ?? "";
-      const sessionSets = session.sets ?? [];
+      const sessionSets = (session.sets ?? []).filter(isWorkingSet);
 
       if (!sessionDate || sessionSets.length === 0) {
         return null;
@@ -186,10 +190,7 @@ const buildSessionProgression = (
         return best;
       });
 
-      const totalVolume = sortedSets.reduce(
-        (sum, current) => sum + current.weight * current.reps,
-        0,
-      );
+      const totalVolume = calculateWorkingSetVolume(sortedSets);
 
       const estimated1RM = calculateEstimatedOneRepMax(
         topSet.weight,
@@ -295,7 +296,7 @@ export default function GymProgression() {
       const sessions = exercise.exercise_sessions;
       for (const session of sessions ?? []) {
         const sets = session.sets;
-        for (const set of sets ?? []) {
+        for (const set of (sets ?? []).filter(isWorkingSet)) {
           const est1RM = set.weight * (1 + set.reps / 30);
           if (est1RM > best) {
             best = est1RM;
@@ -313,9 +314,7 @@ export default function GymProgression() {
       const sessions = exercise.exercise_sessions;
       for (const session of sessions ?? []) {
         const sets = session.sets;
-        for (const set of sets ?? []) {
-          volume += calculateWorkoutVolume(set.weight, set.reps);
-        }
+        volume += calculateWorkingSetVolume(sets ?? []);
       }
     }
     return volume;
@@ -409,6 +408,10 @@ export default function GymProgression() {
           return;
         }
 
+        const lastSessionDate =
+          exerciseProgressions.find((e) => e.id === modalState.itemId)
+            ?.last_session_date ?? exerciseForm.last_session_date;
+
         await exerciseMutation.mutateAsync({
           id: modalState.itemId,
           payload: {
@@ -416,9 +419,7 @@ export default function GymProgression() {
             name: exerciseForm.name,
             muscle_group: exerciseForm.muscle_group,
             target_rep_range: exerciseForm.target_rep_range,
-            last_session_date:
-              exerciseProgressions.find((e) => e.id === modalState.itemId)
-                ?.last_session_date ?? exerciseForm.last_session_date,
+            last_session_date: normalizeOptionalDate(lastSessionDate),
             notes: exerciseForm.notes,
           },
         });
@@ -1331,8 +1332,17 @@ export default function GymProgression() {
                         </View>
                         {latestSessionSets.map((set) => (
                           <View key={set.id} style={styles.setRow}>
-                            <Text style={styles.setValue}>
-                              #{set.set_number}
+                            <Text
+                              style={[
+                                styles.setValue,
+                                set.set_type === "WARMUP" && {
+                                  color: theme.primary,
+                                },
+                              ]}
+                            >
+                              {set.set_type === "WARMUP"
+                                ? `W${set.set_number}`
+                                : `#${set.set_number}`}
                             </Text>
                             <Text style={styles.setValue}>{set.weight}kg</Text>
                             <Text style={styles.setValue}>{set.reps}</Text>

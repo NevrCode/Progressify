@@ -1,9 +1,37 @@
 import { gymStyles } from "@/assets/styles/gym.style";
 import { AppButton } from "@/components/base/app-button";
 import { IconButton } from "@/components/base/icon-button";
-import { ModalHeader } from "@/components/base/modal-header";
+import { ActiveWorkoutCompletion } from "@/components/gym/active-workout-completion";
+import { ActiveWorkoutExercisePicker } from "@/components/gym/active-workout-exercise-picker";
+import { ProgressionRecommendationCard } from "@/components/gym/progression-recommendation-card";
+import { RestTimerOverlay } from "@/components/gym/rest-timer-overlay";
+import { ActiveWorkoutSetRow } from "@/features/workout-session/active-workout-set-row";
+import { SetUndoSnackbar } from "@/features/workout-session/set-undo-snackbar";
+import { completeDraftSetOnce } from "@/features/workout-session/set-completion-controller";
+import { getSupersetRestDecision } from "@/features/workout-session/superset-round-controller";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
+import {
+  ACTIVE_SESSION_DRAFT_VERSION,
+  appendExerciseDraftSet,
+  completeExerciseDraftSet,
+  createExerciseDraft,
+  createEmptyExerciseDraft,
+  duplicateExerciseDraftSet,
+  getExerciseRestSeconds,
+  getDurationLabel,
+  parsePlannedExerciseRestSeconds,
+  parseActiveWorkoutLayoutSnapshot,
+  removeExerciseDraftSetWithUndo,
+  restoreRemovedExerciseDraftSet,
+  toggleExerciseDraftSetType,
+  type DraftSet,
+  type ExerciseDraft,
+  type RemovedDraftSet,
+  type ActiveWorkoutLayoutSnapshot,
+  updateExerciseDraftSet,
+} from "@/features/workout-session/drafts";
+import { useRestTimer } from "@/features/workout-session/use-rest-timer";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
 import {
   createExerciseSession,
@@ -19,37 +47,17 @@ import {
 import { completeWorkoutSession } from "@/services/workoutProgramService";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   BackHandler,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
   ScrollView,
   Text,
-  TextInput,
   TouchableOpacity,
-  Vibration,
   View
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-
-type DraftSet = {
-  localId: string;
-  set_number: number;
-  weight: string;
-  reps: string;
-  rir: string;
-};
-
-type ExerciseDraft = {
-  exerciseId: number;
-  startedAt: string;
-  sets: DraftSet[];
-};
 
 const getExerciseName = (exercise: ExerciseProgressionDTO) =>
   exercise.name ?? "Exercise";
@@ -64,26 +72,6 @@ const formatDateForApi = (value: Date | string) => {
 };
 
 const getRandomInt = () => Math.floor(Math.random() * 100);
-
-const createEmptyExerciseDraft = (exerciseId: number): ExerciseDraft => ({
-  exerciseId,
-  startedAt: new Date().toISOString(),
-  sets: [
-    {
-      localId: `${Date.now()}-${exerciseId}-${getRandomInt()}`,
-      set_number: 1,
-      weight: "0",
-      reps: "0",
-      rir: "0",
-    },
-  ],
-});
-
-const getDurationLabel = (startedAt: string) => {
-  const elapsedMs = Date.now() - new Date(startedAt).getTime();
-  const minutes = Math.max(1, Math.round(elapsedMs / 60000));
-  return `${minutes} min`;
-};
 
 const getLastSessionHint = (
   exercise: ExerciseProgressionDTO,
@@ -110,77 +98,33 @@ export default function ActiveWorkoutSession() {
   const styles = gymStyles(theme);
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { exerciseIds, workoutSessionId, routineName, plannedExerciseMap } = useLocalSearchParams<{
+  const {
+    exerciseIds,
+    workoutSessionId,
+    routineName,
+    plannedExerciseMap,
+    plannedExerciseRestMap,
+    activeWorkoutLayout,
+  } = useLocalSearchParams<{
     exerciseIds?: string;
     workoutSessionId?: string;
     routineName?: string;
     plannedExerciseMap?: string;
+    plannedExerciseRestMap?: string;
+    activeWorkoutLayout?: string;
   }>();
 
   const [restoredIds, setRestoredIds] = useState<number[]>([]);
   const [restoredWorkoutSessionId, setRestoredWorkoutSessionId] = useState<number | null>(null);
   const [restoredRoutineName, setRestoredRoutineName] = useState<string | null>(null);
   const [restoredPlannedExerciseIds, setRestoredPlannedExerciseIds] = useState<Record<number, number>>({});
+  const [restoredPlannedExerciseRestSeconds, setRestoredPlannedExerciseRestSeconds] = useState<
+    Record<number, number>
+  >({});
+  const [restoredLayoutSnapshot, setRestoredLayoutSnapshot] = useState<ActiveWorkoutLayoutSnapshot | undefined>();
 
-  // Rest Timer State
-  const [restTime, setRestTime] = useState<number>(0);
-  const [isRestPaused, setIsRestPaused] = useState<boolean>(false);
-  const [initialRestDuration, setInitialRestDuration] = useState<number>(90);
-  const [isRestActive, setIsRestActive] = useState<boolean>(false);
-
-  const startRestTimer = (seconds: number) => {
-    setRestTime(seconds);
-    setInitialRestDuration(seconds);
-    setIsRestPaused(false);
-    setIsRestActive(true);
-  };
-
-  const adjustRestTime = (seconds: number) => {
-    setRestTime((prev) => Math.max(0, prev + seconds));
-  };
-
-  const toggleRestPause = () => {
-    setIsRestPaused((prev) => !prev);
-  };
-
-  const stopRestTimer = () => {
-    setRestTime(0);
-    setIsRestPaused(false);
-    setIsRestActive(false);
-  };
-
-  const formatRestTime = (totalSeconds: number) => {
-    const mins = Math.floor(totalSeconds / 60);
-    const secs = totalSeconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
-
-  useEffect(() => {
-    let interval: any = null;
-    if (isRestActive && restTime > 0 && !isRestPaused) {
-      interval = setInterval(() => {
-        setRestTime((prev) => {
-          if (prev <= 1) {
-            clearInterval(interval);
-            if (Platform.OS !== "web") {
-              try {
-                Vibration.vibrate([0, 500, 200, 500]);
-              } catch {
-                // ignore
-              }
-            }
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else {
-      if (interval) clearInterval(interval);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isRestActive, restTime, isRestPaused]);
+  const restTimer = useRestTimer();
+  const restoreRestTimer = restTimer.restore;
 
   const activeWorkoutSessionId = restoredWorkoutSessionId ?? (workoutSessionId ? Number(workoutSessionId) : null);
   const activeRoutineName = restoredRoutineName ?? routineName;
@@ -192,9 +136,29 @@ export default function ActiveWorkoutSession() {
       return {};
     }
   }, [plannedExerciseMap]);
+  const routePlannedExerciseRestSeconds = useMemo(() => {
+    if (!plannedExerciseRestMap) return {};
+    try {
+      return parsePlannedExerciseRestSeconds(JSON.parse(plannedExerciseRestMap)) ?? {};
+    } catch {
+      return {};
+    }
+  }, [plannedExerciseRestMap]);
+  const routeLayoutSnapshot = useMemo(() => {
+    if (!activeWorkoutLayout) return undefined;
+    try {
+      return parseActiveWorkoutLayoutSnapshot(JSON.parse(activeWorkoutLayout)) ?? undefined;
+    } catch {
+      return undefined;
+    }
+  }, [activeWorkoutLayout]);
   const activePlannedExerciseIds = Object.keys(restoredPlannedExerciseIds).length
     ? restoredPlannedExerciseIds
     : routePlannedExerciseIds;
+  const activePlannedExerciseRestSeconds = Object.keys(restoredPlannedExerciseRestSeconds).length
+    ? restoredPlannedExerciseRestSeconds
+    : routePlannedExerciseRestSeconds;
+  const activeLayoutSnapshot = restoredLayoutSnapshot ?? routeLayoutSnapshot;
   const selectedIds = useMemo(
     () =>
       (exerciseIds ?? "")
@@ -208,9 +172,12 @@ export default function ActiveWorkoutSession() {
   const sessionStartedAtRef = useRef(new Date().toISOString());
   const [elapsed, setElapsed] = useState("0 min");
   const [drafts, setDrafts] = useState<Record<number, ExerciseDraft>>({});
+  const draftsRef = useRef<Record<number, ExerciseDraft>>({});
   const [completedIds, setCompletedIds] = useState<Set<number>>(new Set());
   const [finishingId, setFinishingId] = useState<number | null>(null);
-  const [deletingSetKey, setDeletingSetKey] = useState<string | null>(null);
+  const [removedSet, setRemovedSet] = useState<RemovedDraftSet | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const completedSetClaimsRef = useRef(new Set<string>());
   const [allSaved, setAllSaved] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [showSwapModal, setShowSwapModal] = useState(false);
@@ -242,23 +209,35 @@ export default function ActiveWorkoutSession() {
       .filter((e): e is ExerciseProgressionDTO => e != null);
   }, [sessionExerciseIds, exerciseProgressions]);
 
+  const activeGroupByExercise = useMemo(() => {
+    const groups = new Map<number, { id: string; memberIndex: number; size: number }>();
+    for (const group of activeLayoutSnapshot?.groups ?? []) {
+      group.memberExerciseIds.forEach((exerciseId, memberIndex) =>
+        groups.set(exerciseId, { id: group.id, memberIndex, size: group.memberExerciseIds.length }),
+      );
+    }
+    return groups;
+  }, [activeLayoutSnapshot]);
+
   useEffect(() => {
     if (hydrated) return;
     if (isLoading) return;
-    const allIds = selectedIds.length > 0 ? selectedIds : [];
-    if (allIds.length > 0 && !selectedExercises.length) return;
 
     const hydrate = async () => {
       const stored = await loadActiveSession();
 
-      if (!selectedIds.length && stored && stored.exerciseIds.length > 0) {
+      if (stored && stored.exerciseIds.length > 0) {
         sessionStartedAtRef.current = stored.startedAt;
+        draftsRef.current = stored.drafts;
         setDrafts(stored.drafts);
         setCompletedIds(new Set(stored.completedIds));
         setRestoredIds(stored.exerciseIds);
         setRestoredWorkoutSessionId(stored.workoutSessionId ?? null);
         setRestoredRoutineName(stored.routineName ?? null);
         setRestoredPlannedExerciseIds(stored.plannedExerciseIds ?? {});
+        setRestoredPlannedExerciseRestSeconds(stored.plannedExerciseRestSeconds ?? {});
+        setRestoredLayoutSnapshot(stored.layoutSnapshot);
+        restoreRestTimer(stored.restTimer);
         setCurrentExerciseIds(stored.exerciseIds);
         setHydrated(true);
         return;
@@ -267,8 +246,9 @@ export default function ActiveWorkoutSession() {
       if (selectedExercises.length) {
         const initial: Record<number, ExerciseDraft> = {};
         for (const exercise of selectedExercises) {
-          initial[exercise.id] = createEmptyExerciseDraft(exercise.id);
+          initial[exercise.id] = createExerciseDraft(exercise.id, exercise);
         }
+        draftsRef.current = initial;
         setDrafts(initial);
         setCurrentExerciseIds(selectedIds);
       }
@@ -276,19 +256,30 @@ export default function ActiveWorkoutSession() {
     };
 
     hydrate();
-  }, [hydrated, selectedExercises, selectedIds, isLoading]);
+  }, [hydrated, selectedExercises, selectedIds, isLoading, restoreRestTimer]);
 
   const saveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearedRef = useRef(false);
+
+  useEffect(
+    () => () => {
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    },
+    [],
+  );
 
   const persistState = useCallback(() => {
     if (!hydrated || allSaved || clearedRef.current) return;
     if (!sessionExerciseIds.length) return;
 
     const data: ActiveSessionData = {
+      version: ACTIVE_SESSION_DRAFT_VERSION,
       workoutSessionId: activeWorkoutSessionId ?? undefined,
       routineName: activeRoutineName,
       plannedExerciseIds: activePlannedExerciseIds,
+      plannedExerciseRestSeconds: activePlannedExerciseRestSeconds,
+      layoutSnapshot: activeLayoutSnapshot,
+      restTimer: restTimer.snapshot(),
       exerciseIds: sessionExerciseIds,
       startedAt: sessionStartedAtRef.current,
       drafts,
@@ -304,6 +295,9 @@ export default function ActiveWorkoutSession() {
     activeWorkoutSessionId,
     activeRoutineName,
     activePlannedExerciseIds,
+    activePlannedExerciseRestSeconds,
+    activeLayoutSnapshot,
+    restTimer,
   ]);
 
   useEffect(() => {
@@ -387,79 +381,96 @@ export default function ActiveWorkoutSession() {
     field: keyof DraftSet,
     value: string,
   ) => {
-    // Strip leading zeros (e.g. "07" → "7") but keep "0" and "0." intact
-    let clean = value;
-    if (clean.length > 1 && clean[0] === "0" && clean[1] !== ".") {
-      clean = clean.replace(/^0+/, "") || "0";
-    }
-
     setDrafts((current) => {
-      const draft = current[exerciseId];
-      if (!draft) return current;
-      return {
-        ...current,
-        [exerciseId]: {
-          ...draft,
-          sets: draft.sets.map((s) =>
-            s.localId === localId ? { ...s, [field]: clean } : s,
-          ),
-        },
-      };
+      const next = updateExerciseDraftSet(current, exerciseId, localId, field, value);
+      draftsRef.current = next;
+      return next;
     });
   };
 
   const addDraftSet = (exerciseId: number) => {
     setDrafts((current) => {
-      const draft = current[exerciseId];
-      if (!draft) return current;
-      return {
-        ...current,
-        [exerciseId]: {
-          ...draft,
-          sets: [
-            ...draft.sets,
-            {
-              localId: `${Date.now()}-${exerciseId}-${getRandomInt()}`,
-              set_number: draft.sets.length + 1,
-              weight: "0",
-              reps: "0",
-              rir: "0",
-            },
-          ],
-        },
-      };
+      const next = appendExerciseDraftSet(current, exerciseId);
+      draftsRef.current = next;
+      return next;
     });
   };
 
   const deleteDraftSet = (exerciseId: number, localId: string) => {
-    if (deletingSetKey) return;
-    setDeletingSetKey(localId);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    const result = removeExerciseDraftSetWithUndo(drafts, exerciseId, localId);
+    if (!result.removed) return;
+    draftsRef.current = result.drafts;
+    setDrafts(result.drafts);
+    setRemovedSet(result.removed);
+    undoTimerRef.current = setTimeout(() => setRemovedSet(null), 5000);
+  };
 
-    setTimeout(() => {
-      setDrafts((current) => {
-        const draft = current[exerciseId];
-        if (!draft) return current;
+  const undoDeleteDraftSet = () => {
+    if (!removedSet) return;
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setDrafts((current) => {
+      const next = restoreRemovedExerciseDraftSet(current, removedSet);
+      draftsRef.current = next;
+      return next;
+    });
+    setRemovedSet(null);
+  };
 
-        const nextSets = draft.sets.filter((s) => s.localId !== localId);
+  const duplicateDraftSet = (exerciseId: number, localId: string) => {
+    setDrafts((current) => {
+      const next = duplicateExerciseDraftSet(current, exerciseId, localId);
+      draftsRef.current = next;
+      return next;
+    });
+  };
 
-        if (!nextSets.length) {
-          const copy = { ...current };
-          delete copy[exerciseId];
-          return copy;
-        }
+  const completeDraftSet = (exerciseId: number, localId: string) => {
+    const draftsBefore = draftsRef.current;
+    const set = draftsBefore[exerciseId]?.sets.find((candidate) => candidate.localId === localId);
+    if (!set) return;
+    const result = completeDraftSetOnce(
+      completedSetClaimsRef.current,
+      set,
+      () => {
+        const next = completeExerciseDraftSet(draftsRef.current, exerciseId, localId);
+        draftsRef.current = next;
+        setDrafts(next);
+      },
+      () => {
+        const decision = getSupersetRestDecision(
+          activeLayoutSnapshot,
+          draftsBefore,
+          exerciseId,
+          set,
+          activePlannedExerciseRestSeconds,
+          getExerciseRestSeconds(undefined, exerciseId),
+        );
+        const normalRest = getExerciseRestSeconds(activePlannedExerciseRestSeconds, exerciseId);
+        const seconds = set.set_type === "WARMUP"
+          ? normalRest
+          : decision.kind === "start"
+            ? decision.durationSeconds
+            : activeLayoutSnapshot?.groups.some((group) => group.memberExerciseIds.includes(exerciseId))
+              ? 0
+              : normalRest;
+        if (seconds > 0) restTimer.start(seconds);
+      },
+    );
+    if (result === "invalid") {
+      alert(
+        "Incomplete set",
+        `Set #${set.set_number} needs a numeric weight and reps greater than zero.`,
+      );
+    }
+  };
 
-        const reindexed = nextSets.map((s, idx) => ({
-          ...s,
-          set_number: idx + 1,
-        }));
-
-        return {
-          ...current,
-          [exerciseId]: { ...draft, sets: reindexed },
-        };
-      });
-      setDeletingSetKey(null);
-    }, 350);
+  const toggleDraftSetType = (exerciseId: number, localId: string) => {
+    setDrafts((current) => {
+      const next = toggleExerciseDraftSetType(current, exerciseId, localId);
+      draftsRef.current = next;
+      return next;
+    });
   };
 
   // --- Available exercises for swap ---
@@ -624,6 +635,7 @@ export default function ActiveWorkoutSession() {
           weight: parseFloat(s.weight) || 0,
           reps: parseFloat(s.reps) || 0,
           rir: parseFloat(s.rir) || 0,
+          set_type: s.set_type,
         })),
       };
 
@@ -695,6 +707,49 @@ export default function ActiveWorkoutSession() {
     }
   };
 
+  const applyProgressionRecommendation = (exercise: ExerciseProgressionDTO) => {
+    const recommendation = exercise.recommendation;
+    if (!recommendation || recommendation.suggested_weight == null) return;
+
+    const apply = () => {
+      const targetSets = Math.max(1, recommendation.target_sets);
+      const nextSets: DraftSet[] = Array.from({ length: targetSets }, (_, index) => ({
+        localId: `${Date.now()}-${exercise.id}-${index}-${getRandomInt()}`,
+        set_number: index + 1,
+        weight: String(recommendation.suggested_weight),
+        reps: String(recommendation.target_reps_min),
+        rir: String(recommendation.target_rir),
+        set_type: "WORKING",
+        completed: false,
+      }));
+
+      setDrafts((current) => ({
+        ...current,
+        [exercise.id]: {
+          exerciseId: exercise.id,
+          startedAt: current[exercise.id]?.startedAt ?? new Date().toISOString(),
+          sets: nextSets,
+        },
+      }));
+    };
+
+    const hasEnteredData = (drafts[exercise.id]?.sets ?? []).some(
+      (set) => Number(set.weight) > 0 || Number(set.reps) > 0,
+    );
+    if (hasEnteredData) {
+      alert(
+        "Apply progression suggestion?",
+        "This replaces the sets currently entered for this exercise. You can edit the suggested values afterward.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Apply", onPress: apply },
+        ],
+      );
+      return;
+    }
+    apply();
+  };
+
   // --- Loading / Error states ---
 
   if (
@@ -737,14 +792,17 @@ export default function ActiveWorkoutSession() {
   if (allSaved) {
     const totalSets = selectedExercises.reduce((sum, e) => {
       const draft = drafts[e.id];
-      return sum + (draft?.sets.length ?? 0);
+      return (
+        sum +
+        (draft?.sets.filter((set) => set.set_type === "WORKING").length ?? 0)
+      );
     }, 0);
     const totalVolume = selectedExercises.reduce((sum, e) => {
       const draft = drafts[e.id];
       if (!draft) return sum;
       return (
         sum +
-        draft.sets.reduce(
+        draft.sets.filter((set) => set.set_type === "WORKING").reduce(
           (s, set) =>
             s + (parseFloat(set.weight) || 0) * (parseFloat(set.reps) || 0),
           0,
@@ -753,42 +811,14 @@ export default function ActiveWorkoutSession() {
     }, 0);
 
     return (
-      <SafeAreaProvider>
-        <SafeAreaView style={styles.safeArea}>
-          <View
-            style={[
-              styles.container,
-              { justifyContent: "center", alignItems: "center", flex: 1 },
-            ]}
-          >
-            <MaterialCommunityIcons
-              name="check-circle"
-              size={72}
-              color={theme.primary}
-            />
-            <Text
-              style={[styles.title, { textAlign: "center", marginTop: 16 }]}
-            >
-              Session Complete
-            </Text>
-            <Text
-              style={[
-                styles.exerciseMeta,
-                { textAlign: "center", marginTop: 8 },
-              ]}
-            >
-              {activeRoutineName ?? "Manual Workout"} | {elapsed} | {totalSets} sets |{" "}
-              {totalVolume} vol
-            </Text>
-            <AppButton
-              label="Done"
-              accessibilityLabel="Close completed workout"
-              onPress={() => router.back()}
-              style={{ marginTop: 32, width: "100%" }}
-            />
-          </View>
-        </SafeAreaView>
-      </SafeAreaProvider>
+      <ActiveWorkoutCompletion
+        routineName={activeRoutineName}
+        elapsed={elapsed}
+        totalSets={totalSets}
+        totalVolume={totalVolume}
+        onDone={() => router.back()}
+        theme={theme}
+      />
     );
   }
 
@@ -934,10 +964,24 @@ export default function ActiveWorkoutSession() {
             const isCompleted = completedIds.has(exercise.id);
             const isFinishing = finishingId === exercise.id;
             const sets = draft?.sets ?? [];
-
+            const group = activeGroupByExercise.get(exercise.id);
             return (
+              <View key={exercise.id} style={{ gap: 8 }}>
+              {group?.memberIndex === 0 ? (
+                <View
+                  accessible
+                  accessibilityLabel={`Superset with ${group.size} exercises`}
+                  style={{ backgroundColor: theme.primary + "14", borderColor: theme.primary + "50", borderCurve: "continuous", borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8 }}
+                >
+                  <Text selectable style={{ color: theme.primary, fontFamily: "PlusJakartaSans_800ExtraBold", fontSize: 12 }}>
+                    Superset · {group.size} exercises
+                  </Text>
+                  <Text selectable style={{ color: theme.textLight, fontSize: 10 }}>
+                    Finish every working-set round to start the shared rest timer.
+                  </Text>
+                </View>
+              ) : null}
               <View
-                key={exercise.id}
                 style={[
                   styles.exerciseCard,
                   isCompleted && {
@@ -1026,6 +1070,15 @@ export default function ActiveWorkoutSession() {
                   )}
                 </View>
 
+                {!isCompleted ? (
+                  <ProgressionRecommendationCard
+                    exerciseName={getExerciseName(exercise)}
+                    recommendation={exercise.recommendation}
+                    disabled={isFinishing}
+                    onApply={() => applyProgressionRecommendation(exercise)}
+                  />
+                ) : null}
+
                 {!isCompleted && (
                   <View style={styles.subsectionHeader}>
                     <Text style={styles.subsectionTitle}>Sets</Text>
@@ -1055,288 +1108,36 @@ export default function ActiveWorkoutSession() {
                 )}
 
                 {sets.length > 0 && (
-                  <KeyboardAvoidingView
-                    behavior={Platform.OS === "ios" ? "padding" : "height"}
-                    style={{ flex: 1 }}
+                  <View
+                    style={{
+                      borderWidth: 1.5,
+                      borderColor: theme.border,
+                      borderRadius: 16,
+                      backgroundColor: theme.background,
+                      overflow: "hidden",
+                      marginTop: 10,
+                    }}
                   >
-                    <View
-                      style={{
-                        borderWidth: 1.5,
-                        borderColor: theme.border,
-                        borderRadius: 16,
-                        backgroundColor: theme.background,
-                        overflow: "hidden",
-                        marginTop: 10,
-                      }}
-                    >
-                      {/* Table Header */}
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          backgroundColor: theme.card,
-                          borderBottomWidth: 1.5,
-                          borderBottomColor: theme.border,
-                          paddingVertical: 8,
-                          paddingHorizontal: 8,
-                        }}
-                      >
-                        <Text
-                          style={{
-                            flex: 1,
-                            fontSize: 11,
-                            fontWeight: "800",
-                            fontFamily: "PlusJakartaSans_800ExtraBold",
-                            color: theme.textLight,
-                            textAlign: "center",
-                          }}
-                        >
-                          SET
-                        </Text>
-                        <Text
-                          style={{
-                            flex: 2.2,
-                            fontSize: 11,
-                            fontWeight: "800",
-                            fontFamily: "PlusJakartaSans_800ExtraBold",
-                            color: theme.textLight,
-                            textAlign: "center",
-                          }}
-                        >
-                          WEIGHT
-                        </Text>
-                        <Text
-                          style={{
-                            flex: 1.8,
-                            fontSize: 11,
-                            fontWeight: "800",
-                            fontFamily: "PlusJakartaSans_800ExtraBold",
-                            color: theme.textLight,
-                            textAlign: "center",
-                          }}
-                        >
-                          REPS
-                        </Text>
-                        <Text
-                          style={{
-                            flex: 1.8,
-                            fontSize: 11,
-                            fontWeight: "800",
-                            fontFamily: "PlusJakartaSans_800ExtraBold",
-                            color: theme.textLight,
-                            textAlign: "center",
-                          }}
-                        >
-                          RIR
-                        </Text>
-                        <Text
-                          style={{
-                            flex: 1.6,
-                            fontSize: 11,
-                            fontWeight: "800",
-                            fontFamily: "PlusJakartaSans_800ExtraBold",
-                            color: theme.textLight,
-                            textAlign: "center",
-                          }}
-                        >
-                          ACT
-                        </Text>
-                      </View>
-
-                      {/* Table Rows */}
-                      {sets.map((set, idx) => (
-                        <View
-                          key={set.localId}
-                          style={{
-                            flexDirection: "row",
-                            alignItems: "center",
-                            borderBottomWidth: idx === sets.length - 1 ? 0 : 1,
-                            borderBottomColor: theme.border + "50",
-                            paddingVertical: 6,
-                            paddingHorizontal: 8,
-                          }}
-                        >
-                          <Text
-                            style={{
-                              flex: 1,
-                              fontSize: 13,
-                              fontWeight: "900",
-                              fontFamily: "PlusJakartaSans_800ExtraBold",
-                              color: theme.textBlack,
-                              textAlign: "center",
-                            }}
-                          >
-                            {set.set_number}
-                          </Text>
-
-                          {isCompleted ? (
-                            <>
-                              <Text
-                                style={{
-                                  flex: 2.2,
-                                  fontSize: 13,
-                                  fontWeight: "700",
-                                  color: theme.textBlack,
-                                  textAlign: "center",
-                                }}
-                              >
-                                {set.weight}kg
-                              </Text>
-                              <Text
-                                style={{
-                                  flex: 1.8,
-                                  fontSize: 13,
-                                  fontWeight: "700",
-                                  color: theme.textBlack,
-                                  textAlign: "center",
-                                }}
-                              >
-                                {set.reps}
-                              </Text>
-                              <Text
-                                style={{
-                                  flex: 1.8,
-                                  fontSize: 13,
-                                  fontWeight: "700",
-                                  color: theme.textBlack,
-                                  textAlign: "center",
-                                }}
-                              >
-                                {set.rir}
-                              </Text>
-                              <View style={{ flex: 1.6 }} />
-                            </>
-                          ) : (
-                            <>
-                              {/* Weight Input */}
-                              <View style={{ flex: 2.2, paddingHorizontal: 4 }}>
-                                <TextInput
-                                  accessibilityLabel={`Set ${set.set_number} weight in kilograms for ${getExerciseName(exercise)}`}
-                                  style={{
-                                    backgroundColor: theme.card,
-                                    borderRadius: 8,
-                                    borderWidth: 1,
-                                    borderColor: theme.border,
-                                    color: theme.textBlack,
-                                    fontSize: 13,
-                                    fontWeight: "600",
-                                    paddingVertical: 6,
-                                    textAlign: "center",
-                                  }}
-                                  keyboardType="numeric"
-                                  value={set.weight}
-                                  onChangeText={(v) =>
-                                    updateDraftSet(
-                                      exercise.id,
-                                      set.localId,
-                                      "weight",
-                                      v,
-                                    )
-                                  }
-                                />
-                              </View>
-
-                              {/* Reps Input */}
-                              <View style={{ flex: 1.8, paddingHorizontal: 4 }}>
-                                <TextInput
-                                  accessibilityLabel={`Set ${set.set_number} repetitions for ${getExerciseName(exercise)}`}
-                                  style={{
-                                    backgroundColor: theme.card,
-                                    borderRadius: 8,
-                                    borderWidth: 1,
-                                    borderColor: theme.border,
-                                    color: theme.textBlack,
-                                    fontSize: 13,
-                                    fontWeight: "600",
-                                    paddingVertical: 6,
-                                    textAlign: "center",
-                                  }}
-                                  keyboardType="numeric"
-                                  value={set.reps}
-                                  onChangeText={(v) =>
-                                    updateDraftSet(
-                                      exercise.id,
-                                      set.localId,
-                                      "reps",
-                                      v,
-                                    )
-                                  }
-                                />
-                              </View>
-
-                              {/* RIR Input */}
-                              <View style={{ flex: 1.8, paddingHorizontal: 4 }}>
-                                <TextInput
-                                  accessibilityLabel={`Set ${set.set_number} repetitions in reserve for ${getExerciseName(exercise)}`}
-                                  style={{
-                                    backgroundColor: theme.card,
-                                    borderRadius: 8,
-                                    borderWidth: 1,
-                                    borderColor: theme.border,
-                                    color: theme.textBlack,
-                                    fontSize: 13,
-                                    fontWeight: "600",
-                                    paddingVertical: 6,
-                                    textAlign: "center",
-                                  }}
-                                  keyboardType="numeric"
-                                  value={set.rir}
-                                  onChangeText={(v) =>
-                                    updateDraftSet(
-                                      exercise.id,
-                                      set.localId,
-                                      "rir",
-                                      v,
-                                    )
-                                  }
-                                />
-                              </View>
-
-                              {/* Actions */}
-                              <View
-                                style={{
-                                  flex: 1.6,
-                                  flexDirection: "row",
-                                  justifyContent: "center",
-                                  alignItems: "center",
-                                  gap: 6,
-                                }}
-                              >
-                                <IconButton
-                                  accessibilityLabel={`Start 90 second rest timer after set ${set.set_number}`}
-                                  icon={
-                                    <MaterialCommunityIcons
-                                      name="timer-play-outline"
-                                      size={15}
-                                      color={theme.primary}
-                                    />
-                                  }
-                                  onPress={() => startRestTimer(90)}
-                                  visualSize={26}
-                                />
-                                <IconButton
-                                  accessibilityLabel={`Delete set ${set.set_number}`}
-                                  icon={
-                                    <MaterialIcons
-                                      name="delete-outline"
-                                      size={15}
-                                      color={theme.expense}
-                                    />
-                                  }
-                                  loading={deletingSetKey === set.localId}
-                                  onPress={() =>
-                                    deleteDraftSet(exercise.id, set.localId)
-                                  }
-                                  disabled={deletingSetKey === set.localId}
-                                  variant="destructive"
-                                  visualSize={26}
-                                />
-                              </View>
-                            </>
-                          )}
-                        </View>
-                      ))}
-                    </View>
-                  </KeyboardAvoidingView>
+                    {sets.map((set, idx) => (
+                      <ActiveWorkoutSetRow
+                        key={set.localId}
+                        set={set}
+                        exerciseName={getExerciseName(exercise)}
+                        theme={theme}
+                        disabled={isCompleted || isFinishing}
+                        isLast={idx === sets.length - 1}
+                        onChange={(field, value) =>
+                          updateDraftSet(exercise.id, set.localId, field, value)
+                        }
+                        onToggleType={() =>
+                          toggleDraftSetType(exercise.id, set.localId)
+                        }
+                        onComplete={() => completeDraftSet(exercise.id, set.localId)}
+                        onDuplicate={() => duplicateDraftSet(exercise.id, set.localId)}
+                        onRemove={() => deleteDraftSet(exercise.id, set.localId)}
+                      />
+                    ))}
+                  </View>
                 )}
 
                 {!isCompleted && (
@@ -1347,6 +1148,7 @@ export default function ActiveWorkoutSession() {
                   />
                 )}
               </View>
+              </View>
             );
           })}
 
@@ -1354,176 +1156,25 @@ export default function ActiveWorkoutSession() {
           <View style={{ height: 20 }} />
         </ScrollView>
 
-        {/* Floating Rest Timer Overlay */}
-        {isRestActive && (
-          <LinearGradient
-            colors={
-              restTime === 0
-                ? [theme.income + "F2", theme.income]
-                : [theme.primary + "E6", theme.primary + "FF"]
-            }
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={{
-              marginHorizontal: 20,
-              marginBottom: 10,
-              borderRadius: 16,
-              paddingVertical: 12,
-              paddingHorizontal: 16,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              shadowColor: theme.shadow,
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.25,
-              shadowRadius: 10,
-              elevation: 8,
-              borderWidth: 1,
-              borderColor: restTime === 0 ? theme.income + "30" : theme.primary + "30",
-            }}
-          >
-            {/* Left section: Icon and Time */}
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-              <MaterialCommunityIcons
-                name={
-                  restTime === 0
-                    ? "bell-ring-outline"
-                    : isRestPaused
-                      ? "timer-off-outline"
-                      : "timer-sand"
-                }
-                size={26}
-                color={theme.background}
-              />
-              <View>
-                <Text
-                  accessibilityLiveRegion="polite"
-                  accessibilityLabel={
-                    restTime === 0
-                      ? "Rest finished"
-                      : `${formatRestTime(restTime)} remaining${isRestPaused ? ", paused" : ""}`
-                  }
-                  style={{
-                    color: theme.background,
-                    fontSize: 11,
-                    fontWeight: "800",
-                    textTransform: "uppercase",
-                    letterSpacing: 0.8,
-                    opacity: 0.9,
-                  }}
-                >
-                  {restTime === 0 ? "Rest Finished" : "Rest Timer"}
-                </Text>
-                <Text
-                  style={{
-                    color: theme.background,
-                    fontSize: 22,
-                    fontWeight: "900",
-                    letterSpacing: -0.5,
-                    marginTop: 1,
-                    fontVariant: ["tabular-nums"],
-                  }}
-                >
-                  {restTime === 0 ? "Go Lift!" : formatRestTime(restTime)}
-                </Text>
-              </View>
-            </View>
+        <RestTimerOverlay
+          active={restTimer.active}
+          remainingSeconds={restTimer.remainingSeconds}
+          paused={restTimer.paused}
+          initialDuration={restTimer.initialDuration}
+          onAdjust={restTimer.adjust}
+          onTogglePause={restTimer.togglePause}
+          onRestart={restTimer.restart}
+          onDismiss={restTimer.dismiss}
+          theme={theme}
+        />
 
-            {/* Middle section: Action Controls */}
-            {restTime > 0 ? (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel="Reduce rest timer by 30 seconds"
-                  hitSlop={7}
-                  onPress={() => adjustRestTime(-30)}
-                  style={{
-                    paddingHorizontal: 10,
-                    paddingVertical: 6,
-                    borderRadius: 8,
-                    backgroundColor: theme.background + "20",
-                    justifyContent: "center",
-                    alignItems: "center",
-                  }}
-                >
-                  <Text style={{ color: theme.background, fontSize: 11, fontWeight: "900" }}>-30s</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel="Increase rest timer by 30 seconds"
-                  hitSlop={7}
-                  onPress={() => adjustRestTime(30)}
-                  style={{
-                    paddingHorizontal: 10,
-                    paddingVertical: 6,
-                    borderRadius: 8,
-                    backgroundColor: theme.background + "20",
-                    justifyContent: "center",
-                    alignItems: "center",
-                  }}
-                >
-                  <Text style={{ color: theme.background, fontSize: 11, fontWeight: "900" }}>+30s</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel={`Restart rest timer for ${initialRestDuration} seconds`}
-                  hitSlop={7}
-                  onPress={() => startRestTimer(initialRestDuration)}
-                  style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 6,
-                    borderRadius: 8,
-                    backgroundColor: theme.background,
-                    justifyContent: "center",
-                    alignItems: "center",
-                    flexDirection: "row",
-                    gap: 4,
-                  }}
-                >
-                  <MaterialIcons name="replay" size={14} color={theme.income} />
-                  <Text style={{ color: theme.income, fontSize: 11, fontWeight: "900" }}>Restart</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* Right section: Play/Pause/Dismiss */}
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              {restTime > 0 && (
-                <IconButton
-                  accessibilityLabel={isRestPaused ? "Resume rest timer" : "Pause rest timer"}
-                  icon={
-                    <MaterialCommunityIcons
-                      name={isRestPaused ? "play" : "pause"}
-                      size={20}
-                      color={theme.primary}
-                    />
-                  }
-                  onPress={toggleRestPause}
-                  visualSize={36}
-                />
-              )}
-              <IconButton
-                accessibilityLabel="Dismiss rest timer"
-                icon={
-                  <MaterialCommunityIcons
-                    name="close"
-                    size={20}
-                    color={theme.background}
-                  />
-                }
-                onPress={stopRestTimer}
-                style={{
-                  backgroundColor: theme.background + "20",
-                }}
-                variant="ghost"
-                visualSize={36}
-              />
-            </View>
-          </LinearGradient>
-        )}
+        {removedSet ? (
+          <SetUndoSnackbar
+            setNumber={removedSet.set.set_number}
+            onUndo={undoDeleteDraftSet}
+            theme={theme}
+          />
+        ) : null}
 
         {/* Bottom bar */}
         <View
@@ -1552,113 +1203,26 @@ export default function ActiveWorkoutSession() {
           />
         </View>
 
-        {/* Swap Exercise Modal */}
-        <Modal
+        <ActiveWorkoutExercisePicker
           visible={showSwapModal}
-          animationType="slide"
-          transparent
-          onRequestClose={closeExercisePicker}
-        >
-          <View style={styles.modalBackdrop}>
-            <View
-              accessibilityViewIsModal
-              style={[styles.modalCard, { maxHeight: "70%" }]}
-            >
-              <ModalHeader
-                closeLabel="Close swap exercise"
-                onClose={closeExercisePicker}
-                style={styles.modalHeader}
-                title="Swap Exercise"
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Search exercises..."
-                placeholderTextColor={theme.textLight}
-                value={exerciseSearch}
-                onChangeText={setExerciseSearch}
-              />
-              <ScrollView contentContainerStyle={{ gap: 8 }}>
-                {availableSessionExercises.length === 0 ? (
-                  <Text style={styles.emptyText}>
-                    No other exercises available.
-                  </Text>
-                ) : (
-                  availableSessionExercises.map((ex) => (
-                    <TouchableOpacity
-                      accessibilityRole="button"
-                      accessibilityLabel={`Swap to ${getExerciseName(ex)}`}
-                      key={ex.id}
-                      style={styles.listCard}
-                      onPress={() => swapExercise(ex.id)}
-                    >
-                      <Text style={styles.listTitle}>
-                        {getExerciseName(ex)}
-                      </Text>
-                      <Text style={styles.listMeta}>
-                        {ex.muscle_group ?? "-"} |{" "}
-                        {ex.target_rep_range ?? "-"}
-                      </Text>
-                    </TouchableOpacity>
-                  ))
-                )}
-              </ScrollView>
-            </View>
-          </View>
-        </Modal>
-
-        {/* Add Exercise Modal */}
-        <Modal
+          mode="swap"
+          exercises={availableSessionExercises}
+          search={exerciseSearch}
+          onSearchChange={setExerciseSearch}
+          onSelect={swapExercise}
+          onClose={closeExercisePicker}
+          theme={theme}
+        />
+        <ActiveWorkoutExercisePicker
           visible={showAddExerciseModal}
-          animationType="slide"
-          transparent
-          onRequestClose={closeExercisePicker}
-        >
-          <View style={styles.modalBackdrop}>
-            <View
-              accessibilityViewIsModal
-              style={[styles.modalCard, { maxHeight: "70%" }]}
-            >
-              <ModalHeader
-                closeLabel="Close add exercise"
-                onClose={closeExercisePicker}
-                style={styles.modalHeader}
-                title="Add Exercise"
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Search exercises..."
-                placeholderTextColor={theme.textLight}
-                value={exerciseSearch}
-                onChangeText={setExerciseSearch}
-              />
-              <ScrollView contentContainerStyle={{ gap: 8 }}>
-                {availableSessionExercises.length === 0 ? (
-                  <Text style={styles.emptyText}>
-                    No more exercises available.
-                  </Text>
-                ) : (
-                  availableSessionExercises.map((ex) => (
-                    <TouchableOpacity
-                      accessibilityRole="button"
-                      accessibilityLabel={`Add ${getExerciseName(ex)} to workout`}
-                      key={ex.id}
-                      style={styles.listCard}
-                      onPress={() => addExerciseToSession(ex.id)}
-                    >
-                      <Text style={styles.listTitle}>
-                        {getExerciseName(ex)}
-                      </Text>
-                      <Text style={styles.listMeta}>
-                        {ex.muscle_group ?? "-"} |{" "}
-                        {ex.target_rep_range ?? "-"}
-                      </Text>
-                    </TouchableOpacity>
-                  ))
-                )}
-              </ScrollView>
-            </View>
-          </View>
-        </Modal>
+          mode="add"
+          exercises={availableSessionExercises}
+          search={exerciseSearch}
+          onSearchChange={setExerciseSearch}
+          onSelect={addExerciseToSession}
+          onClose={closeExercisePicker}
+          theme={theme}
+        />
       </SafeAreaView>
     </SafeAreaProvider>
   );

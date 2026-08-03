@@ -12,8 +12,9 @@ import { useTheme } from "@/context/ThemeContext";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
 import {
   calculateEstimatedOneRepMax,
-  calculateWorkoutVolume,
+  calculateWorkingSetVolume,
 } from "@/utils/workoutMetrics";
+import { isWorkingSet, normalizeWorkoutSetType, type WorkoutSetType } from "@/types/workout-set";
 import { buildProgressionChartSummary } from "@/utils/progression-chart-summary";
 import { toApiError } from "@/utils/apiError";
 import { isOfflineQueuedResponse } from "@/utils/offline-response";
@@ -49,6 +50,7 @@ type EditableSet = {
   weight: string;
   reps: string;
   rir: string;
+  set_type: WorkoutSetType;
 };
 
 type SessionPoint = {
@@ -92,7 +94,7 @@ const buildSessionPoints = (sessions: ExerciseSessionDTO[]): SessionPoint[] =>
   sessions
     .map((session) => {
       const sessionDate = getSessionDate(session);
-      const sets = getSessionSets(session);
+      const sets = getSessionSets(session).filter(isWorkingSet);
 
       if (!sessionDate || !sets.length) return null;
 
@@ -103,10 +105,7 @@ const buildSessionPoints = (sessions: ExerciseSessionDTO[]): SessionPoint[] =>
         }
         return best;
       }, sets[0]);
-      const totalVolume = sets.reduce(
-        (total, set) => total + calculateWorkoutVolume(set.weight, set.reps),
-        0,
-      );
+      const totalVolume = calculateWorkingSetVolume(sets);
 
       return {
         sessionDate,
@@ -134,6 +133,7 @@ const createEditableSet = (set: WorkoutSetDTO, index: number): EditableSet => ({
   weight: String(set.weight ?? ""),
   reps: String(set.reps ?? ""),
   rir: String(set.rir ?? 0),
+  set_type: normalizeWorkoutSetType(set.set_type),
 });
 
 export default function ManageWorkoutSession() {
@@ -242,8 +242,22 @@ export default function ManageWorkoutSession() {
         weight: "",
         reps: "",
         rir: "0",
+        set_type: "WORKING",
       },
     ]);
+  };
+
+  const toggleEditableSetType = (localId: string) => {
+    setEditableSets((current) =>
+      current.map((set) =>
+        set.localId === localId
+          ? {
+              ...set,
+              set_type: set.set_type === "WARMUP" ? "WORKING" : "WARMUP",
+            }
+          : set,
+      ),
+    );
   };
 
   const removeEditableSet = (localId: string) => {
@@ -271,6 +285,7 @@ export default function ManageWorkoutSession() {
       weight: Number(set.weight),
       reps: Number(set.reps),
       rir: Number(set.rir || 0),
+      set_type: set.set_type,
     }));
     const invalidSet = sets.find(
       (set) =>
@@ -547,11 +562,7 @@ export default function ManageWorkoutSession() {
           sessions.map((session) => {
             const sessionDateValue = getSessionDate(session);
             const sets = getSessionSets(session);
-            const totalVolume = sets.reduce(
-              (total, set) =>
-                total + calculateWorkoutVolume(set.weight, set.reps),
-              0,
-            );
+            const totalVolume = calculateWorkingSetVolume(sets);
 
             return (
               <View key={session.id} style={styles.exerciseCard}>
@@ -561,7 +572,7 @@ export default function ManageWorkoutSession() {
                       {formatDateForDisplay(sessionDateValue)}
                     </Text>
                     <Text style={styles.exerciseMeta}>
-                      {sets.length} sets | {totalVolume} total volume
+                      {sets.filter(isWorkingSet).length} working / {sets.length} total sets | {totalVolume} working volume
                     </Text>
                     {!!session.notes && (
                       <Text style={styles.exerciseSubMeta}>
@@ -606,7 +617,16 @@ export default function ManageWorkoutSession() {
                   </View>
                   {sets.map((set, index) => (
                     <View key={set.id ?? index} style={styles.setRow}>
-                      <Text style={styles.setValue}>#{set.set_number}</Text>
+                      <Text
+                        style={[
+                          styles.setValue,
+                          set.set_type === "WARMUP" && { color: theme.primary },
+                        ]}
+                      >
+                        {set.set_type === "WARMUP"
+                          ? `W${set.set_number}`
+                          : `#${set.set_number}`}
+                      </Text>
                       <Text style={styles.setValue}>{set.weight}kg</Text>
                       <Text style={styles.setValue}>{set.reps}</Text>
                       <Text style={styles.setValue}>{set.rir ?? 0}</Text>
@@ -874,21 +894,42 @@ export default function ManageWorkoutSession() {
                       borderBottomColor: theme.border + "50",
                       paddingVertical: 6,
                       paddingHorizontal: 8,
+                      backgroundColor:
+                        set.set_type === "WARMUP"
+                          ? theme.primary + "0A"
+                          : "transparent",
                     }}
                   >
                     {/* Set Number */}
-                    <Text
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={`Set ${idx + 1} is ${set.set_type === "WARMUP" ? "a warm-up set" : "a working set"}. Change to ${set.set_type === "WARMUP" ? "working" : "warm-up"} set`}
+                      accessibilityState={{ selected: set.set_type === "WARMUP" }}
+                      onPress={() => toggleEditableSetType(set.localId)}
                       style={{
                         flex: 1,
-                        fontSize: 13,
-                        fontWeight: "900",
-                        fontFamily: "PlusJakartaSans_800ExtraBold",
-                        color: theme.textBlack,
-                        textAlign: "center",
+                        alignItems: "center",
+                        justifyContent: "center",
                       }}
                     >
-                      {idx + 1}
-                    </Text>
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: "900",
+                          fontFamily: "PlusJakartaSans_800ExtraBold",
+                          color:
+                            set.set_type === "WARMUP"
+                              ? theme.primary
+                              : theme.textBlack,
+                          textAlign: "center",
+                        }}
+                      >
+                        {set.set_type === "WARMUP" ? `W${idx + 1}` : idx + 1}
+                      </Text>
+                      <Text style={{ fontSize: 8, color: theme.textLight }}>
+                        {set.set_type === "WARMUP" ? "WARM-UP" : "WORK"}
+                      </Text>
+                    </TouchableOpacity>
 
                     {/* Weight Input */}
                     <View style={{ flex: 2.2, paddingHorizontal: 4 }}>

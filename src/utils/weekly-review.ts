@@ -19,6 +19,7 @@ export type WeeklyReview = {
 type SetLike = {
   weight?: number;
   reps?: number;
+  set_type?: string;
 };
 
 type SessionLike = {
@@ -74,6 +75,7 @@ const metric = (current: number, previous: number): WeeklyReviewMetric => ({
 });
 
 const setVolume = (set: SetLike) => {
+  if (set.set_type === "WARMUP") return 0;
   const weight = Number(set.weight ?? 0);
   const reps = Number(set.reps ?? 0);
   return weight > 0 && reps > 0 ? weight * reps : 0;

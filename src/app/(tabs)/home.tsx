@@ -6,11 +6,12 @@ import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
 import { ShimmerSkeleton } from "@/components/base/shimmer-skeleton";
 import { StatePanel } from "@/components/base/state-panel";
 import { TabScreenScrollView } from "@/components/base/tab-screen-scroll-view";
+import { HomeTodaySummary } from "@/components/home/home-today-summary";
 import { InsightCard } from "@/components/home/insight-card";
 import { OnboardingChecklist } from "@/components/home/onboarding-checklist";
 import { WeeklyReviewCard } from "@/components/home/weekly-review-card";
-import { getNutritionAccents } from "@/constants/semantic-colors";
 import { useTheme } from "@/context/ThemeContext";
+import { homeScreenStyles as styles } from "@/assets/styles/home-screen.style";
 import { useActiveSession } from "@/hooks/useActiveSession";
 import { FOOD_DIARY_QUERY_KEY } from "@/hooks/useFoodDiary";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
@@ -24,6 +25,7 @@ import type {
   ExerciseProgressionDTO,
   ExerciseSessionDTO,
 } from "@/services/gymService";
+import { isWorkingSet } from "@/types/workout-set";
 import { getFoodEntries } from "@/services/foodDiaryService";
 import { getUserProfile } from "@/services/nutritionService";
 import { getWaterIntake, logWaterIntake } from "@/services/waterService";
@@ -67,7 +69,6 @@ const formatDateForApi = (date: Date) =>
 
 const today = new Date();
 const todayKey = formatDateForApi(today);
-const WATER_GOAL_ML = 2000;
 const HOME_FOOD_HISTORY_LIMIT = 100;
 
 const getSessionTime = (session: ExerciseSessionDTO) => {
@@ -85,86 +86,14 @@ const getLatestSession = (exercise: ExerciseProgressionDTO) =>
 const estimate1RM = (weight: number, reps: number) => weight * (1 + reps / 30);
 
 const getLatestEstimated1RM = (exercise: ExerciseProgressionDTO) => {
-  const sets = getLatestSession(exercise)?.sets ?? [];
+  const sets = (getLatestSession(exercise)?.sets ?? []).filter(isWorkingSet);
   return sets.length
     ? Math.max(...sets.map((set) => estimate1RM(set.weight, set.reps)))
     : 0;
 };
 
-const formatCompactNumber = (value: number, suffix = "") =>
-  `${Math.round(value).toLocaleString()}${suffix}`;
-
-const clampPercentage = (value?: number) =>
-  Math.max(0, Math.min(value ?? 0, 100));
-
-type MetricProps = {
-  label: string;
-  value: string;
-  supporting: string;
-  percentage: number;
-  accentColor: string;
-};
-
-function TodayMetric({
-  label,
-  value,
-  supporting,
-  percentage,
-  accentColor,
-}: MetricProps) {
-  const { theme } = useTheme();
-
-  return (
-    <View
-      style={[
-        styles.metric,
-        {
-          backgroundColor: accentColor + "0D",
-          borderColor: accentColor + "24",
-        },
-      ]}
-    >
-      <Text style={[styles.metricLabel, { color: accentColor }]}>{label}</Text>
-      <Text style={[styles.metricValue, { color: theme.text }]}>{value}</Text>
-      <Text style={[styles.metricSupporting, { color: theme.textLight }]}>
-        {supporting}
-      </Text>
-      <View style={[styles.progressTrack, { backgroundColor: theme.border }]}>
-        <View
-          style={[
-            styles.progressFill,
-            {
-              backgroundColor: accentColor,
-              width: `${clampPercentage(percentage)}%`,
-            },
-          ]}
-        />
-      </View>
-    </View>
-  );
-}
-
-function HomeSummarySkeleton() {
-  return (
-    <View
-      style={styles.metricGrid}
-      accessibilityLabel="Loading today's summary"
-    >
-      {[0, 1, 2, 3].map((item) => (
-        <View key={item} style={styles.metric}>
-          <ShimmerSkeleton width={60} height={9} />
-          <ShimmerSkeleton width={72} height={20} />
-          <ShimmerSkeleton width={56} height={9} />
-          <ShimmerSkeleton height={5} borderRadius={3} />
-        </View>
-      ))}
-    </View>
-  );
-}
-
 export default function HomeScreen() {
   const { theme } = useTheme();
-  const nutritionAccents = getNutritionAccents(theme.background);
   const router = useRouter();
   const queryClient = useQueryClient();
   const [primaryInsightExplanationVisible, setPrimaryInsightExplanationVisible] =
@@ -518,138 +447,18 @@ export default function HomeScreen() {
           </ShadowGlowCard>
         </FadeSlideIn>
 
-        <SectionLabel>Today</SectionLabel>
-        <FadeSlideIn delay={80}>
-          <ShadowGlowCard>
-            {isSummaryLoading ? (
-              <HomeSummarySkeleton />
-            ) : (
-              <View style={styles.metricGrid}>
-                <TodayMetric
-                  accentColor={nutritionAccents.calories}
-                  label="Calories"
-                  value={formatCompactNumber(nutrition?.calories.consumed ?? 0)}
-                  supporting={`of ${formatCompactNumber(nutrition?.calories.goal ?? 0)}`}
-                  percentage={nutrition?.calories.percentage ?? 0}
-                />
-                <TodayMetric
-                  accentColor={nutritionAccents.protein}
-                  label="Protein"
-                  value={formatCompactNumber(
-                    nutrition?.protein.consumed ?? 0,
-                    "g",
-                  )}
-                  supporting={`of ${formatCompactNumber(nutrition?.protein.goal ?? 0, "g")}`}
-                  percentage={nutrition?.protein.percentage ?? 0}
-                />
-                <TodayMetric
-                  accentColor={nutritionAccents.water}
-                  label="Water"
-                  value={
-                    waterAmount >= 1000
-                      ? `${(waterAmount / 1000).toFixed(1)}L`
-                      : `${waterAmount}ml`
-                  }
-                  supporting={`of ${WATER_GOAL_ML / 1000}L`}
-                  percentage={(waterAmount / WATER_GOAL_ML) * 100}
-                />
-                <TodayMetric
-                  accentColor={theme.primary}
-                  label="Training"
-                  value={hasActiveSession ? "Active" : "Not started"}
-                  supporting={
-                    activeProgram
-                      ? activeProgram.name
-                      : `${sessionDatesThisWeek.size} days this week`
-                  }
-                  percentage={(sessionDatesThisWeek.size / 7) * 100}
-                />
-              </View>
-            )}
-
-            <View
-              style={[styles.waterControls, { borderTopColor: theme.border }]}
-            >
-              <View style={styles.waterControlLabel}>
-                <MaterialCommunityIcons
-                  name="water"
-                  size={17}
-                  color={nutritionAccents.water}
-                />
-                <Text style={[styles.waterControlText, { color: theme.text }]}>
-                  Log water
-                </Text>
-              </View>
-              <View style={styles.waterButtons}>
-                {[
-                  { label: "−250", increment: -250 },
-                  { label: "+250", increment: 250 },
-                  { label: "+500", increment: 500 },
-                ].map((action) => {
-                  const disabled =
-                    waterMutation.isPending ||
-                    (action.increment < 0 && waterAmount <= 0);
-                  return (
-                    <TouchableOpacity
-                      accessibilityLabel={`${action.label} milliliters of water`}
-                      accessibilityRole="button"
-                      accessibilityState={{
-                        busy: waterMutation.isPending,
-                        disabled,
-                      }}
-                      activeOpacity={0.7}
-                      disabled={disabled}
-                      key={action.label}
-                      onPress={() => waterMutation.mutate(action.increment)}
-                      style={[
-                        styles.waterButton,
-                        {
-                          backgroundColor: nutritionAccents.water + "10",
-                          borderColor: nutritionAccents.water + "30",
-                          opacity: disabled ? 0.4 : 1,
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.waterButtonText,
-                          { color: nutritionAccents.water },
-                        ]}
-                      >
-                        {action.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-
-            <View
-              style={[styles.summaryActions, { borderTopColor: theme.border }]}
-            >
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel="Log food"
-                hitSlop={8}
-                onPress={() => router.push("/foodDiary")}
-              >
-                <Text style={[styles.inlineAction, { color: theme.primary }]}>
-                  Log food
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel="Open nutrition goals"
-                hitSlop={8}
-                onPress={() => router.push("/nutritionProfile")}
-              >
-                <Text style={[styles.inlineAction, { color: theme.primary }]}>
-                  Nutrition goals
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </ShadowGlowCard>
-        </FadeSlideIn>
+        <HomeTodaySummary
+          nutrition={nutrition}
+          isLoading={isSummaryLoading}
+          waterAmount={waterAmount}
+          waterUpdating={waterMutation.isPending}
+          hasActiveSession={hasActiveSession}
+          activeProgramName={activeProgram?.name}
+          trainingDaysThisWeek={sessionDatesThisWeek.size}
+          onWaterChange={(increment) => waterMutation.mutate(increment)}
+          onLogFood={() => router.push("/foodDiary")}
+          onOpenNutritionGoals={() => router.push("/nutritionProfile")}
+        />
 
         <SectionLabel>This week</SectionLabel>
         <FadeSlideIn delay={120}>
@@ -865,195 +674,3 @@ export default function HomeScreen() {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  container: {
-    gap: 14,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-  },
-  heroCard: { gap: 16 },
-  heroHeading: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    gap: 12,
-  },
-  eyebrow: {
-    fontFamily: "PlusJakartaSans_800ExtraBold",
-    fontSize: 11,
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
-  },
-  heroTitle: {
-    fontFamily: "PlusJakartaSans_800ExtraBold",
-    fontSize: 20,
-  },
-  heroMeta: {
-    fontFamily: "PlusJakartaSans_500Medium",
-    fontSize: 11,
-    lineHeight: 17,
-  },
-  metricGrid: {
-    columnGap: 8,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    rowGap: 8,
-  },
-  metric: {
-    borderRadius: 12,
-    borderWidth: 1,
-    gap: 4,
-    padding: 10,
-    width: "48.5%",
-  },
-  metricLabel: {
-    fontFamily: "PlusJakartaSans_700Bold",
-    fontSize: 11,
-    textTransform: "uppercase",
-  },
-  metricValue: {
-    fontFamily: "PlusJakartaSans_800ExtraBold",
-    fontSize: 19,
-    fontVariant: ["tabular-nums"],
-  },
-  metricSupporting: {
-    fontFamily: "PlusJakartaSans_500Medium",
-    fontSize: 11,
-  },
-  progressTrack: {
-    borderRadius: 3,
-    height: 5,
-    marginTop: 3,
-    overflow: "hidden",
-  },
-  progressFill: { borderRadius: 3, height: "100%" },
-  summaryActions: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    flexDirection: "row",
-    gap: 20,
-    marginTop: 18,
-    paddingHorizontal: 6,
-    paddingTop: 14,
-  },
-  waterControls: {
-    alignItems: "center",
-    borderTopWidth: StyleSheet.hairlineWidth,
-    flexDirection: "row",
-    gap: 12,
-    justifyContent: "space-between",
-    marginTop: 18,
-    paddingHorizontal: 6,
-    paddingTop: 14,
-  },
-  waterControlLabel: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 6,
-  },
-  waterControlText: {
-    fontFamily: "PlusJakartaSans_700Bold",
-    fontSize: 11,
-  },
-  waterButtons: {
-    flexDirection: "row",
-    gap: 6,
-  },
-  waterButton: {
-    alignItems: "center",
-    borderRadius: 10,
-    borderWidth: 1,
-    justifyContent: "center",
-    minHeight: 36,
-    minWidth: 48,
-    paddingHorizontal: 8,
-  },
-  waterButtonText: {
-    fontFamily: "PlusJakartaSans_800ExtraBold",
-    fontSize: 11,
-    fontVariant: ["tabular-nums"],
-  },
-  inlineAction: {
-    fontFamily: "PlusJakartaSans_700Bold",
-    fontSize: 11,
-  },
-  weekRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 16,
-  },
-  weekValue: {
-    fontFamily: "PlusJakartaSans_800ExtraBold",
-    fontSize: 32,
-    fontVariant: ["tabular-nums"],
-  },
-  weekLabel: {
-    fontFamily: "PlusJakartaSans_600SemiBold",
-    fontSize: 11,
-  },
-  weekDivider: { height: 48, width: StyleSheet.hairlineWidth },
-  insightLabel: {
-    fontFamily: "PlusJakartaSans_700Bold",
-    fontSize: 11,
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-  },
-  insightText: {
-    fontFamily: "PlusJakartaSans_500Medium",
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 4,
-  },
-  currentInsightExplanationButton: {
-    alignItems: "center",
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    gap: 2,
-    minHeight: 44,
-  },
-  currentInsightExplanationLabel: {
-    fontFamily: "PlusJakartaSans_700Bold",
-    fontSize: 10,
-  },
-  currentInsightReason: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    fontFamily: "PlusJakartaSans_500Medium",
-    fontSize: 10,
-    lineHeight: 15,
-    paddingTop: 8,
-  },
-  insightList: {
-    gap: 10,
-  },
-  sectionHeading: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  activityRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 12,
-    paddingVertical: 5,
-  },
-  activityIcon: {
-    alignItems: "center",
-    borderRadius: 12,
-    height: 38,
-    justifyContent: "center",
-    width: 38,
-  },
-  activityTitle: {
-    fontFamily: "PlusJakartaSans_700Bold",
-    fontSize: 13,
-  },
-  activityMeta: {
-    fontFamily: "PlusJakartaSans_500Medium",
-    fontSize: 11,
-  },
-  activityValue: {
-    fontFamily: "PlusJakartaSans_800ExtraBold",
-    fontSize: 13,
-    fontVariant: ["tabular-nums"],
-  },
-});

@@ -7,20 +7,36 @@ import { FormField } from "@/components/base/form-field";
 import { PageHeader } from "@/components/base/page-header";
 import { SegmentedControl } from "@/components/base/segmented-control";
 import { StatePanel } from "@/components/base/state-panel";
+import { ProgramLayoutEditor } from "@/components/gym/program-layout-editor";
+import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
 import {
   activateWorkoutProgram,
   addPlannedExercise,
   completeWorkoutProgram,
+  createProgramLayoutMutation,
   createWorkoutProgram,
   createWorkoutRoutine,
   deletePlannedExercise,
+  duplicateWorkoutRoutine,
   getWorkoutPrograms,
+  PlannedExerciseDTO,
+  PlannedExerciseRequest,
   ProgramTemplate,
   startWorkoutRoutine,
+  replaceWorkoutProgramLayout,
+  updatePlannedExercise,
   WorkoutRoutineDTO,
 } from "@/services/workoutProgramService";
+import {
+  serializeProgramLayout,
+  type ProgramLayout,
+} from "@/features/program-layout/model";
+import {
+  isRoutineLayoutRevisionConflict,
+  routineLayoutConflictPrompt,
+} from "@/features/program-layout/conflict";
 import { toApiError } from "@/utils/apiError";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -51,6 +67,20 @@ const parseRepRange = (value?: string) => {
   const values = value?.match(/\d+/g)?.map(Number) ?? [];
   return { min: values[0] || 8, max: values[1] || values[0] || 12 };
 };
+
+const plannedExerciseUpdateRequest = (
+  planned: PlannedExerciseDTO,
+  restSeconds: number,
+): PlannedExerciseRequest => ({
+  exercise_progression_id: planned.exercise_progression_id,
+  position: planned.position,
+  target_sets: planned.target_sets ?? null,
+  target_rep_min: planned.target_rep_min ?? null,
+  target_rep_max: planned.target_rep_max ?? null,
+  target_rir: planned.target_rir ?? null,
+  rest_seconds: restSeconds,
+  notes: planned.notes ?? null,
+});
 
 type FeedbackSurface = "page" | "create" | "exercise";
 type ScopedActionFeedback = ActionFeedback & {
@@ -144,6 +174,7 @@ function SwipeToDeleteExerciseRow({
 
 export default function ProgramsScreen() {
   const { theme } = useTheme();
+  const { alert } = useAlert();
   const router = useRouter();
   const queryClient = useQueryClient();
   const programsQuery = useQuery({
@@ -162,6 +193,9 @@ export default function ProgramsScreen() {
     useState<WorkoutRoutineDTO | null>(null);
   const [actionFeedback, setActionFeedback] =
     useState<ScopedActionFeedback | null>(null);
+  const [restSecondsDrafts, setRestSecondsDrafts] = useState<
+    Record<number, string>
+  >({});
 
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ["gym", "programs"] });
@@ -192,6 +226,10 @@ export default function ProgramsScreen() {
       setRoutineName("");
       await refresh();
     },
+  });
+  const duplicateRoutineMutation = useMutation({
+    mutationFn: duplicateWorkoutRoutine,
+    onSuccess: refresh,
   });
   const addExerciseMutation = useMutation({
     mutationFn: ({
@@ -224,6 +262,32 @@ export default function ProgramsScreen() {
     mutationFn: deletePlannedExercise,
     onSuccess: refresh,
   });
+  const updateRestMutation = useMutation({
+    mutationFn: ({
+      planned,
+      restSeconds,
+    }: {
+      planned: PlannedExerciseDTO;
+      restSeconds: number;
+    }) =>
+      updatePlannedExercise(
+        planned.id,
+        plannedExerciseUpdateRequest(planned, restSeconds),
+      ),
+    onSuccess: async (_updated, variables) => {
+      setRestSecondsDrafts((current) => {
+        const next = { ...current };
+        delete next[variables.planned.id];
+        return next;
+      });
+      await refresh();
+    },
+  });
+  const layoutMutation = useMutation({
+    mutationFn: ({ programId, request }: { programId: number; request: ReturnType<typeof serializeProgramLayout> }) =>
+      replaceWorkoutProgramLayout(programId, createProgramLayoutMutation(request)),
+    onSuccess: refresh,
+  });
   const startMutation = useMutation({
     mutationFn: startWorkoutRoutine,
     onSuccess: (session) => {
@@ -233,6 +297,28 @@ export default function ProgramsScreen() {
           exercise.id,
         ]),
       );
+      const plannedRestMap = Object.fromEntries(
+        session.exercises.map((exercise) => [
+          exercise.exercise_progression_id,
+          exercise.rest_seconds ?? 90,
+        ]),
+      );
+      const activeWorkoutLayout = {
+        layoutRevision: session.layout_revision_snapshot ?? null,
+        groups: (session.exercise_groups ?? []).flatMap((group) => {
+          const memberExerciseIds = session.exercises
+            .filter((exercise) => exercise.group_id === group.id)
+            .sort((left, right) => (left.group_member_position ?? 0) - (right.group_member_position ?? 0))
+            .map((exercise) => exercise.exercise_progression_id);
+          return memberExerciseIds.length >= 2
+            ? [{
+                id: group.id,
+                restAfterRoundSeconds: group.rest_after_round_seconds ?? null,
+                memberExerciseIds,
+              }]
+            : [];
+        }),
+      };
       router.replace({
         pathname: "/activeWorkoutSession",
         params: {
@@ -242,10 +328,35 @@ export default function ProgramsScreen() {
           workoutSessionId: String(session.id),
           routineName: session.routine_name_snapshot,
           plannedExerciseMap: JSON.stringify(plannedMap),
+          plannedExerciseRestMap: JSON.stringify(plannedRestMap),
+          activeWorkoutLayout: JSON.stringify(activeWorkoutLayout),
         },
       });
     },
   });
+
+  const saveProgramLayout = async (layout: ProgramLayout) => {
+    try {
+      await layoutMutation.mutateAsync({
+        programId: layout.programId,
+        request: serializeProgramLayout(layout),
+      });
+      setActionFeedback({ status: "success", surface: "page", title: "Layout saved", message: "Routine order and supersets were saved together." });
+    } catch (error) {
+      const apiError = toApiError(error);
+      if (isRoutineLayoutRevisionConflict(apiError)) {
+        await programsQuery.refetch();
+        alert(
+          "Program changed elsewhere",
+          routineLayoutConflictPrompt,
+          [{ text: "OK" }],
+        );
+        return;
+      }
+      setActionFeedback({ status: "error", surface: "page", title: "Could not save layout", message: apiError.message });
+      throw apiError;
+    }
+  };
 
   const availableExercises = useMemo(() => {
     const used = new Set(
@@ -299,6 +410,49 @@ export default function ProgramsScreen() {
     close();
     setActionFeedback((current) =>
       current?.surface === surface ? null : current,
+    );
+  };
+
+  const confirmDuplicateRoutine = (routine: WorkoutRoutineDTO) => {
+    alert(
+      "Duplicate routine",
+      `Create a new copy of "${routine.name}" with all ${routine.planned_exercises.length} exercises?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Duplicate",
+          onPress: () =>
+            void run(
+              "duplicate routine",
+              () => duplicateRoutineMutation.mutateAsync(routine.id),
+              {
+                successMessage: `"${routine.name}" was duplicated.`,
+              },
+            ),
+        },
+      ],
+    );
+  };
+
+  const saveRestSeconds = (planned: PlannedExerciseDTO) => {
+    const value =
+      restSecondsDrafts[planned.id] ?? String(planned.rest_seconds ?? 90);
+    const restSeconds = Number(value);
+    if (!Number.isInteger(restSeconds) || restSeconds < 0 || restSeconds > 3600) {
+      setActionFeedback({
+        status: "error",
+        surface: "page",
+        title: "Could not update rest time",
+        message: "Rest time must be a whole number from 0 to 3600 seconds.",
+      });
+      return;
+    }
+    void run(
+      "update rest time",
+      () => updateRestMutation.mutateAsync({ planned, restSeconds }),
+      {
+        successMessage: `${planned.exercise_name} now uses ${restSeconds} seconds of rest.`,
+      },
     );
   };
 
@@ -504,6 +658,25 @@ export default function ProgramsScreen() {
                   />
                 </View>
 
+                <View style={card}>
+                  <Text
+                    selectable
+                    style={{
+                      color: theme.textBlack,
+                      fontSize: 14,
+                      fontFamily: "PlusJakartaSans_700Bold",
+                    }}
+                  >
+                    Routine order and supersets
+                  </Text>
+                  <ProgramLayoutEditor
+                    key={`${activeProgram.id}-${activeProgram.layout_revision ?? 0}`}
+                    program={activeProgram}
+                    saving={layoutMutation.isPending}
+                    onSave={saveProgramLayout}
+                  />
+                </View>
+
                 {activeProgram.routines.map((routine) => (
                   <View key={routine.id} style={card}>
                     <View
@@ -547,17 +720,55 @@ export default function ProgramsScreen() {
                       />
                     </View>
 
-                    {routine.planned_exercises.map((planned) => (
-                      <SwipeToDeleteExerciseRow
-                        key={planned.id}
-                        exerciseName={planned.exercise_name}
-                        onDelete={() =>
-                          run("remove exercise", () =>
-                            deleteExerciseMutation.mutateAsync(planned.id),
-                          )
-                        }
-                      />
-                    ))}
+                    <AppButton
+                      label="Duplicate routine"
+                      variant="secondary"
+                      loading={
+                        duplicateRoutineMutation.isPending &&
+                        duplicateRoutineMutation.variables === routine.id
+                      }
+                      onPress={() => confirmDuplicateRoutine(routine)}
+                    />
+
+                    {routine.planned_exercises.map((planned) => {
+                      const restSeconds =
+                        restSecondsDrafts[planned.id] ??
+                        String(planned.rest_seconds ?? 90);
+                      return (
+                        <View key={planned.id} style={{ gap: 8 }}>
+                          <SwipeToDeleteExerciseRow
+                            exerciseName={planned.exercise_name}
+                            onDelete={() =>
+                              run("remove exercise", () =>
+                                deleteExerciseMutation.mutateAsync(planned.id),
+                              )
+                            }
+                          />
+                          <FormField
+                            accessibilityLabel={`Rest time for ${planned.exercise_name}`}
+                            helperText="0–3600 seconds. Used by the rest timer after each set."
+                            keyboardType="number-pad"
+                            label="Rest between sets (seconds)"
+                            onChangeText={(value) =>
+                              setRestSecondsDrafts((current) => ({
+                                ...current,
+                                [planned.id]: value,
+                              }))
+                            }
+                            value={restSeconds}
+                          />
+                          <AppButton
+                            label="Save rest time"
+                            variant="secondary"
+                            loading={
+                              updateRestMutation.isPending &&
+                              updateRestMutation.variables?.planned.id === planned.id
+                            }
+                            onPress={() => saveRestSeconds(planned)}
+                          />
+                        </View>
+                      );
+                    })}
                     <AppButton
                       label="Add exercise"
                       variant="secondary"

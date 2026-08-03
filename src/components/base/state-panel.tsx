@@ -2,8 +2,7 @@ import { AppButton, type AppButtonVariant } from "@/components/base/app-button";
 import { getThemeSemantics } from "@/constants/semantic-colors";
 import { FONT_FAMILIES } from "@/constants/typography";
 import { useTheme } from "@/context/ThemeContext";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import type { ComponentProps, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { StyleProp, Text, View, ViewStyle } from "react-native";
 
 export type StatePanelVariant = "empty" | "error" | "offline" | "success";
@@ -30,21 +29,10 @@ type StatePanelProps = {
   testID?: string;
 };
 
-const iconNames: Record<
-  StatePanelVariant,
-  ComponentProps<typeof MaterialCommunityIcons>["name"]
-> = {
-  empty: "inbox-outline",
-  error: "alert-circle-outline",
-  offline: "cloud-off-outline",
-  success: "check-circle-outline",
-};
-
 export function StatePanel({
   variant,
   title,
   message,
-  icon,
   primaryAction,
   secondaryAction,
   compact = false,
@@ -99,26 +87,6 @@ export function StatePanel({
         style,
       ]}
     >
-      <View
-        style={{
-          width: compact ? 36 : 44,
-          height: compact ? 36 : 44,
-          borderRadius: compact ? 11 : 14,
-          borderCurve: "continuous",
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: accent + "18",
-        }}
-      >
-        {icon ?? (
-          <MaterialCommunityIcons
-            name={iconNames[variant]}
-            size={compact ? 20 : 24}
-            color={accent}
-          />
-        )}
-      </View>
-
       <View style={{ alignItems: "center", gap: 4 }}>
         <Text
           accessibilityRole="header"
@@ -157,9 +125,7 @@ export function StatePanel({
             marginTop: compact ? 2 : 4,
           }}
         >
-          {secondaryAction
-            ? renderAction(secondaryAction, "secondary")
-            : null}
+          {secondaryAction ? renderAction(secondaryAction, "secondary") : null}
           {primaryAction ? renderAction(primaryAction, "primary") : null}
         </View>
       ) : null}

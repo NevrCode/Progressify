@@ -15,6 +15,7 @@ export type HomeInsight = {
 type ExerciseSetLike = {
   weight?: number;
   reps?: number;
+  set_type?: string;
 };
 
 type ExerciseSessionLike = {
@@ -68,6 +69,7 @@ const sessionTime = (session: ExerciseSessionLike) => {
 };
 
 const estimatedOneRepMax = (set: ExerciseSetLike) => {
+  if (set.set_type === "WARMUP") return 0;
   const weight = Number(set.weight ?? 0);
   const reps = Number(set.reps ?? 0);
   return weight > 0 && reps > 0 ? weight * (1 + reps / 30) : 0;
@@ -78,6 +80,7 @@ const sessionOneRepMax = (session: ExerciseSessionLike) =>
 
 const sessionVolume = (session: ExerciseSessionLike) =>
   (session.sets ?? []).reduce((total, set) => {
+    if (set.set_type === "WARMUP") return total;
     const weight = Number(set.weight ?? 0);
     const reps = Number(set.reps ?? 0);
     return total + (weight > 0 && reps > 0 ? weight * reps : 0);

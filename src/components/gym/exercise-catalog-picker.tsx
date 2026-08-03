@@ -150,6 +150,7 @@ export function ExerciseCatalogPicker({
         autoCapitalize="none"
         autoCorrect={false}
         returnKeyType="search"
+        submitBehavior="submit"
       />
 
       <AppButton

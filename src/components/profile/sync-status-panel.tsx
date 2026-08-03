@@ -1,7 +1,7 @@
 import { AppButton } from "@/components/base/app-button";
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
+import { syncStatusPanelStyles as styles } from "@/assets/styles/sync-status-panel.style";
 import { getThemeSemantics } from "@/constants/semantic-colors";
-import { FONT_FAMILIES } from "@/constants/typography";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
@@ -15,7 +15,7 @@ import {
 } from "@/services/syncQueueService";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 
 type SyncAction = string | null;
 
@@ -357,143 +357,3 @@ export function SyncStatusPanel() {
     </ShadowGlowCard>
   );
 }
-
-const styles = StyleSheet.create({
-  card: {
-    gap: 14,
-  },
-  heading: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10,
-  },
-  icon: {
-    alignItems: "center",
-    borderRadius: 12,
-    borderWidth: 1,
-    height: 42,
-    justifyContent: "center",
-    width: 42,
-  },
-  headingText: {
-    flex: 1,
-    gap: 2,
-  },
-  title: {
-    fontFamily: FONT_FAMILIES.extraBold,
-    fontSize: 15,
-  },
-  status: {
-    fontFamily: FONT_FAMILIES.bold,
-    fontSize: 11,
-  },
-  message: {
-    fontFamily: FONT_FAMILIES.medium,
-    fontSize: 11,
-    lineHeight: 17,
-  },
-  metrics: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  metric: {
-    borderRadius: 12,
-    borderWidth: 1,
-    flex: 1,
-    gap: 3,
-    padding: 10,
-  },
-  metricLabel: {
-    fontFamily: FONT_FAMILIES.bold,
-    fontSize: 10,
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-  },
-  metricValue: {
-    fontFamily: FONT_FAMILIES.extraBold,
-    fontSize: 20,
-    fontVariant: ["tabular-nums"],
-  },
-  lastSync: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    gap: 3,
-    paddingTop: 12,
-  },
-  lastSyncLabel: {
-    fontFamily: FONT_FAMILIES.bold,
-    fontSize: 10,
-    textTransform: "uppercase",
-  },
-  lastSyncValue: {
-    fontFamily: FONT_FAMILIES.medium,
-    fontSize: 11,
-  },
-  actions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  action: {
-    flexGrow: 1,
-  },
-  legend: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    gap: 8,
-    paddingTop: 12,
-  },
-  failedList: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    gap: 8,
-    paddingTop: 12,
-  },
-  failedItem: {
-    borderRadius: 12,
-    borderWidth: 1,
-    gap: 8,
-    padding: 10,
-  },
-  failedHeading: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    gap: 8,
-  },
-  failedTitle: {
-    fontFamily: FONT_FAMILIES.bold,
-    fontSize: 11,
-  },
-  failedMeta: {
-    fontFamily: FONT_FAMILIES.medium,
-    fontSize: 9,
-    lineHeight: 14,
-  },
-  failedReason: {
-    fontFamily: FONT_FAMILIES.bold,
-    fontSize: 10,
-  },
-  itemActions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  queueNote: {
-    fontFamily: FONT_FAMILIES.medium,
-    fontSize: 9,
-    lineHeight: 14,
-  },
-  legendTitle: {
-    fontFamily: FONT_FAMILIES.bold,
-    fontSize: 11,
-  },
-  legendRow: {
-    gap: 2,
-  },
-  legendLabel: {
-    fontFamily: FONT_FAMILIES.bold,
-    fontSize: 10,
-  },
-  legendText: {
-    fontFamily: FONT_FAMILIES.medium,
-    fontSize: 10,
-    lineHeight: 15,
-  },
-});

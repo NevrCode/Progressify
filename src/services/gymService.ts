@@ -1,6 +1,10 @@
 import { getAccessToken } from "@/services/authSessionService";
 import { api } from "@/utils/api";
 import { getErrorMessage, toApiError } from "@/utils/apiError";
+import {
+  type WorkoutSetType,
+  withNormalizedWorkoutSetType,
+} from "@/types/workout-set";
 
 export interface WorkoutSetDTO {
   id?: number;
@@ -8,6 +12,7 @@ export interface WorkoutSetDTO {
   weight: number;
   reps: number;
   rir?: number;
+  set_type?: WorkoutSetType;
   session_id?: number;
 }
 
@@ -25,6 +30,18 @@ export interface GymExerciseSessionRequestDTO {
   workout_session_id?: number;
   planned_exercise_id?: number;
 }
+
+/** Ensures every session write uses the explicit backend set-type contract. */
+export const normalizeExerciseSessionRequest = (
+  dto: GymExerciseSessionRequestDTO,
+): GymExerciseSessionRequestDTO => ({
+  ...dto,
+  ...(dto.sets
+    ? {
+        sets: dto.sets.map(withNormalizedWorkoutSetType),
+      }
+    : {}),
+});
 
 export interface ProgressPointDTO {
   id: number;
@@ -45,6 +62,25 @@ export interface ExerciseProgressionDTO {
   workout_sets?: WorkoutSetDTO[];
   last_workout_sets?: WorkoutSetDTO[];
   exercise_sessions?: ExerciseSessionDTO[];
+  recommendation?: ProgressionRecommendationDTO;
+}
+
+export type ProgressionRecommendationAction =
+  | "INCREASE_WEIGHT"
+  | "ADD_REPS"
+  | "MAINTAIN"
+  | "REDUCE_WEIGHT"
+  | "INSUFFICIENT_DATA";
+
+export interface ProgressionRecommendationDTO {
+  action: ProgressionRecommendationAction;
+  suggested_weight?: number | null;
+  target_reps_min: number;
+  target_reps_max: number;
+  target_rir: number;
+  target_sets: number;
+  confidence: "LOW" | "MEDIUM" | "HIGH";
+  reason: string;
 }
 
 export interface GymDashboardResponseDTO {
@@ -63,7 +99,7 @@ export interface GymExerciseProgressionRequestDTO {
   name: string;
   muscle_group: string;
   target_rep_range: string;
-  last_session_date: string;
+  last_session_date?: string;
   notes: string;
 }
 
@@ -73,6 +109,7 @@ export interface GymWorkoutSetRequestDTO {
   reps: number;
   rir: number;
   is_drop_set: boolean;
+  set_type?: WorkoutSetType;
 }
 
 export interface GymProgressPointRequestDTO {
@@ -194,7 +231,7 @@ export const createExerciseSession = async (
     const headers = await getAuthHeaders();
     const response = await api.post<ExerciseSessionDTO>(
       `/v1/gym/exercise-progressions/${exerciseProgressionId}/sessions`,
-      dto,
+      normalizeExerciseSessionRequest(dto),
       { headers },
     );
 
@@ -211,7 +248,7 @@ export const updateExerciseSession = async (
     const headers = await getAuthHeaders();
     const response = await api.put<ExerciseSessionDTO>(
       `/v1/gym/exercise-sessions/${id}`,
-      dto,
+      normalizeExerciseSessionRequest(dto),
       { headers },
     );
 

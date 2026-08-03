@@ -2,11 +2,7 @@ import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
 import { getThemeSemantics } from "@/constants/semantic-colors";
 import { FONT_FAMILIES } from "@/constants/typography";
 import { useTheme } from "@/context/ThemeContext";
-import type {
-  WeeklyReview,
-  WeeklyReviewMetric,
-} from "@/utils/weekly-review";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
+import type { WeeklyReview, WeeklyReviewMetric } from "@/utils/weekly-review";
 import { StyleSheet, Text, View } from "react-native";
 
 type WeeklyReviewCardProps = {
@@ -47,18 +43,6 @@ export function WeeklyReviewCard({
       style={styles.card}
     >
       <View style={styles.heading}>
-        <View
-          style={[
-            styles.icon,
-            { backgroundColor: semantics.info + "14" },
-          ]}
-        >
-          <MaterialCommunityIcons
-            name="calendar-range"
-            size={21}
-            color={semantics.info}
-          />
-        </View>
         <View style={styles.headingText}>
           <Text
             accessibilityRole="header"
@@ -150,13 +134,8 @@ export function WeeklyReviewCard({
                 >
                   Food diary days
                 </Text>
-                <Text
-                  style={[styles.metricDelta, { color: theme.textLight }]}
-                >
-                  {comparisonLabel(
-                    review.diaryDays,
-                    "days vs prior week",
-                  )}
+                <Text style={[styles.metricDelta, { color: theme.textLight }]}>
+                  {comparisonLabel(review.diaryDays, "days vs prior week")}
                 </Text>
               </View>
               <Text

@@ -62,7 +62,7 @@
     "extra": {
       "displayedVersion": "1.1.0",
       "router": {},
-      "apiUrl": "https://progressify-tracker-1.onrender.com",
+      "apiUrl": "https://progressify-api.onrender.com",
       "eas": {
         "projectId": "b2090b27-3032-4529-a2d1-23f2944fc5a6"
       }

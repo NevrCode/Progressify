@@ -16,6 +16,7 @@ import {
 } from "@/components/gym/exercise-progression-card-skeleton";
 import { MuscleHeatmap } from "@/components/gym/MuscleHeatmap";
 import { useAlert } from "@/context/AlertContext";
+import { getErrorMessage } from "@/utils/apiError";
 import { useTheme } from "@/context/ThemeContext";
 import { useUnitPreference } from "@/context/UnitPreferenceContext";
 import { useActiveSession } from "@/hooks/useActiveSession";
@@ -430,8 +431,8 @@ export default function GymProgression() {
       }
 
       closeModal();
-    } catch (submitError: any) {
-      alert("Save failed", submitError.message || "Please try again.");
+    } catch (submitError) {
+      alert("Save failed", getErrorMessage(submitError, "Please try again."));
     }
   };
 
@@ -1260,8 +1261,14 @@ export default function GymProgression() {
                               radius: 7,
                               activatePointersOnLongPress: true,
                               autoAdjustPointerLabelPosition: true,
-                              pointerLabelComponent: (items: any) => {
+                              // gifted-charts hands the pointer every series
+                              // item under the cursor; this chart has one
+                              // series, so only the first is read.
+                              pointerLabelComponent: (
+                                items: { value?: number }[],
+                              ) => {
                                 const item = items[0];
+                                if (!item) return null;
                                 return (
                                   <View
                                     style={{

@@ -1,3 +1,4 @@
+import type { GymStyles } from "@/assets/styles/gym.style";
 import { gymStyles } from "@/assets/styles/gym.style";
 import {
   ActionStatus,
@@ -8,6 +9,7 @@ import { ModalHeader } from "@/components/base/modal-header";
 import { ThemeType } from "@/constants/colors";
 import { useTheme } from "@/context/ThemeContext";
 import {
+  type CustomFoodCreateRequest,
   CustomFoodResponse,
   useCreateCustomFood,
   useCustomFoodSearch,
@@ -60,8 +62,8 @@ function ManualFoodForm({
   onFeedback,
 }: {
   theme: ThemeType;
-  style: any;
-  onSave: (data: any) => void;
+  style: GymStyles;
+  onSave: (data: CustomFoodCreateRequest) => void;
   onCancel: () => void;
   isSaving: boolean;
   feedback: ActionFeedback | null;
@@ -257,8 +259,8 @@ function CustomFoodRowComponent({
   food: CustomFoodResponse;
   /** Takes the food itself so the parent can pass one stable callback. */
   onSelect: (food: CustomFoodResponse) => void;
-  theme: any;
-  style: any;
+  theme: ThemeType;
+  style: GymStyles;
 }) {
   return (
     <TouchableOpacity
@@ -374,7 +376,7 @@ export function FoodSearchModal({
     handleClose();
   }, [handleClose, onFoodSelected]);
 
-  const handleManualSave = (data: any) => {
+  const handleManualSave = (data: CustomFoodCreateRequest) => {
     setActionFeedback(null);
     createCustomMutation.mutate(data, {
       onSuccess: (saved) => {

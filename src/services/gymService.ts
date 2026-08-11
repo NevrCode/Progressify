@@ -142,7 +142,7 @@ export const getGymDashboard = async () => {
     );
 
     return response.data;
-  } catch (error: any) {
+  } catch (error) {
     throw toApiError(error);
   }
 };
@@ -206,7 +206,7 @@ export const getExerciseProgressionPage = async ({
       total_pages: payload.total_pages ?? payload.totalPages ?? 0,
       page: payload.number ?? page,
     };
-  } catch (error: any) {
+  } catch (error) {
     throw toApiError(error);
   }
 };
@@ -218,7 +218,7 @@ export const deleteSessionProgression = async (id: number) => {
       headers,
     });
     return response.data;
-  } catch (error: any) {
+  } catch (error) {
     handleApiError(error, "Delete session Prog failed");
   }
 };
@@ -231,7 +231,7 @@ export const restoreSessionProgression = async (id: number) => {
       headers,
     });
     return response.data;
-  } catch (error: any) {
+  } catch (error) {
     handleApiError(error, "Restore session failed");
   }
 };
@@ -249,7 +249,7 @@ export const createExerciseSession = async (
     );
 
     return response.data;
-  } catch (error: any) {
+  } catch (error) {
     handleApiError(error, "Create exercise session failed");
   }
 };
@@ -266,7 +266,7 @@ export const updateExerciseSession = async (
     );
 
     return response.data;
-  } catch (error: any) {
+  } catch (error) {
     handleApiError(error, "Update exercise session failed");
   }
 };
@@ -283,7 +283,7 @@ export const createExerciseProgression = async (
     );
 
     return response.data;
-  } catch (error: any) {
+  } catch (error) {
     handleApiError(error, "Create exercise progression failed");
   }
 };
@@ -301,7 +301,7 @@ export const updateExerciseProgression = async (
     );
 
     return response.data;
-  } catch (error: any) {
+  } catch (error) {
     handleApiError(error, "Update exercise progression failed");
   }
 };
@@ -310,7 +310,7 @@ export const deleteExerciseProgression = async (id: number) => {
   try {
     const headers = await getAuthHeaders();
     await api.delete(`/v1/gym/exercise-progressions/${id}`, { headers });
-  } catch (error: any) {
+  } catch (error) {
     handleApiError(error, "Delete exercise progression failed");
   }
 };
@@ -328,7 +328,7 @@ export const createWorkoutSet = async (
     );
 
     return response.data;
-  } catch (error: any) {
+  } catch (error) {
     handleApiError(error, "Create workout set failed");
   }
 };
@@ -348,7 +348,7 @@ export const updateWorkoutSet = async (
     );
 
     return response.data;
-  } catch (error: any) {
+  } catch (error) {
     handleApiError(error, "Update workout set failed");
   }
 };
@@ -357,7 +357,7 @@ export const deleteWorkoutSet = async (id: number) => {
   try {
     const headers = await getAuthHeaders();
     await api.delete(`/v1/gym/workout-sets/${id}`, { headers });
-  } catch (error: any) {
+  } catch (error) {
     handleApiError(error, "Delete workout set failed");
   }
 };
@@ -375,7 +375,7 @@ export const createProgressPoint = async (
     );
 
     return response.data;
-  } catch (error: any) {
+  } catch (error) {
     handleApiError(error, "Create progress point failed");
   }
 };
@@ -393,7 +393,7 @@ export const updateProgressPoint = async (
     );
 
     return response.data;
-  } catch (error: any) {
+  } catch (error) {
     handleApiError(error, "Update progress point failed");
   }
 };
@@ -402,7 +402,7 @@ export const deleteProgressPoint = async (id: number) => {
   try {
     const headers = await getAuthHeaders();
     await api.delete(`/v1/gym/progress-points/${id}`, { headers });
-  } catch (error: any) {
+  } catch (error) {
     handleApiError(error, "Delete progress point failed");
   }
 };

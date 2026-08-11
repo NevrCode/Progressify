@@ -1,6 +1,7 @@
 import { gymStyles } from "@/assets/styles/gym.style";
 import { AppButton } from "@/components/base/app-button";
 import { IconButton } from "@/components/base/icon-button";
+import { ScreenError, ScreenLoading } from "@/components/base/screen-state";
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
 import { ExerciseSelectRow } from "@/components/gym/exercise-select-row";
 import { useAlert } from "@/context/AlertContext";
@@ -11,7 +12,6 @@ import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   type ListRenderItem,
   Text,
@@ -46,6 +46,10 @@ export default function WorkoutSession() {
     error,
     refetch,
   } = useGymDashboard();
+
+  const retry = useCallback(() => {
+    void refetch();
+  }, [refetch]);
 
   const exerciseProgressions = useMemo(
     () => dashboard?.exercise_progressions ?? [],
@@ -137,34 +141,18 @@ export default function WorkoutSession() {
   );
 
   if (isLoading) {
-    return (
-      <SafeAreaProvider>
-        <SafeAreaView style={styles.safeArea}>
-          <View style={styles.loadingState}>
-            <ActivityIndicator size="large" color={theme.primary} />
-            <Text style={styles.loadingText}>Loading exercises...</Text>
-          </View>
-        </SafeAreaView>
-      </SafeAreaProvider>
-    );
+    return <ScreenLoading message="Loading exercises..." theme={theme} />;
   }
 
   if (error) {
     return (
-      <SafeAreaProvider>
-        <SafeAreaView style={styles.safeArea}>
-          <View style={styles.errorState}>
-            <Text style={styles.errorTitle}>Could not load exercises</Text>
-            <Text style={styles.errorText}>
-              Check your connection and try again.
-            </Text>
-            <AppButton
-              label="Retry"
-              onPress={() => refetch()}
-            />
-          </View>
-        </SafeAreaView>
-      </SafeAreaProvider>
+      <ScreenError
+        title="Could not load exercises"
+        message="Check your connection and try again."
+        actionLabel="Retry"
+        onAction={retry}
+        theme={theme}
+      />
     );
   }
 

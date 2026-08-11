@@ -1,15 +1,19 @@
 import { gymStyles } from "@/assets/styles/gym.style";
 import { AppButton } from "@/components/base/app-button";
 import { IconButton } from "@/components/base/icon-button";
+import { ScreenError, ScreenLoading } from "@/components/base/screen-state";
 import { ActiveWorkoutCompletion } from "@/components/gym/active-workout-completion";
 import { ActiveWorkoutExercisePicker } from "@/components/gym/active-workout-exercise-picker";
-import { ProgressionRecommendationCard } from "@/components/gym/progression-recommendation-card";
 import { RestTimerOverlay } from "@/components/gym/rest-timer-overlay";
-import { ActiveWorkoutSetRow } from "@/features/workout-session/active-workout-set-row";
+import {
+  ActiveWorkoutExerciseList,
+  type ActiveWorkoutExerciseActions,
+} from "@/features/workout-session/active-workout-exercise-list";
 import { SetUndoSnackbar } from "@/features/workout-session/set-undo-snackbar";
 import { completeDraftSetOnce } from "@/features/workout-session/set-completion-controller";
 import { getSupersetRestDecision } from "@/features/workout-session/superset-round-controller";
 import { useAlert } from "@/context/AlertContext";
+import { getErrorMessage } from "@/utils/apiError";
 import { useTheme } from "@/context/ThemeContext";
 import { useUnitPreference } from "@/context/UnitPreferenceContext";
 import {
@@ -17,23 +21,43 @@ import {
   appendExerciseDraftSet,
   completeExerciseDraftSet,
   createExerciseDraft,
-  createEmptyExerciseDraft,
   duplicateExerciseDraftSet,
   getExerciseRestSeconds,
   getDurationLabel,
-  parsePlannedExerciseRestSeconds,
-  parseActiveWorkoutLayoutSnapshot,
   removeExerciseDraftSetWithUndo,
   restoreRemovedExerciseDraftSet,
   toggleExerciseDraftSetType,
   type DraftSet,
   type ExerciseDraft,
   type RemovedDraftSet,
-  type ActiveWorkoutLayoutSnapshot,
-  type ActiveWorkoutExerciseSnapshot,
   updateExerciseDraftSet,
 } from "@/features/workout-session/drafts";
+import {
+  resolveActiveSession,
+  type RestoredSession,
+} from "@/features/workout-session/restored-session";
+import {
+  type ActiveWorkoutRouteParams,
+  parseActiveWorkoutRouteLaunch,
+} from "@/features/workout-session/active-workout-launch";
+import {
+  type ActiveWorkoutExerciseState,
+  addActiveWorkoutExercise,
+  removeActiveWorkoutExercise,
+  swapActiveWorkoutExercise,
+} from "@/features/workout-session/active-workout-state";
+import {
+  CLOSED_PICKER,
+  closePicker,
+  type ExercisePickerState,
+  openAddPicker,
+  openSwapPicker,
+  pickerSearch,
+  pickerSwapTarget,
+  setPickerSearch,
+} from "@/features/workout-session/exercise-picker-state";
 import { useRestTimer } from "@/features/workout-session/use-rest-timer";
+import { summarizeWorkoutTotals } from "@/features/workout-session/workout-totals";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
 import {
   createExerciseSession,
@@ -47,13 +71,11 @@ import {
   saveActiveSession,
 } from "@/services/sessionStorage";
 import { completeWorkoutSession } from "@/services/workoutProgramService";
-import { formatMass, type MeasurementSystem } from "@/utils/measurement-units";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   BackHandler,
   ScrollView,
   Text,
@@ -76,106 +98,63 @@ const formatDateForApi = (value: Date | string) => {
 
 const getRandomInt = () => Math.floor(Math.random() * 100);
 
-const getLastSessionHint = (
-  exercise: ExerciseProgressionDTO,
-  measurementSystem: MeasurementSystem,
-): string | null => {
-  const sessions = exercise.exercise_sessions ?? [];
-  if (!sessions.length) return null;
 
-  const latest = sessions.reduce((best, current) => {
-    const bestDate = best.session_date ?? "";
-    const curDate = current.session_date ?? "";
-    return curDate > bestDate ? current : best;
-  });
-
-  const sets = (latest.sets ?? []).sort((a, b) => a.set_number - b.set_number);
-  if (!sets.length) return null;
-
-  const summary = sets.map((s) => `${formatMass(s.weight, measurementSystem)} × ${s.reps}`).join(", ");
-
-  return summary;
-};
 
 export default function ActiveWorkoutSession() {
   const { theme } = useTheme();
   const { measurementSystem } = useUnitPreference();
-  const styles = gymStyles(theme);
+  const styles = useMemo(() => gymStyles(theme), [theme]);
   const router = useRouter();
   const queryClient = useQueryClient();
-  const {
-    exerciseIds,
-    workoutSessionId,
-    routineName,
-    plannedExerciseMap,
-    plannedExerciseRestMap,
-    activeWorkoutLayout,
-  } = useLocalSearchParams<{
-    exerciseIds?: string;
-    workoutSessionId?: string;
-    routineName?: string;
-    plannedExerciseMap?: string;
-    plannedExerciseRestMap?: string;
-    activeWorkoutLayout?: string;
-  }>();
+  // Stable so the memoized state screens do not re-render on every tick of the
+  // session timer.
+  const goBack = useCallback(() => router.back(), [router]);
+  const routeParams = useLocalSearchParams<ActiveWorkoutRouteParams>();
 
-  const [restoredIds, setRestoredIds] = useState<number[]>([]);
-  const [restoredWorkoutSessionId, setRestoredWorkoutSessionId] = useState<number | null>(null);
-  const [restoredRoutineName, setRestoredRoutineName] = useState<string | null>(null);
-  const [restoredPlannedExerciseIds, setRestoredPlannedExerciseIds] = useState<Record<number, number>>({});
-  const [restoredPlannedExerciseRestSeconds, setRestoredPlannedExerciseRestSeconds] = useState<
-    Record<number, number>
-  >({});
-  const [restoredLayoutSnapshot, setRestoredLayoutSnapshot] = useState<ActiveWorkoutLayoutSnapshot | undefined>();
-  const [restoredExerciseSnapshots, setRestoredExerciseSnapshots] = useState<
-    Record<number, ActiveWorkoutExerciseSnapshot> | undefined
-  >();
+  // One value, one lifecycle: absent until hydration reads storage, then
+  // present. Previously seven independent slots that could only ever be written
+  // together.
+  const [restoredSession, setRestoredSession] = useState<RestoredSession | null>(
+    null,
+  );
 
   const restTimer = useRestTimer();
   const restoreRestTimer = restTimer.restore;
 
-  const activeWorkoutSessionId = restoredWorkoutSessionId ?? (workoutSessionId ? Number(workoutSessionId) : null);
-  const activeRoutineName = restoredRoutineName ?? routineName;
-  const routePlannedExerciseIds = useMemo(() => {
-    if (!plannedExerciseMap) return {};
-    try {
-      return JSON.parse(plannedExerciseMap) as Record<number, number>;
-    } catch {
-      return {};
-    }
-  }, [plannedExerciseMap]);
-  const routePlannedExerciseRestSeconds = useMemo(() => {
-    if (!plannedExerciseRestMap) return {};
-    try {
-      return parsePlannedExerciseRestSeconds(JSON.parse(plannedExerciseRestMap)) ?? {};
-    } catch {
-      return {};
-    }
-  }, [plannedExerciseRestMap]);
-  const routeLayoutSnapshot = useMemo(() => {
-    if (!activeWorkoutLayout) return undefined;
-    try {
-      return parseActiveWorkoutLayoutSnapshot(JSON.parse(activeWorkoutLayout)) ?? undefined;
-    } catch {
-      return undefined;
-    }
-  }, [activeWorkoutLayout]);
-  const activePlannedExerciseIds = Object.keys(restoredPlannedExerciseIds).length
-    ? restoredPlannedExerciseIds
-    : routePlannedExerciseIds;
-  const activePlannedExerciseRestSeconds = Object.keys(restoredPlannedExerciseRestSeconds).length
-    ? restoredPlannedExerciseRestSeconds
-    : routePlannedExerciseRestSeconds;
-  const activeLayoutSnapshot = restoredLayoutSnapshot ?? routeLayoutSnapshot;
-  const activeExerciseSnapshots = restoredExerciseSnapshots;
-  const selectedIds = useMemo(
-    () =>
-      (exerciseIds ?? "")
-        .split(",")
-        .map(Number)
-        .filter((id) => !Number.isNaN(id) && id > 0),
-    [exerciseIds],
+  // The route boundary: one parse of every param, with invalid optional
+  // metadata ignored so a malformed deep link still starts a manual workout.
+  //
+  // Keyed on the individual param strings, not on the params object:
+  // useLocalSearchParams returns a fresh object every render, so depending on it
+  // would rebuild `launch` each time and churn the identity of everything
+  // derived from it — including the exercise list's memo boundary.
+  const launch = useMemo(
+    () => parseActiveWorkoutRouteLaunch(routeParams),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      routeParams.exerciseIds,
+      routeParams.workoutSessionId,
+      routeParams.routineName,
+      routeParams.plannedExerciseMap,
+      routeParams.plannedExerciseRestMap,
+      routeParams.activeWorkoutLayout,
+    ],
   );
+
+  const {
+    restoredExerciseIds: restoredIds,
+    workoutSessionId: activeWorkoutSessionId,
+    routineName: activeRoutineName,
+    plannedExerciseIds: activePlannedExerciseIds,
+    plannedExerciseRestSeconds: activePlannedExerciseRestSeconds,
+    layoutSnapshot: activeLayoutSnapshot,
+    exerciseSnapshots: activeExerciseSnapshots,
+  } = useMemo(
+    () => resolveActiveSession(restoredSession, launch),
+    [restoredSession, launch],
+  );
+
+  const selectedIds = launch.exerciseIds;
   const { alert } = useAlert();
 
   const sessionStartedAtRef = useRef(new Date().toISOString());
@@ -189,11 +168,9 @@ export default function ActiveWorkoutSession() {
   const completedSetClaimsRef = useRef(new Set<string>());
   const [allSaved, setAllSaved] = useState(false);
   const [hydrated, setHydrated] = useState(false);
-  const [showSwapModal, setShowSwapModal] = useState(false);
-  const [swapTargetId, setSwapTargetId] = useState<number | null>(null);
+  const [picker, setPicker] = useState<ExercisePickerState>(CLOSED_PICKER);
+  const exerciseSearch = pickerSearch(picker);
   const [currentExerciseIds, setCurrentExerciseIds] = useState<number[]>([]);
-  const [showAddExerciseModal, setShowAddExerciseModal] = useState(false);
-  const [exerciseSearch, setExerciseSearch] = useState("");
 
   const { data: dashboard, isLoading, error } = useGymDashboard();
 
@@ -255,13 +232,15 @@ export default function ActiveWorkoutSession() {
         draftsRef.current = stored.drafts;
         setDrafts(stored.drafts);
         setCompletedIds(new Set(stored.completedIds));
-        setRestoredIds(stored.exerciseIds);
-        setRestoredWorkoutSessionId(stored.workoutSessionId ?? null);
-        setRestoredRoutineName(stored.routineName ?? null);
-        setRestoredPlannedExerciseIds(stored.plannedExerciseIds ?? {});
-        setRestoredPlannedExerciseRestSeconds(stored.plannedExerciseRestSeconds ?? {});
-        setRestoredLayoutSnapshot(stored.layoutSnapshot);
-        setRestoredExerciseSnapshots(stored.exerciseSnapshots);
+        setRestoredSession({
+          exerciseIds: stored.exerciseIds,
+          workoutSessionId: stored.workoutSessionId ?? null,
+          routineName: stored.routineName ?? null,
+          plannedExerciseIds: stored.plannedExerciseIds ?? {},
+          plannedExerciseRestSeconds: stored.plannedExerciseRestSeconds ?? {},
+          layoutSnapshot: stored.layoutSnapshot,
+          exerciseSnapshots: stored.exerciseSnapshots,
+        });
         restoreRestTimer(stored.restTimer);
         setCurrentExerciseIds(stored.exerciseIds);
         setHydrated(true);
@@ -516,6 +495,30 @@ export default function ActiveWorkoutSession() {
       });
   }, [exerciseProgressions, sessionExerciseIds, exerciseSearch]);
 
+  /**
+   * Applies one atomic transition over the {ids, drafts, completedIds} triple.
+   *
+   * These three always move together; updating them through three independent
+   * setState calls is what previously let them drift. Also keeps `draftsRef` in
+   * step — the old inline remove/swap paths did not, which left the ref holding
+   * drafts for exercises no longer in the session.
+   */
+  const applyExerciseTransition = (
+    transition: (
+      state: ActiveWorkoutExerciseState,
+    ) => ActiveWorkoutExerciseState,
+  ) => {
+    const next = transition({
+      exerciseIds: sessionExerciseIds,
+      drafts: draftsRef.current,
+      completedIds,
+    });
+    draftsRef.current = next.drafts;
+    setCurrentExerciseIds(next.exerciseIds);
+    setDrafts(next.drafts);
+    setCompletedIds(new Set(next.completedIds));
+  };
+
   // --- Remove exercise from session ---
   const removeExercise = (exerciseId: number) => {
     if (finishingId === exerciseId) return;
@@ -526,19 +529,10 @@ export default function ActiveWorkoutSession() {
       (s) => (parseFloat(s.weight) || 0) > 0 || (parseFloat(s.reps) || 0) > 0,
     );
 
-    const doRemove = () => {
-      setCurrentExerciseIds((prev) => prev.filter((id) => id !== exerciseId));
-      setDrafts((current) => {
-        const copy = { ...current };
-        delete copy[exerciseId];
-        return copy;
-      });
-      setCompletedIds((prev) => {
-        const next = new Set(prev);
-        next.delete(exerciseId);
-        return next;
-      });
-    };
+    const doRemove = () =>
+      applyExerciseTransition((state) =>
+        removeActiveWorkoutExercise(state, exerciseId),
+      );
 
     if (hasData) {
       alert(
@@ -557,60 +551,44 @@ export default function ActiveWorkoutSession() {
   // --- Swap exercise ---
   const openSwapModal = (exerciseId: number) => {
     if (finishingId === exerciseId) return;
-    setSwapTargetId(exerciseId);
-    setExerciseSearch("");
-    setShowSwapModal(true);
+    setPicker(openSwapPicker(exerciseId));
   };
 
   const closeExercisePicker = () => {
-    setShowSwapModal(false);
-    setShowAddExerciseModal(false);
-    setSwapTargetId(null);
-    setExerciseSearch("");
+    setPicker(closePicker);
   };
 
   const openAddExerciseModal = () => {
-    setExerciseSearch("");
-    setShowAddExerciseModal(true);
+    setPicker(openAddPicker());
+  };
+
+  const setExerciseSearch = (value: string) => {
+    setPicker((current) => setPickerSearch(current, value));
   };
 
   const addExerciseToSession = (exerciseId: number) => {
-    if (sessionExerciseIds.includes(exerciseId)) return;
-
-    setCurrentExerciseIds((prev) => {
-      const base = prev.length ? prev : sessionExerciseIds;
-      return [...base, exerciseId];
-    });
-    setDrafts((current) => ({
-      ...current,
-      [exerciseId]: createEmptyExerciseDraft(exerciseId),
-    }));
+    // addActiveWorkoutExercise is a no-op when the exercise is already present.
+    applyExerciseTransition((state) =>
+      addActiveWorkoutExercise(state, exerciseId),
+    );
     closeExercisePicker();
   };
 
   const swapExercise = (newExerciseId: number) => {
-    if (swapTargetId === null) return;
+    // The union guarantees a target whenever the picker is in swap mode, so this
+    // narrows rather than guarding against a state that can no longer exist.
+    const targetExerciseId = pickerSwapTarget(picker);
+    if (targetExerciseId === null) return;
 
-    const oldDraft = drafts[swapTargetId];
+    const oldDraft = drafts[targetExerciseId];
     const hasData = oldDraft?.sets.some(
       (s) => (parseFloat(s.weight) || 0) > 0 || (parseFloat(s.reps) || 0) > 0,
     );
 
     const doSwap = () => {
-      setCurrentExerciseIds((prev) =>
-        prev.map((id) => (id === swapTargetId ? newExerciseId : id)),
+      applyExerciseTransition((state) =>
+        swapActiveWorkoutExercise(state, targetExerciseId, newExerciseId),
       );
-      setDrafts((current) => {
-        const copy = { ...current };
-        delete copy[swapTargetId];
-        copy[newExerciseId] = createEmptyExerciseDraft(newExerciseId);
-        return copy;
-      });
-      setCompletedIds((prev) => {
-        const next = new Set(prev);
-        next.delete(swapTargetId);
-        return next;
-      });
       closeExercisePicker();
     };
 
@@ -698,10 +676,10 @@ export default function ActiveWorkoutSession() {
         }
       }
       return true;
-    } catch (err: any) {
+    } catch (err) {
       alert(
         "Save failed",
-        err?.message || "Could not save this exercise session.",
+        getErrorMessage(err, "Could not save this exercise session."),
       );
       return false;
     } finally {
@@ -783,59 +761,28 @@ export default function ActiveWorkoutSession() {
     (isLoading && !activeExerciseSnapshots) ||
     (hydrated && restoredIds.length > 0 && !selectedExercises.length && !activeExerciseSnapshots)
   ) {
-    return (
-      <SafeAreaProvider>
-        <SafeAreaView style={styles.safeArea}>
-          <View style={styles.loadingState}>
-            <ActivityIndicator size="large" color={theme.primary} />
-            <Text style={styles.loadingText}>Loading session...</Text>
-          </View>
-        </SafeAreaView>
-      </SafeAreaProvider>
-    );
+    return <ScreenLoading message="Loading session..." theme={theme} />;
   }
 
   if (((error && !activeExerciseSnapshots) || (!selectedExercises.length && !isLoading)) && hydrated) {
     return (
-      <SafeAreaProvider>
-        <SafeAreaView style={styles.safeArea}>
-          <View style={styles.errorState}>
-            <Text style={styles.errorTitle}>Session unavailable</Text>
-            <Text style={styles.errorText}>
-              Could not load the selected exercises. Go back and try again.
-            </Text>
-            <AppButton
-              label="Go back"
-              onPress={() => router.back()}
-            />
-          </View>
-        </SafeAreaView>
-      </SafeAreaProvider>
+      <ScreenError
+        title="Session unavailable"
+        message="Could not load the selected exercises. Go back and try again."
+        actionLabel="Go back"
+        onAction={goBack}
+        theme={theme}
+      />
     );
   }
 
   // --- Completion screen ---
 
   if (allSaved) {
-    const totalSets = selectedExercises.reduce((sum, e) => {
-      const draft = drafts[e.id];
-      return (
-        sum +
-        (draft?.sets.filter((set) => set.set_type === "WORKING").length ?? 0)
-      );
-    }, 0);
-    const totalVolume = selectedExercises.reduce((sum, e) => {
-      const draft = drafts[e.id];
-      if (!draft) return sum;
-      return (
-        sum +
-        draft.sets.filter((set) => set.set_type === "WORKING").reduce(
-          (s, set) =>
-            s + (parseFloat(set.weight) || 0) * (parseFloat(set.reps) || 0),
-          0,
-        )
-      );
-    }, 0);
+    const { totalSets, totalVolume } = summarizeWorkoutTotals(
+      selectedExercises.map((exercise) => exercise.id),
+      drafts,
+    );
 
     return (
       <ActiveWorkoutCompletion
@@ -843,13 +790,29 @@ export default function ActiveWorkoutSession() {
         elapsed={elapsed}
         totalSets={totalSets}
         totalVolume={totalVolume}
-        onDone={() => router.back()}
+        onDone={goBack}
         theme={theme}
       />
     );
   }
 
   // --- Main session view ---
+
+  // The list's action port. Names differ from the screen's handlers where the
+  // port describes intent rather than implementation: `swapExercise` opens the
+  // picker, it does not perform the swap.
+  const exerciseListActions: ActiveWorkoutExerciseActions = {
+    addSet: addDraftSet,
+    updateSet: updateDraftSet,
+    toggleSetType: toggleDraftSetType,
+    completeSet: completeDraftSet,
+    duplicateSet: duplicateDraftSet,
+    removeSet: deleteDraftSet,
+    swapExercise: openSwapModal,
+    removeExercise,
+    applyRecommendation: applyProgressionRecommendation,
+    finishExercise,
+  };
 
   return (
     <SafeAreaProvider>
@@ -986,198 +949,16 @@ export default function ActiveWorkoutSession() {
             </TouchableOpacity>
           </View>
 
-          {selectedExercises.map((exercise) => {
-            const draft = drafts[exercise.id];
-            const isCompleted = completedIds.has(exercise.id);
-            const isFinishing = finishingId === exercise.id;
-            const sets = draft?.sets ?? [];
-            const group = activeGroupByExercise.get(exercise.id);
-            return (
-              <View key={exercise.id} style={{ gap: 8 }}>
-              {group?.memberIndex === 0 ? (
-                <View
-                  accessible
-                  accessibilityLabel={`Superset with ${group.size} exercises`}
-                  style={{ backgroundColor: theme.primary + "14", borderColor: theme.primary + "50", borderCurve: "continuous", borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8 }}
-                >
-                  <Text selectable style={{ color: theme.primary, fontFamily: "PlusJakartaSans_800ExtraBold", fontSize: 12 }}>
-                    Superset · {group.size} exercises
-                  </Text>
-                  <Text selectable style={{ color: theme.textLight, fontSize: 10 }}>
-                    Finish every working-set round to start the shared rest timer.
-                  </Text>
-                </View>
-              ) : null}
-              <View
-                style={[
-                  styles.exerciseCard,
-                  isCompleted && {
-                    opacity: 0.6,
-                    borderWidth: 2,
-                    borderColor: theme.income,
-                  },
-                ]}
-              >
-                <View style={styles.exerciseHeader}>
-                  <View style={{ flex: 1 }}>
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 8,
-                      }}
-                    >
-                      <Text style={styles.exerciseName}>
-                        {getExerciseName(exercise)}
-                      </Text>
-                      {isCompleted && (
-                        <MaterialIcons
-                          name="check-circle"
-                          size={18}
-                          color={theme.income}
-                        />
-                      )}
-                    </View>
-                    <Text style={styles.exerciseMeta}>
-                      {exercise.muscle_group ?? "-"} |{" "}
-                      {exercise.target_rep_range ?? "-"}
-                    </Text>
-                    {(() => {
-                      const hint = getLastSessionHint(exercise, measurementSystem);
-                      if (!hint) return null;
-                      return (
-                        <Text
-                          style={{
-                            color: theme.textLight,
-                            fontSize: 11,
-                            fontWeight: "600",
-                            marginTop: 4,
-                          }}
-                          numberOfLines={1}
-                        >
-                          Last session: {hint}
-                        </Text>
-                      );
-                    })()}
-                  </View>
-                  {!isCompleted && (
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        gap: 6,
-                        alignItems: "flex-start",
-                      }}
-                    >
-                      <IconButton
-                        accessibilityLabel={`Swap ${getExerciseName(exercise)}`}
-                        icon={
-                          <MaterialIcons
-                            name="swap-horiz"
-                            size={18}
-                            color={theme.primary}
-                          />
-                        }
-                        onPress={() => openSwapModal(exercise.id)}
-                        size="compact"
-                      />
-                      <IconButton
-                        accessibilityLabel={`Remove ${getExerciseName(exercise)} from workout`}
-                        icon={
-                          <MaterialIcons
-                            name="delete-outline"
-                            size={18}
-                            color={theme.expense}
-                          />
-                        }
-                        onPress={() => removeExercise(exercise.id)}
-                        size="compact"
-                        variant="destructive"
-                      />
-                    </View>
-                  )}
-                </View>
-
-                {!isCompleted ? (
-                  <ProgressionRecommendationCard
-                    exerciseName={getExerciseName(exercise)}
-                    recommendation={exercise.recommendation}
-                    disabled={isFinishing}
-                    onApply={() => applyProgressionRecommendation(exercise)}
-                  />
-                ) : null}
-
-                {!isCompleted && (
-                  <View style={styles.subsectionHeader}>
-                    <Text style={styles.subsectionTitle}>Sets</Text>
-                    <TouchableOpacity
-                      accessibilityRole="button"
-                      accessibilityLabel={`Add set to ${getExerciseName(exercise)}`}
-                      accessibilityState={{ disabled: isFinishing }}
-                      style={styles.inlineAction}
-                      onPress={() => addDraftSet(exercise.id)}
-                      disabled={isFinishing}
-                    >
-                      <MaterialIcons
-                        name="add"
-                        size={16}
-                        color={isFinishing ? theme.textLight : theme.primary}
-                      />
-                      <Text
-                        style={[
-                          styles.inlineActionText,
-                          isFinishing && { color: theme.textLight },
-                        ]}
-                      >
-                        Add set
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                {sets.length > 0 && (
-                  <View
-                    style={{
-                      borderWidth: 1.5,
-                      borderColor: theme.border,
-                      borderRadius: 16,
-                      backgroundColor: theme.background,
-                      overflow: "hidden",
-                      marginTop: 10,
-                    }}
-                  >
-                    {sets.map((set, idx) => (
-                      <ActiveWorkoutSetRow
-                        key={set.localId}
-                        set={set}
-                        exerciseName={getExerciseName(exercise)}
-                        theme={theme}
-                        disabled={isCompleted || isFinishing}
-                        isLast={idx === sets.length - 1}
-                        onChange={(field, value) =>
-                          updateDraftSet(exercise.id, set.localId, field, value)
-                        }
-                        onToggleType={() =>
-                          toggleDraftSetType(exercise.id, set.localId)
-                        }
-                        onComplete={() => completeDraftSet(exercise.id, set.localId)}
-                        onDuplicate={() => duplicateDraftSet(exercise.id, set.localId)}
-                        onRemove={() => deleteDraftSet(exercise.id, set.localId)}
-                      />
-                    ))}
-                  </View>
-                )}
-
-                {!isCompleted && (
-                  <AppButton
-                    label="Finish Exercise"
-                    loading={isFinishing}
-                    onPress={() => finishExercise(exercise)}
-                  />
-                )}
-              </View>
-              </View>
-            );
-          })}
+          <ActiveWorkoutExerciseList
+            exercises={selectedExercises}
+            drafts={drafts}
+            completedIds={completedIds}
+            finishingId={finishingId}
+            groupsByExercise={activeGroupByExercise}
+            measurementSystem={measurementSystem}
+            theme={theme}
+            actions={exerciseListActions}
+          />
 
           {/* Bottom spacer */}
           <View style={{ height: 20 }} />
@@ -1230,23 +1011,16 @@ export default function ActiveWorkoutSession() {
           />
         </View>
 
+        {/* One picker: the two modes are mutually exclusive, so they were
+            always two instances of the same stateless component where at most
+            one could be visible. */}
         <ActiveWorkoutExercisePicker
-          visible={showSwapModal}
-          mode="swap"
+          visible={picker.visible}
+          mode={picker.mode}
           exercises={availableSessionExercises}
           search={exerciseSearch}
           onSearchChange={setExerciseSearch}
-          onSelect={swapExercise}
-          onClose={closeExercisePicker}
-          theme={theme}
-        />
-        <ActiveWorkoutExercisePicker
-          visible={showAddExerciseModal}
-          mode="add"
-          exercises={availableSessionExercises}
-          search={exerciseSearch}
-          onSearchChange={setExerciseSearch}
-          onSelect={addExerciseToSession}
+          onSelect={picker.mode === "swap" ? swapExercise : addExerciseToSession}
           onClose={closeExercisePicker}
           theme={theme}
         />

@@ -1,3 +1,4 @@
+import type { GymStyles } from "@/assets/styles/gym.style";
 import {
   ActionStatus,
   type ActionFeedback,
@@ -18,7 +19,7 @@ type MealPrepDetailSheetProps = {
   feedback?: ActionFeedback;
   onDismissFeedback: () => void;
   theme: ThemeType;
-  style: any;
+  style: GymStyles;
 };
 
 const accentColors = [

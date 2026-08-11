@@ -71,10 +71,15 @@ const canonicalize = (value: unknown): unknown => {
 const buildCacheKey = (url?: string, params?: unknown) =>
   `GET:${url ?? ""}:${JSON.stringify(canonicalize(params ?? {}))}`;
 
-const getHeader = (headers: any, name: string) => {
-  const value = typeof headers?.get === "function"
-    ? headers.get(name)
-    : headers?.[name];
+// Axios headers are either an AxiosHeaders instance (has .get) or a plain bag,
+// depending on where in the interceptor chain they came from.
+const getHeader = (headers: unknown, name: string) => {
+  if (typeof headers !== "object" || headers === null) return undefined;
+  const bag = headers as {
+    get?: (headerName: string) => unknown;
+  } & Record<string, unknown>;
+  const value =
+    typeof bag.get === "function" ? bag.get(name) : bag[name];
   return typeof value === "string" ? value : undefined;
 };
 

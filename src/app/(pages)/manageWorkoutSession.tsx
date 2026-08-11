@@ -10,6 +10,7 @@ import {
   type ActionFeedback,
 } from "@/components/base/action-status";
 import { ModalHeader } from "@/components/base/modal-header";
+import { ScreenError, ScreenLoading } from "@/components/base/screen-state";
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
 import { ProgressionChartFrame } from "@/components/gym/progression-chart-frame";
 import { useAlert } from "@/context/AlertContext";
@@ -39,9 +40,8 @@ import { syncQueue } from "@/services/syncQueueService";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Modal,
   RefreshControl,
   ScrollView,
@@ -51,7 +51,7 @@ import {
   View
 } from "react-native";
 import { LineChart } from "react-native-gifted-charts";
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 type EditableSet = {
   localId: string;
@@ -156,6 +156,7 @@ export default function ManageWorkoutSession() {
   const styles = gymStyles(theme);
   const router = useRouter();
   const queryClient = useQueryClient();
+  const goBack = useCallback(() => router.back(), [router]);
   const { exerciseId } = useLocalSearchParams<{ exerciseId?: string }>();
   const selectedExerciseId = Number(exerciseId);
   const { alert } = useAlert();
@@ -442,34 +443,19 @@ export default function ManageWorkoutSession() {
 
   if (isLoading) {
     return (
-      <SafeAreaProvider>
-        <SafeAreaView style={styles.safeArea}>
-          <View style={styles.loadingState}>
-            <ActivityIndicator size="large" color={theme.primary} />
-            <Text style={styles.loadingText}>Loading workout sessions...</Text>
-          </View>
-        </SafeAreaView>
-      </SafeAreaProvider>
+      <ScreenLoading message="Loading workout sessions..." theme={theme} />
     );
   }
 
   if (error || !exercise) {
     return (
-      <SafeAreaProvider>
-        <SafeAreaView style={styles.safeArea}>
-          <View style={styles.errorState}>
-            <Text style={styles.errorTitle}>Session data unavailable</Text>
-            <Text style={styles.errorText}>
-              Open this page from an exercise progression so the app knows which
-              sessions to manage.
-            </Text>
-            <AppButton
-              label="Go back"
-              onPress={() => router.back()}
-            />
-          </View>
-        </SafeAreaView>
-      </SafeAreaProvider>
+      <ScreenError
+        title="Session data unavailable"
+        message="Open this page from an exercise progression so the app knows which sessions to manage."
+        actionLabel="Go back"
+        onAction={goBack}
+        theme={theme}
+      />
     );
   }
 

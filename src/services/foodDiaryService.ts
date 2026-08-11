@@ -130,7 +130,7 @@ export const searchFatSecretFoods = async (expression: string) => {
     );
 
     return toArray(response.data.foods?.food);
-  } catch (error: any) {
+  } catch (error) {
     throw new Error(getApiErrorMessage(error, "Food search failed"));
   }
 };
@@ -152,7 +152,7 @@ export const getFatSecretFood = async (foodId: string, servingId?: string) => {
     }
 
     return response.data.food;
-  } catch (error: any) {
+  } catch (error) {
     throw new Error(getApiErrorMessage(error, "Food detail failed"));
   }
 };
@@ -164,7 +164,7 @@ export const getFoodDiarySummary = async (date: string) => {
       { params: { date } },
     );
     return response.data;
-  } catch (error: any) {
+  } catch (error) {
     throw new Error(getApiErrorMessage(error, "Food diary summary failed"));
   }
 };
@@ -190,7 +190,7 @@ export const getFoodEntries = async (options: FoodEntryPageOptions = {}) => {
     });
 
     return response.data;
-  } catch (error: any) {
+  } catch (error) {
     throw new Error(getApiErrorMessage(error, "Food entries failed"));
   }
 };
@@ -199,7 +199,7 @@ export const createFoodEntry = async (dto: FoodEntryCreateRequestDTO) => {
   try {
     const response = await api.post<string>("/v1/food-diary", dto);
     return response.data;
-  } catch (error: any) {
+  } catch (error) {
     throw new Error(getApiErrorMessage(error, "Create food entry failed"));
   }
 };
@@ -211,7 +211,7 @@ export const updateFoodEntry = async (
   try {
     const response = await api.put<string>(`/v1/food-diary/${id}`, dto);
     return response.data;
-  } catch (error: any) {
+  } catch (error) {
     throw new Error(getApiErrorMessage(error, "Update food entry failed"));
   }
 };
@@ -220,7 +220,7 @@ export const deleteFoodEntry = async (id: number) => {
   try {
     const response = await api.delete(`/v1/food-diary/${id}`);
     return response.data;
-  } catch (error: any) {
+  } catch (error) {
     throw new Error(getApiErrorMessage(error, "Delete food entry failed"));
   }
 };
@@ -230,9 +230,19 @@ export const restoreFoodEntry = async (id: number) => {
   try {
     const response = await api.post(`/v1/food-diary/${id}/restore`);
     return response.data;
-  } catch (error: any) {
+  } catch (error) {
     throw new Error(getApiErrorMessage(error, "Restore food entry failed"));
   }
+};
+
+/**
+ * The proxy forwards FatSecret's response shape verbatim, and
+ * `food.find_id_for_barcode` has been observed returning the id under either
+ * key depending on the food. Both are optional here for that reason.
+ */
+type FatSecretBarcodeLookup = {
+  results?: { food_id?: string };
+  food?: { food_id?: string };
 };
 
 export const findFoodByBarcode = async (
@@ -288,7 +298,7 @@ export const findFoodByBarcode = async (
   // 2. Fallback to FatSecret barcode lookup
   try {
     // First, look up the food_id for this barcode
-    const searchResponse = await api.get<any>("/v1/fatsecret", {
+    const searchResponse = await api.get<FatSecretBarcodeLookup>("/v1/fatsecret", {
       params: {
         method: "food.find_id_for_barcode",
         barcode: cleanBarcode,

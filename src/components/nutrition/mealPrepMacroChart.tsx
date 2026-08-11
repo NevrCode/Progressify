@@ -1,3 +1,4 @@
+import type { GymStyles } from "@/assets/styles/gym.style";
 import { ThemeType } from "@/constants/colors";
 import { getNutritionAccents } from "@/constants/semantic-colors";
 import { Text, View } from "react-native";
@@ -8,7 +9,7 @@ interface MealPrepMacroDonutProps {
   carbohydrate: number;
   fat: number;
   theme: ThemeType;
-  style: any;
+  style: GymStyles;
   size?: "sm" | "md";
 }
 
@@ -25,7 +26,7 @@ function MacroSegmentedBar({
   fat: number;
   height?: number;
   theme: ThemeType;
-  style: any;
+  style: GymStyles;
 }) {
   const colors = getNutritionAccents(theme.background);
   const total = protein + carbohydrate + fat;

@@ -1,3 +1,4 @@
+import type { GymStyles } from "@/assets/styles/gym.style";
 import { gymStyles } from "@/assets/styles/gym.style";
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
 import {
@@ -162,7 +163,7 @@ export function MacroBar({
   progress: MacroProgress;
   color: string;
   theme: ThemeType;
-  style: any;
+  style: GymStyles;
 }) {
   const percentage = Math.min(progress.percentage, 100);
   return (

@@ -694,3 +694,5 @@ export const gymStyles = (theme: ThemeType) =>
       fontWeight: "900",
     },
   });
+
+export type GymStyles = ReturnType<typeof gymStyles>;

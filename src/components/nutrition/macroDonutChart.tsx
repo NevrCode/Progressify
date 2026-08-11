@@ -1,3 +1,4 @@
+import type { GymStyles } from "@/assets/styles/gym.style";
 import { ThemeType } from "@/constants/colors";
 import {
   getNutritionAccents,
@@ -12,7 +13,7 @@ import { PieChart } from "react-native-gifted-charts";
 interface MacroDonutChartProps {
   progress: DailyMacroProgress;
   theme: ThemeType;
-  style: any;
+  style: GymStyles;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -40,7 +41,7 @@ function LegendItem({
   goal: number;
   unit?: string;
   theme: ThemeType;
-  style: any;
+  style: GymStyles;
 }) {
   const pct = goal > 0 ? Math.min((consumed / goal) * 100, 100) : 0;
   return (

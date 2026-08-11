@@ -2,25 +2,24 @@ import { gymStyles } from "@/assets/styles/gym.style";
 import { AppButton } from "@/components/base/app-button";
 import { IconButton } from "@/components/base/icon-button";
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
+import { ExerciseSelectRow } from "@/components/gym/exercise-select-row";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
 import { ExerciseProgressionDTO } from "@/services/gymService";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  ScrollView,
+  FlatList,
+  type ListRenderItem,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-
-const getExerciseName = (exercise: ExerciseProgressionDTO) =>
-  exercise.name ?? "Exercise";
 
 const toDateSortValue = (value?: string) => {
   if (!value) return Number.MAX_SAFE_INTEGER;
@@ -30,7 +29,9 @@ const toDateSortValue = (value?: string) => {
 
 export default function WorkoutSession() {
   const { theme } = useTheme();
-  const styles = gymStyles(theme);
+  // Memoized because ExerciseSelectRow is memoized: a fresh styles object every
+  // render would defeat the row's props comparison and re-render the whole list.
+  const styles = useMemo(() => gymStyles(theme), [theme]);
   const router = useRouter();
   const { alert } = useAlert();
 
@@ -69,7 +70,9 @@ export default function WorkoutSession() {
     );
   }, [availableExercises, search]);
 
-  const toggleExercise = (exerciseId: number) => {
+  // Stable identity (functional setState needs no deps) so memoized rows are
+  // not invalidated on every parent render.
+  const toggleExercise = useCallback((exerciseId: number) => {
     setSelectedExerciseIds((current) => {
       const next = new Set(current);
       if (next.has(exerciseId)) {
@@ -79,7 +82,7 @@ export default function WorkoutSession() {
       }
       return next;
     });
-  };
+  }, []);
 
   const toggleAll = () => {
     if (selectedExerciseIds.size === filteredExercises.length) {
@@ -114,6 +117,24 @@ export default function WorkoutSession() {
   const allSelected =
     filteredExercises.length > 0 &&
     selectedExerciseIds.size === filteredExercises.length;
+
+  const keyExtractor = useCallback(
+    (exercise: ExerciseProgressionDTO) => String(exercise.id),
+    [],
+  );
+
+  const renderExercise = useCallback<ListRenderItem<ExerciseProgressionDTO>>(
+    ({ item }) => (
+      <ExerciseSelectRow
+        exercise={item}
+        selected={selectedExerciseIds.has(item.id)}
+        onToggle={toggleExercise}
+        styles={styles}
+        theme={theme}
+      />
+    ),
+    [selectedExerciseIds, styles, theme, toggleExercise],
+  );
 
   if (isLoading) {
     return (
@@ -150,7 +171,21 @@ export default function WorkoutSession() {
   return (
     <SafeAreaProvider>
       <SafeAreaView style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.container}>
+        <FlatList
+          data={filteredExercises}
+          keyExtractor={keyExtractor}
+          renderItem={renderExercise}
+          contentContainerStyle={styles.container}
+          keyboardShouldPersistTaps="handled"
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={7}
+          removeClippedSubviews
+          // Passed as an element, not a component function. An inline arrow
+          // component would be a new type on every render, remounting the
+          // header and dropping focus from the search field on each keystroke.
+          ListHeaderComponent={
+            <>
           <View
             style={{
               flexDirection: "row",
@@ -332,69 +367,9 @@ export default function WorkoutSession() {
               </View>
             </TouchableOpacity>
           </View>
-
-          {filteredExercises.length ? (
-            filteredExercises.map((exercise) => {
-              const isSelected = selectedExerciseIds.has(exercise.id);
-
-              return (
-                <TouchableOpacity
-                  key={exercise.id}
-                  accessibilityRole="checkbox"
-                  accessibilityLabel={getExerciseName(exercise)}
-                  accessibilityState={{ checked: isSelected }}
-                  style={[
-                    styles.exerciseCard,
-                    isSelected && {
-                      borderWidth: 2,
-                      borderColor: theme.primary,
-                    },
-                  ]}
-                  activeOpacity={0.7}
-                  onPress={() => toggleExercise(exercise.id)}
-                >
-                  <View style={styles.exerciseHeader}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.exerciseName}>
-                        {getExerciseName(exercise)}
-                      </Text>
-                      <Text style={styles.exerciseMeta}>
-                        {exercise.muscle_group ?? "-"} |{" "}
-                        {exercise.target_rep_range ?? "-"}
-                      </Text>
-                      {!!exercise.last_session_date && (
-                        <Text style={styles.exerciseSubMeta}>
-                          Last: {exercise.last_session_date}
-                        </Text>
-                      )}
-                    </View>
-                    <View
-                      style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: 6,
-                        borderWidth: 2,
-                        borderColor: isSelected ? theme.primary : theme.border,
-                        backgroundColor: isSelected
-                          ? theme.primary
-                          : "transparent",
-                        justifyContent: "center",
-                        alignItems: "center",
-                      }}
-                    >
-                      {isSelected && (
-                        <MaterialIcons
-                          name="check"
-                          size={18}
-                          color={theme.white}
-                        />
-                      )}
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            })
-          ) : (
+            </>
+          }
+          ListEmptyComponent={
             <View style={styles.emptyCard}>
               <Text style={styles.emptyTitle}>No exercises found</Text>
               <Text style={styles.emptyText}>
@@ -403,8 +378,8 @@ export default function WorkoutSession() {
                   : "Add exercises from the progression page first."}
               </Text>
             </View>
-          )}
-        </ScrollView>
+          }
+        />
 
         {selectedExerciseIds.size > 0 && (
           <View

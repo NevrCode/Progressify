@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   buildCatalog,
+  buildCatalogBundle,
   transformExercise,
 } from "../scripts/build-exercise-catalog.mjs";
 
@@ -55,5 +56,49 @@ test("buildCatalog rejects duplicate source identifiers", () => {
   assert.throws(
     () => buildCatalog([sourceExercise, sourceExercise]),
     /Duplicate exercise id/u,
+  );
+});
+
+test("buildCatalogBundle keeps prose and images out of the catalog artefact", () => {
+  const { catalog } = buildCatalogBundle([sourceExercise]);
+
+  assert.deepEqual(catalog.exercises, [
+    {
+      id: "Bench_Press",
+      name: "Bench Press",
+      primaryMuscle: "chest",
+      secondaryMuscles: ["triceps", "shoulders"],
+      equipment: "barbell",
+      level: "intermediate",
+      mechanic: "compound",
+      force: "push",
+      category: "strength",
+    },
+  ]);
+});
+
+test("buildCatalogBundle moves prose and images into the details artefact", () => {
+  const { details } = buildCatalogBundle([sourceExercise]);
+
+  assert.deepEqual(details, {
+    schemaVersion: 1,
+    details: {
+      Bench_Press: {
+        instructions: ["Unrack the bar.", "Press the bar."],
+        imagePaths: ["Bench_Press/0.jpg"],
+      },
+    },
+  });
+});
+
+test("buildCatalogBundle keys details by every catalog id", () => {
+  const { catalog, details } = buildCatalogBundle([
+    sourceExercise,
+    { ...sourceExercise, id: "Arnold_Press", name: "Arnold Press" },
+  ]);
+
+  assert.deepEqual(
+    catalog.exercises.map((exercise) => exercise.id).sort(),
+    Object.keys(details.details).sort(),
   );
 });

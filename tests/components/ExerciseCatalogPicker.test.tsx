@@ -22,6 +22,15 @@ jest.mock("@/services/discoveryService", () => ({
   useDiscoveryFeed: () => ({ data: { favorites: [], recent: [] } }),
   useToggleDiscoveryFavorite: () => ({ mutate: jest.fn() }),
 }));
+// This suite injects its own `exercises`, so it injects the matching details
+// too rather than reaching into the generated catalog.
+jest.mock("@/data/exercise-catalog", () => ({
+  catalogExercises: [],
+  getExerciseDetail: (exerciseID: string) =>
+    exerciseID === "Bench_Press"
+      ? { instructions: ["Press the bar."], imagePaths: [] }
+      : { instructions: [], imagePaths: [] },
+}));
 
 const exercises: CatalogExercise[] = [
   {
@@ -34,8 +43,6 @@ const exercises: CatalogExercise[] = [
     mechanic: "compound",
     force: "push",
     category: "strength",
-    instructions: ["Press the bar."],
-    imagePaths: [],
   },
   {
     id: "Hammer_Curl",
@@ -47,8 +54,6 @@ const exercises: CatalogExercise[] = [
     mechanic: "isolation",
     force: "pull",
     category: "strength",
-    instructions: ["Curl the dumbbells."],
-    imagePaths: [],
   },
 ];
 

@@ -1,6 +1,8 @@
 import { AppButton } from "@/components/base/app-button";
 import { useTheme } from "@/context/ThemeContext";
+import { getExerciseDetail } from "@/data/exercise-catalog";
 import type { CatalogExercise } from "@/types/exercise-catalog";
+import { useMemo } from "react";
 import { ScrollView, Text, View } from "react-native";
 
 type ExerciseCatalogPreviewProps = {
@@ -15,6 +17,9 @@ export function ExerciseCatalogPreview({
   onUseExercise,
 }: ExerciseCatalogPreviewProps) {
   const { theme } = useTheme();
+  // This screen is the only reader of the detail payload, so opening it is what
+  // triggers the one-time parse of the detail file.
+  const detail = useMemo(() => getExerciseDetail(exercise.id), [exercise.id]);
 
   return (
     <View style={{ gap: 12 }}>
@@ -86,8 +91,8 @@ export function ExerciseCatalogPreview({
           >
             Instructions
           </Text>
-          {exercise.instructions.length > 0 ? (
-            exercise.instructions.map((instruction, index) => (
+          {detail.instructions.length > 0 ? (
+            detail.instructions.map((instruction, index) => (
               <View
                 key={`${exercise.id}-${index}`}
                 style={{ flexDirection: "row", gap: 9 }}

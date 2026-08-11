@@ -23,17 +23,22 @@ import { rankDiscovery } from "@/utils/discovery-ranking";
 import { isOfflineQueuedResponse } from "@/utils/offline-response";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
   ScrollView,
+  SectionList,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { BarcodeScannerModal } from "./BarcodeScannerModal";
+import {
+  CustomFoodRow,
+  type DiscoverableCustomFood,
+} from "./custom-food-row";
 
 const mealOptions: { value: MealType; label: string }[] = [
   { value: "BREAKFAST", label: "Breakfast" },
@@ -43,11 +48,6 @@ const mealOptions: { value: MealType; label: string }[] = [
 ];
 
 type FlowFeedback = ActionFeedback & { surface: "single" | "custom" };
-
-type DiscoverableCustomFood = CustomFoodResponse & {
-  resource_type: "food";
-  resource_id: string;
-};
 
 const asDiscoverableCustomFood = (food: CustomFoodResponse): DiscoverableCustomFood => ({
   ...food,
@@ -88,7 +88,9 @@ export function FoodLoggingFlow({
   openRequest?: number;
 }) {
   const { theme } = useTheme();
-  const styles = gymStyles(theme);
+  // Memoized because CustomFoodRow is memoized: a fresh styles object every
+  // render would defeat the row's props comparison and re-render the whole list.
+  const styles = useMemo(() => gymStyles(theme), [theme]);
   const { alert } = useAlert();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
@@ -123,11 +125,13 @@ export function FoodLoggingFlow({
     setShowManual(false);
     setFeedback(null);
   };
-  const selectFood = (food: FatSecretFoodDetail) => {
+  // Stable identity (all state setters are stable) so memoized rows survive
+  // unrelated parent renders.
+  const selectFood = useCallback((food: FatSecretFoodDetail) => {
     setSelectedFood(food);
     setShowPicker(false);
     setQuantity("1");
-  };
+  }, []);
   const resetCustom = () => {
     setCustom({
       name: "", servingDescription: "100g", grams: "100", calories: "",
@@ -265,17 +269,83 @@ export function FoodLoggingFlow({
     });
   };
 
-  const renderCustomFood = (food: DiscoverableCustomFood) => {
-    const favorite = favoriteFoodIDs.has(food.resource_id);
-    return <TouchableOpacity key={food.resource_id} accessibilityRole="button" accessibilityLabel={`Select ${food.food_name}`} style={styles.listCard} onPress={() => selectFood(toSelectedFood(food))}>
-      <View style={styles.exerciseHeader}><View style={{ flex: 1 }}><Text style={styles.listTitle}>{food.food_name}</Text><Text style={styles.listMeta}>{food.serving_description || "1 serving"} • {food.calories} kcal</Text><Text style={styles.listSubtle}>P: {food.protein}g • C: {food.carbohydrate}g • F: {food.fat}g</Text></View>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${favorite ? "Remove" : "Add"} ${food.food_name} ${favorite ? "from" : "to"} favorite foods`} hitSlop={8} onPress={(event) => { event.stopPropagation(); favoriteMutation.mutate({ favorite: !favorite, input: { resource_type: "food", resource_id: food.resource_id, display_name: food.food_name, subtitle: "My food", serving_id: String(food.id), serving_description: food.serving_description ?? "1 serving" } }); }}><MaterialIcons name={favorite ? "star" : "star-border"} size={21} color={favorite ? theme.primary : theme.textLight} /></TouchableOpacity>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Delete custom food ${food.food_name}`} hitSlop={8} onPress={(event) => { event.stopPropagation(); alert("Delete Custom Food", "Are you sure you want to delete this custom food?", [{ text: "Cancel", style: "cancel" }, { text: "Delete", style: "destructive", onPress: () => { setFeedback(null); deleteCustomMutation.mutate(food.id); } }]); }}><MaterialIcons name="delete-outline" size={20} color={theme.expense} /></TouchableOpacity><MaterialIcons name="add-circle-outline" size={22} color={theme.primary} />
-        </View>
-      </View>
-    </TouchableOpacity>;
-  };
+  const handleSelectCustomFood = useCallback(
+    (food: DiscoverableCustomFood) => selectFood(toSelectedFood(food)),
+    [selectFood],
+  );
+
+  const handleToggleFavorite = useCallback(
+    (food: DiscoverableCustomFood, favorite: boolean) =>
+      favoriteMutation.mutate({
+        favorite,
+        input: {
+          resource_type: "food",
+          resource_id: food.resource_id,
+          display_name: food.food_name,
+          subtitle: "My food",
+          serving_id: String(food.id),
+          serving_description: food.serving_description ?? "1 serving",
+        },
+      }),
+    [favoriteMutation],
+  );
+
+  const handleDeleteCustomFood = useCallback(
+    (food: DiscoverableCustomFood) =>
+      alert(
+        "Delete Custom Food",
+        "Are you sure you want to delete this custom food?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: () => {
+              setFeedback(null);
+              deleteCustomMutation.mutate(food.id);
+            },
+          },
+        ],
+      ),
+    [alert, deleteCustomMutation],
+  );
+
+  const foodSections = useMemo(
+    () =>
+      [
+        { title: "Favorites", data: rankedFoods.favorites },
+        { title: "Recent", data: rankedFoods.recent },
+        { title: search ? "Matches" : "All foods", data: rankedFoods.matches },
+      ].filter((section) => section.data.length > 0),
+    [rankedFoods, search],
+  );
+
+  const foodKeyExtractor = useCallback(
+    (food: DiscoverableCustomFood) => food.resource_id,
+    [],
+  );
+
+  const renderFoodRow = useCallback(
+    ({ item }: { item: DiscoverableCustomFood }) => (
+      <CustomFoodRow
+        food={item}
+        favorite={favoriteFoodIDs.has(item.resource_id)}
+        onSelect={handleSelectCustomFood}
+        onToggleFavorite={handleToggleFavorite}
+        onDelete={handleDeleteCustomFood}
+        styles={styles}
+        theme={theme}
+      />
+    ),
+    [
+      favoriteFoodIDs,
+      handleDeleteCustomFood,
+      handleSelectCustomFood,
+      handleToggleFavorite,
+      styles,
+      theme,
+    ],
+  );
 
   return (
     <>
@@ -359,19 +429,26 @@ export function FoodLoggingFlow({
           </ScrollView> : <>
             <TextInput style={styles.input} placeholder="Search custom foods..." placeholderTextColor={theme.textLight} value={search} onChangeText={setSearch} autoFocus />
             <AppButton label="Create New Custom Food" onPress={() => { setFeedback(null); setShowManual(true); }} style={{ marginBottom: 12 }} variant="secondary" />
-            <ScrollView contentContainerStyle={{ gap: 8 }}>
-              {!foodSearchQuery.isFetching ? <>
-                {rankedFoods.favorites.length ? <View style={{ gap: 8 }}><Text style={{ color: theme.textLight, fontSize: 10, fontFamily: "PlusJakartaSans_700Bold", letterSpacing: .6, textTransform: "uppercase", marginTop: 4 }}>Favorites</Text>{rankedFoods.favorites.map(renderCustomFood)}</View> : null}
-                {rankedFoods.recent.length ? <View style={{ gap: 8 }}><Text style={{ color: theme.textLight, fontSize: 10, fontFamily: "PlusJakartaSans_700Bold", letterSpacing: .6, textTransform: "uppercase", marginTop: 4 }}>Recent</Text>{rankedFoods.recent.map(renderCustomFood)}</View> : null}
-                {rankedFoods.matches.length ? <View style={{ gap: 8 }}><Text style={{ color: theme.textLight, fontSize: 10, fontFamily: "PlusJakartaSans_700Bold", letterSpacing: .6, textTransform: "uppercase", marginTop: 4 }}>{search ? "Matches" : "All foods"}</Text>{rankedFoods.matches.map(renderCustomFood)}</View> : null}
-              </> : null}
-              {foodSearchQuery.isFetching ? <View style={styles.loadingState}><ActivityIndicator color={theme.primary} /><Text style={styles.loadingText}>Searching custom foods...</Text></View>
-                : showManual ? foodSearchQuery.data?.map((food) => <TouchableOpacity key={food.id} accessibilityRole="button" accessibilityLabel={`Select ${food.food_name}`} style={styles.listCard} onPress={() => selectFood(toSelectedFood(food))}>
-                  <View style={styles.exerciseHeader}><View style={{ flex: 1 }}><Text style={styles.listTitle}>{food.food_name}</Text><Text style={styles.listMeta}>{food.serving_description || "1 serving"} • {food.calories} kcal</Text><Text style={styles.listSubtle}>P: {food.protein}g • C: {food.carbohydrate}g • F: {food.fat}g</Text></View>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}><TouchableOpacity accessibilityRole="button" accessibilityLabel={`Delete custom food ${food.food_name}`} hitSlop={8} onPress={(event) => { event.stopPropagation(); alert("Delete Custom Food", "Are you sure you want to delete this custom food?", [{ text: "Cancel", style: "cancel" }, { text: "Delete", style: "destructive", onPress: () => { setFeedback(null); deleteCustomMutation.mutate(food.id); } }]); }}><MaterialIcons name="delete-outline" size={20} color={theme.expense} /></TouchableOpacity><MaterialIcons name="add-circle-outline" size={22} color={theme.primary} /></View>
-                  </View>
-                </TouchableOpacity>) : rankedFoods.favorites.length || rankedFoods.recent.length || rankedFoods.matches.length ? null : <Text style={styles.emptyText}>{search ? "No custom foods found." : "No custom foods created yet."}</Text>}
-            </ScrollView>
+            <SectionList
+              sections={foodSearchQuery.isFetching ? [] : foodSections}
+              keyExtractor={foodKeyExtractor}
+              renderItem={renderFoodRow}
+              renderSectionHeader={({ section }) => (
+                <Text style={{ color: theme.textLight, fontSize: 10, fontFamily: "PlusJakartaSans_700Bold", letterSpacing: .6, textTransform: "uppercase", marginTop: 4 }}>{section.title}</Text>
+              )}
+              contentContainerStyle={{ gap: 8 }}
+              keyboardShouldPersistTaps="handled"
+              initialNumToRender={8}
+              maxToRenderPerBatch={10}
+              windowSize={7}
+              ListEmptyComponent={
+                foodSearchQuery.isFetching ? (
+                  <View style={styles.loadingState}><ActivityIndicator color={theme.primary} /><Text style={styles.loadingText}>Searching custom foods...</Text></View>
+                ) : (
+                  <Text style={styles.emptyText}>{search ? "No custom foods found." : "No custom foods created yet."}</Text>
+                )
+              }
+            />
           </>}
         </View></View>
       </Modal>

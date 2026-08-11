@@ -1,3 +1,9 @@
+/**
+ * The summary every list, filter, and heatmap path needs.
+ *
+ * Prose and image references live in {@link CatalogExerciseDetail} instead —
+ * they are ~74% of the raw catalog and are only read by the detail screen.
+ */
 export type CatalogExercise = {
   id: string;
   name: string;
@@ -8,8 +14,16 @@ export type CatalogExercise = {
   mechanic: string | null;
   force: string | null;
   category: string;
+};
+
+export type CatalogExerciseDetail = {
   instructions: string[];
   imagePaths: string[];
+};
+
+export type ExerciseCatalogDetails = {
+  schemaVersion: 1;
+  details: Record<string, CatalogExerciseDetail>;
 };
 
 export type ExerciseCatalog = {

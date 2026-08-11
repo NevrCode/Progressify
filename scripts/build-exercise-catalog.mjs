@@ -11,6 +11,10 @@ const defaultOutputPath = resolve(
   projectRoot,
   "src/data/exercise-catalog.generated.json",
 );
+const defaultDetailsOutputPath = resolve(
+  projectRoot,
+  "src/data/exercise-catalog-details.generated.json",
+);
 
 const cleanText = (value) =>
   typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
@@ -50,12 +54,23 @@ export function transformExercise(rawExercise) {
   };
 }
 
-export function buildCatalog(sourceExercises, sourceUrl = DEFAULT_SOURCE_URL) {
+/**
+ * Splits the transformed catalog into two artefacts.
+ *
+ * `instructions` and `imagePaths` account for roughly three quarters of the
+ * payload but are only read by the exercise detail screen, so they live in a
+ * separate file that the app loads on demand. Everything the list and filter
+ * paths need stays in the always-loaded catalog.
+ */
+export function buildCatalogBundle(
+  sourceExercises,
+  sourceUrl = DEFAULT_SOURCE_URL,
+) {
   if (!Array.isArray(sourceExercises)) {
     throw new TypeError("Exercise catalog source must be a JSON array.");
   }
 
-  const exercises = sourceExercises
+  const transformed = sourceExercises
     .filter((exercise) => exercise?.category === "strength")
     .map(transformExercise)
     .sort((left, right) =>
@@ -63,28 +78,45 @@ export function buildCatalog(sourceExercises, sourceUrl = DEFAULT_SOURCE_URL) {
     );
 
   const ids = new Set();
-  for (const exercise of exercises) {
+  for (const exercise of transformed) {
     if (ids.has(exercise.id)) {
       throw new Error(`Duplicate exercise id: ${exercise.id}`);
     }
     ids.add(exercise.id);
   }
 
-  if (exercises.length === 0) {
+  if (transformed.length === 0) {
     throw new Error("Transformation produced an empty strength catalog.");
   }
 
+  const exercises = [];
+  const details = {};
+  for (const { instructions, imagePaths, ...summary } of transformed) {
+    exercises.push(summary);
+    details[summary.id] = { instructions, imagePaths };
+  }
+
   return {
-    schemaVersion: 1,
-    source: {
-      name: "Free Exercise DB",
-      url: sourceUrl,
-      repository: "https://github.com/yuhonas/free-exercise-db",
-      license: "Unlicense",
+    catalog: {
+      schemaVersion: 1,
+      source: {
+        name: "Free Exercise DB",
+        url: sourceUrl,
+        repository: "https://github.com/yuhonas/free-exercise-db",
+        license: "Unlicense",
+      },
+      exerciseCount: exercises.length,
+      exercises,
     },
-    exerciseCount: exercises.length,
-    exercises,
+    details: {
+      schemaVersion: 1,
+      details,
+    },
   };
+}
+
+export function buildCatalog(sourceExercises, sourceUrl = DEFAULT_SOURCE_URL) {
+  return buildCatalogBundle(sourceExercises, sourceUrl).catalog;
 }
 
 async function readSource(source) {
@@ -104,6 +136,7 @@ function parseArguments(args) {
     check: false,
     source: DEFAULT_SOURCE_URL,
     output: defaultOutputPath,
+    detailsOutput: defaultDetailsOutputPath,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -116,6 +149,9 @@ function parseArguments(args) {
     } else if (argument === "--output" && args[index + 1]) {
       options.output = resolve(projectRoot, args[index + 1]);
       index += 1;
+    } else if (argument === "--details-output" && args[index + 1]) {
+      options.detailsOutput = resolve(projectRoot, args[index + 1]);
+      index += 1;
     } else {
       throw new Error(`Unknown or incomplete argument: ${argument}`);
     }
@@ -127,19 +163,36 @@ function parseArguments(args) {
 async function main() {
   const options = parseArguments(process.argv.slice(2));
   const sourceText = await readSource(options.source);
-  const catalog = buildCatalog(JSON.parse(sourceText), options.source);
-  const outputText = `${JSON.stringify(catalog, null, 2)}\n`;
-  const checksum = createHash("sha256").update(outputText).digest("hex");
+  const { catalog, details } = buildCatalogBundle(
+    JSON.parse(sourceText),
+    options.source,
+  );
 
-  if (options.check) {
-    const currentOutput = await readFile(options.output, "utf8").catch(() => null);
-    if (currentOutput !== outputText) {
-      throw new Error(
-        "Generated catalog is missing or stale. Run npm run catalog:build.",
+  const artefacts = [
+    { path: options.output, text: `${JSON.stringify(catalog, null, 2)}\n` },
+    {
+      path: options.detailsOutput,
+      text: `${JSON.stringify(details, null, 2)}\n`,
+    },
+  ];
+
+  const checksum = createHash("sha256")
+    .update(artefacts.map((artefact) => artefact.text).join(""))
+    .digest("hex");
+
+  for (const artefact of artefacts) {
+    if (options.check) {
+      const currentOutput = await readFile(artefact.path, "utf8").catch(
+        () => null,
       );
+      if (currentOutput !== artefact.text) {
+        throw new Error(
+          "Generated catalog is missing or stale. Run npm run catalog:build.",
+        );
+      }
+    } else {
+      await writeFile(artefact.path, artefact.text, "utf8");
     }
-  } else {
-    await writeFile(options.output, outputText, "utf8");
   }
 
   console.log(

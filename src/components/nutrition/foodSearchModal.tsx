@@ -15,9 +15,10 @@ import {
 import { toApiError } from "@/utils/apiError";
 import { isOfflineQueuedResponse } from "@/utils/offline-response";
 import { MaterialIcons } from "@expo/vector-icons";
-import { useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  FlatList,
   Modal,
   ScrollView,
   Text,
@@ -247,14 +248,15 @@ function ManualFoodForm({
 
 // ── Custom food row ───────────────────────────────────────────────────────────
 
-function CustomFoodRow({
+function CustomFoodRowComponent({
   food,
-  onPress,
+  onSelect,
   theme,
   style,
 }: {
   food: CustomFoodResponse;
-  onPress: () => void;
+  /** Takes the food itself so the parent can pass one stable callback. */
+  onSelect: (food: CustomFoodResponse) => void;
   theme: any;
   style: any;
 }) {
@@ -267,7 +269,7 @@ function CustomFoodRow({
         { borderLeftWidth: 3, borderLeftColor: theme.primary },
       ]}
       activeOpacity={0.82}
-      onPress={onPress}
+      onPress={() => onSelect(food)}
     >
       <View style={style.exerciseHeader}>
         <View style={{ flex: 1 }}>
@@ -315,6 +317,12 @@ function CustomFoodRow({
   );
 }
 
+/**
+ * Memoized so one row's press does not re-render the whole result list. Relies
+ * on the parent keeping `style` and `onSelect` stable across renders.
+ */
+const CustomFoodRow = memo(CustomFoodRowComponent);
+
 // ── Main modal ────────────────────────────────────────────────────────────────
 
 export function FoodSearchModal({
@@ -323,7 +331,9 @@ export function FoodSearchModal({
   onFoodSelected,
 }: FoodSearchModalProps) {
   const { theme } = useTheme();
-  const style = gymStyles(theme);
+  // Memoized because CustomFoodRow is memoized: a fresh style object every
+  // render would defeat the row's props comparison and re-render the whole list.
+  const style = useMemo(() => gymStyles(theme), [theme]);
 
   const [search, setSearch] = useState("");
   const [showManual, setShowManual] = useState(false);
@@ -341,7 +351,15 @@ export function FoodSearchModal({
 
   const customFoodQuery = useCustomFoodSearch(search.trim());
 
-  const handleCustomFoodSelect = (food: CustomFoodResponse) => {
+  const handleClose = useCallback(() => {
+    setSearch("");
+    setShowManual(false);
+    setActionFeedback(null);
+    onClose();
+  }, [onClose]);
+
+  // Stable identity so the memoized rows are not invalidated on every render.
+  const handleCustomFoodSelect = useCallback((food: CustomFoodResponse) => {
     onFoodSelected({
       food_id: `custom-${food.id}`,
       food_name: food.food_name,
@@ -354,7 +372,7 @@ export function FoodSearchModal({
       is_custom: true,
     });
     handleClose();
-  };
+  }, [handleClose, onFoodSelected]);
 
   const handleManualSave = (data: any) => {
     setActionFeedback(null);
@@ -380,15 +398,30 @@ export function FoodSearchModal({
     });
   };
 
-  const handleClose = () => {
-    setSearch("");
-    setShowManual(false);
-    setActionFeedback(null);
-    onClose();
-  };
-
-  const hasCustomResults = (customFoodQuery.data?.length ?? 0) > 0;
   const isSearching = customFoodQuery.isFetching;
+  const isAwaitingMinimumQuery = search.trim().length < 2;
+
+  const customFoods = useMemo(
+    () => (isSearching ? [] : (customFoodQuery.data ?? [])),
+    [customFoodQuery.data, isSearching],
+  );
+
+  const keyExtractor = useCallback(
+    (food: CustomFoodResponse) => String(food.id),
+    [],
+  );
+
+  const renderCustomFood = useCallback(
+    ({ item }: { item: CustomFoodResponse }) => (
+      <CustomFoodRow
+        food={item}
+        onSelect={handleCustomFoodSelect}
+        theme={theme}
+        style={style}
+      />
+    ),
+    [handleCustomFoodSelect, style, theme],
+  );
 
   return (
     <Modal
@@ -438,172 +471,88 @@ export function FoodSearchModal({
                 autoFocus
               />
 
-              <ScrollView
+              <FlatList
+                data={customFoods}
+                keyExtractor={keyExtractor}
+                renderItem={renderCustomFood}
                 contentContainerStyle={{ gap: 8 }}
                 showsVerticalScrollIndicator={false}
-              >
-                {isSearching ? (
-                  <View style={style.loadingState}>
-                    <ActivityIndicator color={theme.primary} />
-                    <Text style={style.loadingText}>Searching foods...</Text>
-                  </View>
-                ) : search.trim().length < 2 ? (
-                  <>
-                    {/* Show all custom foods when no search */}
-                    {(customFoodQuery.data?.length ?? 0) > 0 && (
-                      <>
-                        <Text
-                          style={[
-                            style.listMeta,
-                            { fontWeight: "700", marginTop: 4 },
-                          ]}
-                        >
-                          My Custom Foods
-                        </Text>
-                        {customFoodQuery.data?.map(
-                          (food: CustomFoodResponse) => (
-                            <CustomFoodRow
-                              key={food.id}
-                              food={food}
-                              onPress={() => handleCustomFoodSelect(food)}
-                              theme={theme}
-                              style={style}
-                            />
-                          ),
-                        )}
-                        <View
-                          style={{
-                            height: 0.5,
-                            backgroundColor: theme.border ?? "#eee",
-                          }}
-                        />
-                      </>
-                    )}
-                    <Text style={style.emptyText}>
-                      Type at least 2 characters to search FatSecret.
+                keyboardShouldPersistTaps="handled"
+                initialNumToRender={8}
+                maxToRenderPerBatch={10}
+                windowSize={7}
+                // Element, not a component function: an inline arrow component
+                // is a new type each render and would remount the header.
+                ListHeaderComponent={
+                  customFoods.length > 0 ? (
+                    <Text
+                      style={[
+                        style.listMeta,
+                        { fontWeight: "700", marginTop: 4 },
+                      ]}
+                    >
+                      My Custom Foods
                     </Text>
-                  </>
-                ) : (
+                  ) : null
+                }
+                ListEmptyComponent={
+                  isSearching ? (
+                    <View style={style.loadingState}>
+                      <ActivityIndicator color={theme.primary} />
+                      <Text style={style.loadingText}>Searching foods...</Text>
+                    </View>
+                  ) : null
+                }
+                ListFooterComponent={
                   <>
-                    {hasCustomResults && (
+                    {isAwaitingMinimumQuery && !isSearching ? (
                       <>
-                        <Text
-                          style={[
-                            style.listMeta,
-                            { fontWeight: "700", marginTop: 4 },
-                          ]}
-                        >
-                          My Custom Foods
-                        </Text>
-                        {customFoodQuery.data?.map(
-                          (food: CustomFoodResponse) => (
-                            <CustomFoodRow
-                              key={food.id}
-                              food={food}
-                              onPress={() => handleCustomFoodSelect(food)}
-                              theme={theme}
-                              style={style}
-                            />
-                          ),
-                        )}
-                        {/* {hasFatSecretResults && (
+                        {customFoods.length > 0 ? (
                           <View
                             style={{
                               height: 0.5,
                               backgroundColor: theme.border ?? "#eee",
-                              marginVertical: 4,
                             }}
                           />
-                        )} */}
+                        ) : null}
+                        <Text style={style.emptyText}>
+                          Type at least 2 characters to search FatSecret.
+                        </Text>
                       </>
-                    )}
+                    ) : null}
 
-                    {/* FatSecret results */}
-                    {/* {hasFatSecretResults ? (
-                      <>
-                        {hasCustomResults && (
-                          <Text style={[style.listMeta, { fontWeight: "700" }]}>
-                            FatSecret
-                          </Text>
-                        )}
-                        {fatSecretQuery.data?.map((food) => (
-                          <TouchableOpacity
-                            key={food.food_id}
-                            accessibilityRole="button"
-                            accessibilityLabel={`View ${food.food_name}`}
-                            accessibilityState={{
-                              disabled: foodDetailMutation.isPending,
-                              busy: foodDetailMutation.isPending,
-                            }}
-                            style={style.listCard}
-                            activeOpacity={0.82}
-                            onPress={() => foodDetailMutation.mutate(food)}
-                            disabled={foodDetailMutation.isPending}
-                          >
-                            <View style={style.exerciseHeader}>
-                              <View style={{ flex: 1 }}>
-                                <Text style={style.listTitle}>
-                                  {food.food_name}
-                                </Text>
-                                <Text style={style.listMeta}>
-                                  {food.brand_name ?? food.food_type ?? "-"}
-                                </Text>
-                                {!!food.food_description && (
-                                  <Text style={style.listSubtle}>
-                                    {food.food_description}
-                                  </Text>
-                                )}
-                              </View>
-                              {foodDetailMutation.isPending ? (
-                                <ActivityIndicator
-                                  size="small"
-                                  color={theme.primary}
-                                />
-                              ) : (
-                                <MaterialIcons
-                                  name="add-circle-outline"
-                                  size={22}
-                                  color={theme.primary}
-                                />
-                              )}
-                            </View>
-                          </TouchableOpacity>
-                        ))}
-                      </>
-                    ) : !hasCustomResults ? (
-                      <Text style={style.emptyText}>
-                        No foods found on FatSecret.
+                    {/* Add manually button — always visible at bottom */}
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Add food manually"
+                      style={[
+                        style.filterChip,
+                        {
+                          alignSelf: "center",
+                          marginTop: 8,
+                          flexDirection: "row",
+                          gap: 6,
+                        },
+                      ]}
+                      onPress={() => {
+                        setActionFeedback(null);
+                        setShowManual(true);
+                      }}
+                    >
+                      <MaterialIcons
+                        name="add"
+                        size={15}
+                        color={theme.primary}
+                      />
+                      <Text
+                        style={[style.filterChipText, { color: theme.primary }]}
+                      >
+                        Can&apos;t find it? Add manually
                       </Text>
-                    ) : null} */}
+                    </TouchableOpacity>
                   </>
-                )}
-
-                {/* Add manually button — always visible at bottom */}
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel="Add food manually"
-                  style={[
-                    style.filterChip,
-                    {
-                      alignSelf: "center",
-                      marginTop: 8,
-                      flexDirection: "row",
-                      gap: 6,
-                    },
-                  ]}
-                  onPress={() => {
-                    setActionFeedback(null);
-                    setShowManual(true);
-                  }}
-                >
-                  <MaterialIcons name="add" size={15} color={theme.primary} />
-                  <Text
-                    style={[style.filterChipText, { color: theme.primary }]}
-                  >
-                    Can&apos;t find it? Add manually
-                  </Text>
-                </TouchableOpacity>
-              </ScrollView>
+                }
+              />
             </>
           )}
         </View>

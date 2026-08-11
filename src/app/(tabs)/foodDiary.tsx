@@ -5,6 +5,10 @@ import {
   type ActionFeedback,
 } from "@/components/base/action-status";
 import { AppButton } from "@/components/base/app-button";
+import {
+  DurableUndoSnackbar,
+  type DurableUndoSnackbarState,
+} from "@/components/base/durable-undo-snackbar";
 import { FormField } from "@/components/base/form-field";
 import { IconButton } from "@/components/base/icon-button";
 import { SegmentedControl } from "@/components/base/segmented-control";
@@ -44,7 +48,9 @@ import {
 import {
   deleteFoodEntry,
   FoodEntryDetailResponseDTO,
+  restoreFoodEntry,
 } from "@/services/foodDiaryService";
+import { syncQueue } from "@/services/syncQueueService";
 import {
   ActivityLevel,
   Gender,
@@ -82,6 +88,10 @@ type FoodFeedbackSurface =
 
 type ScopedFoodActionFeedback = ActionFeedback & {
   surface: FoodFeedbackSurface;
+};
+type FoodDeleteUndo = DurableUndoSnackbarState & {
+  entryId?: number;
+  pendingId?: string;
 };
 
 const genderOptions: { value: Gender; label: string }[] = [
@@ -419,6 +429,7 @@ export default function FoodDiary() {
   const [foodLoggingOpenRequest, setFoodLoggingOpenRequest] = useState(0);
   const [foodActionFeedback, setFoodActionFeedback] =
     useState<ScopedFoodActionFeedback | null>(null);
+  const [deleteUndo, setDeleteUndo] = useState<FoodDeleteUndo | null>(null);
   const {
     isLoading: summaryLoading,
     isFetching: summaryFetching,
@@ -480,13 +491,57 @@ export default function FoodDiary() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => {
+          onPress: async () => {
             setFoodActionFeedback(null);
-            deleteEntryMutation.mutate(entry.id);
+            try {
+              const result = await deleteEntryMutation.mutateAsync(entry.id);
+              setDeleteUndo({
+                phase: "countdown",
+                label: getEntryFoodName(entry),
+                expiresAt: Date.now() + 5000,
+                ...(isOfflineQueuedResponse(result) ? { pendingId: result.pending_id } : {}),
+                entryId: entry.id,
+              });
+            } catch {
+              // The mutation's onError has already shown the actionable feedback.
+            }
           },
         },
       ],
     );
+  };
+  const undoFoodDeletion = async () => {
+    const undo = deleteUndo;
+    if (!undo || undo.phase !== "countdown" || !undo.entryId) return;
+    setDeleteUndo({ phase: "undoing", label: undo.label });
+    try {
+      if (undo.pendingId) {
+        const cancellation = await syncQueue.cancelPendingDelete(undo.pendingId);
+        if (cancellation.status !== "cancelled") {
+          setDeleteUndo({
+            phase: "unavailable",
+            label: undo.label,
+            message: "Undo is unavailable because deletion has already started syncing.",
+          });
+          return;
+        }
+      } else {
+        const restored = await restoreFoodEntry(undo.entryId);
+        await refreshDiary();
+        setDeleteUndo({
+          phase: "restored",
+          label: undo.label,
+          ...(isOfflineQueuedResponse(restored)
+            ? { message: "Restoration saved locally and will sync in order." }
+            : {}),
+        });
+        return;
+      }
+      await refreshDiary();
+      setDeleteUndo({ phase: "restored", label: undo.label });
+    } catch (error) {
+      setDeleteUndo({ phase: "error", label: undo.label, message: toApiError(error).message });
+    }
   };
   const prog = todayDairySummary?.progress;
 
@@ -1053,6 +1108,12 @@ export default function FoodDiary() {
           )}
         </TabScreenScrollView>
       </KeyboardAvoidingView>
+      <DurableUndoSnackbar
+        onExpired={() => setDeleteUndo((current) => current?.phase === "countdown" ? { phase: "unavailable", label: current.label, message: "Undo period expired." } : current)}
+        onUndo={() => void undoFoodDeletion()}
+        state={deleteUndo}
+        theme={theme}
+      />
 </SafeAreaView>
   );
 }

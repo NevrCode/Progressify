@@ -1,5 +1,9 @@
 import { AppButton } from "@/components/base/app-button";
 import {
+  DurableUndoSnackbar,
+  type DurableUndoSnackbarState,
+} from "@/components/base/durable-undo-snackbar";
+import {
   ActionStatus,
   type ActionFeedback,
 } from "@/components/base/action-status";
@@ -18,6 +22,7 @@ import {
   createProgramLayoutMutation,
   createWorkoutProgram,
   createWorkoutRoutine,
+  deleteWorkoutRoutine,
   deletePlannedExercise,
   duplicateWorkoutRoutine,
   getWorkoutPrograms,
@@ -25,10 +30,15 @@ import {
   PlannedExerciseRequest,
   ProgramTemplate,
   startWorkoutRoutine,
+  getLatestRepeatableWorkoutSnapshot,
+  repeatCompletedWorkout,
   replaceWorkoutProgramLayout,
+  restoreWorkoutRoutine,
   updatePlannedExercise,
   WorkoutRoutineDTO,
 } from "@/services/workoutProgramService";
+import { createRepeatWorkoutLaunch } from "@/features/workout-session/repeat-workout";
+import { loadActiveSession, saveActiveSession } from "@/services/sessionStorage";
 import {
   serializeProgramLayout,
   type ProgramLayout,
@@ -38,6 +48,8 @@ import {
   routineLayoutConflictPrompt,
 } from "@/features/program-layout/conflict";
 import { toApiError } from "@/utils/apiError";
+import { isOfflineQueuedResponse } from "@/utils/offline-response";
+import { syncQueue } from "@/services/syncQueueService";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
@@ -62,6 +74,10 @@ const templateOptions = [
   { label: "Bro Split", value: "BRO_SPLIT" },
   { label: "Custom", value: "CUSTOM" },
 ] as const;
+type RoutineDeleteUndo = DurableUndoSnackbarState & {
+  pendingId?: string;
+  routineId?: number;
+};
 
 const parseRepRange = (value?: string) => {
   const values = value?.match(/\d+/g)?.map(Number) ?? [];
@@ -196,6 +212,7 @@ export default function ProgramsScreen() {
   const [restSecondsDrafts, setRestSecondsDrafts] = useState<
     Record<number, string>
   >({});
+  const [deleteUndo, setDeleteUndo] = useState<RoutineDeleteUndo | null>(null);
 
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ["gym", "programs"] });
@@ -229,6 +246,10 @@ export default function ProgramsScreen() {
   });
   const duplicateRoutineMutation = useMutation({
     mutationFn: duplicateWorkoutRoutine,
+    onSuccess: refresh,
+  });
+  const deleteRoutineMutation = useMutation({
+    mutationFn: deleteWorkoutRoutine,
     onSuccess: refresh,
   });
   const addExerciseMutation = useMutation({
@@ -334,6 +355,18 @@ export default function ProgramsScreen() {
       });
     },
   });
+  const repeatMutation = useMutation({
+    mutationFn: async () => {
+      const snapshot = await getLatestRepeatableWorkoutSnapshot();
+      const session = await repeatCompletedWorkout(snapshot.workout_session_id);
+      return { snapshot, session };
+    },
+    onSuccess: async ({ snapshot, session }) => {
+      const launch = createRepeatWorkoutLaunch(snapshot, session);
+      await saveActiveSession(launch);
+      router.replace("/activeWorkoutSession");
+    },
+  });
 
   const saveProgramLayout = async (layout: ProgramLayout) => {
     try {
@@ -430,6 +463,99 @@ export default function ProgramsScreen() {
               },
             ),
         },
+      ],
+    );
+  };
+  const confirmDeleteRoutine = (routine: WorkoutRoutineDTO) => {
+    alert(
+      "Delete empty routine",
+      `Remove "${routine.name}"? Routines with exercises cannot be deleted.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const result = await deleteRoutineMutation.mutateAsync(routine.id);
+              setDeleteUndo({
+                phase: "countdown",
+                label: routine.name,
+                expiresAt: Date.now() + 5000,
+                routineId: routine.id,
+                ...(isOfflineQueuedResponse(result) ? { pendingId: result.pending_id } : {}),
+              });
+            } catch (error) {
+              setActionFeedback({ status: "error", surface: "page", title: "Could not delete routine", message: toApiError(error).message });
+            }
+          },
+        },
+      ],
+    );
+  };
+  const undoRoutineDeletion = async () => {
+    const undo = deleteUndo;
+    if (!undo || undo.phase !== "countdown" || !undo.routineId) return;
+    setDeleteUndo({ phase: "undoing", label: undo.label });
+    try {
+      if (undo.pendingId) {
+        const cancellation = await syncQueue.cancelPendingDelete(undo.pendingId);
+        if (cancellation.status !== "cancelled") {
+          setDeleteUndo({ phase: "unavailable", label: undo.label, message: "Undo is unavailable because deletion has already started syncing." });
+          return;
+        }
+      } else {
+        const restored = await restoreWorkoutRoutine(undo.routineId);
+        await refresh();
+        setDeleteUndo({
+          phase: "restored",
+          label: undo.label,
+          ...(isOfflineQueuedResponse(restored)
+            ? { message: "Restoration saved locally and will sync in order." }
+            : {}),
+        });
+        return;
+      }
+      await refresh();
+      setDeleteUndo({ phase: "restored", label: undo.label });
+    } catch (error) {
+      setDeleteUndo({ phase: "error", label: undo.label, message: toApiError(error).message });
+    }
+  };
+
+  const startRepeat = () =>
+    void (async () => {
+      setActionFeedback(null);
+      try {
+        await repeatMutation.mutateAsync();
+      } catch (error) {
+        const apiError = toApiError(error);
+        const message = apiError.code === "DATA_NOT_FOUND"
+          ? "There is no completed routine workout to repeat yet."
+          : apiError.code === "NO_REPEATABLE_WORKOUT"
+            ? "Your latest completed workout predates repeat snapshots. Complete a new routine workout first."
+            : apiError.message;
+        setActionFeedback({
+          status: "error",
+          surface: "page",
+          title: "Could not repeat last workout",
+          message,
+        });
+      }
+    })();
+
+  const requestRepeat = async () => {
+    const active = await loadActiveSession();
+    if (!active?.exerciseIds.length) {
+      startRepeat();
+      return;
+    }
+    alert(
+      "Unfinished workout",
+      "Finish or discard the current workout before repeating the last one.",
+      [
+        { text: "Resume current", onPress: () => router.push("/activeWorkoutSession") },
+        { text: "Cancel", style: "cancel" },
       ],
     );
   };
@@ -729,6 +855,12 @@ export default function ProgramsScreen() {
                       }
                       onPress={() => confirmDuplicateRoutine(routine)}
                     />
+                    <AppButton
+                      disabled={routine.planned_exercises.length > 0}
+                      label={routine.planned_exercises.length > 0 ? "Remove exercises to delete routine" : "Delete routine"}
+                      variant="ghost"
+                      onPress={() => confirmDeleteRoutine(routine)}
+                    />
 
                     {routine.planned_exercises.map((planned) => {
                       const restSeconds =
@@ -857,6 +989,12 @@ export default function ProgramsScreen() {
             onPress={() => setShowCreate(true)}
           />
         ) : null}
+        <AppButton
+          label="Repeat last workout"
+          variant="secondary"
+          loading={repeatMutation.isPending}
+          onPress={() => void requestRepeat()}
+        />
         <AppButton
           label="Manual workout"
           variant="ghost"
@@ -1050,6 +1188,12 @@ export default function ProgramsScreen() {
           </View>
         </View>
       </Modal>
+      <DurableUndoSnackbar
+        onExpired={() => setDeleteUndo((current) => current?.phase === "countdown" ? { phase: "unavailable", label: current.label, message: "Undo period expired." } : current)}
+        onUndo={() => void undoRoutineDeletion()}
+        state={deleteUndo}
+        theme={theme}
+      />
     </SafeAreaView>
   );
 }

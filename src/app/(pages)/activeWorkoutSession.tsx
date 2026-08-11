@@ -30,6 +30,7 @@ import {
   type ExerciseDraft,
   type RemovedDraftSet,
   type ActiveWorkoutLayoutSnapshot,
+  type ActiveWorkoutExerciseSnapshot,
   updateExerciseDraftSet,
 } from "@/features/workout-session/drafts";
 import { useRestTimer } from "@/features/workout-session/use-rest-timer";
@@ -126,6 +127,9 @@ export default function ActiveWorkoutSession() {
     Record<number, number>
   >({});
   const [restoredLayoutSnapshot, setRestoredLayoutSnapshot] = useState<ActiveWorkoutLayoutSnapshot | undefined>();
+  const [restoredExerciseSnapshots, setRestoredExerciseSnapshots] = useState<
+    Record<number, ActiveWorkoutExerciseSnapshot> | undefined
+  >();
 
   const restTimer = useRestTimer();
   const restoreRestTimer = restTimer.restore;
@@ -163,6 +167,7 @@ export default function ActiveWorkoutSession() {
     ? restoredPlannedExerciseRestSeconds
     : routePlannedExerciseRestSeconds;
   const activeLayoutSnapshot = restoredLayoutSnapshot ?? routeLayoutSnapshot;
+  const activeExerciseSnapshots = restoredExerciseSnapshots;
   const selectedIds = useMemo(
     () =>
       (exerciseIds ?? "")
@@ -209,9 +214,24 @@ export default function ActiveWorkoutSession() {
 
   const selectedExercises = useMemo(() => {
     return sessionExerciseIds
-      .map((id) => exerciseProgressions.find((e) => e.id === id))
+      .map((id) => {
+        const snapshot = activeExerciseSnapshots?.[id];
+        if (snapshot) {
+          const min = snapshot.targetRepMin;
+          const max = snapshot.targetRepMax;
+          return {
+            id,
+            catalog_exercise_id: snapshot.catalogExerciseId,
+            name: snapshot.name,
+            muscle_group: snapshot.muscleGroup,
+            target_rep_range: min ? `${min}-${max ?? min}` : undefined,
+            notes: snapshot.notes ?? undefined,
+          } satisfies ExerciseProgressionDTO;
+        }
+        return exerciseProgressions.find((e) => e.id === id);
+      })
       .filter((e): e is ExerciseProgressionDTO => e != null);
-  }, [sessionExerciseIds, exerciseProgressions]);
+  }, [sessionExerciseIds, exerciseProgressions, activeExerciseSnapshots]);
 
   const activeGroupByExercise = useMemo(() => {
     const groups = new Map<number, { id: string; memberIndex: number; size: number }>();
@@ -241,6 +261,7 @@ export default function ActiveWorkoutSession() {
         setRestoredPlannedExerciseIds(stored.plannedExerciseIds ?? {});
         setRestoredPlannedExerciseRestSeconds(stored.plannedExerciseRestSeconds ?? {});
         setRestoredLayoutSnapshot(stored.layoutSnapshot);
+        setRestoredExerciseSnapshots(stored.exerciseSnapshots);
         restoreRestTimer(stored.restTimer);
         setCurrentExerciseIds(stored.exerciseIds);
         setHydrated(true);
@@ -283,6 +304,7 @@ export default function ActiveWorkoutSession() {
       plannedExerciseIds: activePlannedExerciseIds,
       plannedExerciseRestSeconds: activePlannedExerciseRestSeconds,
       layoutSnapshot: activeLayoutSnapshot,
+      exerciseSnapshots: activeExerciseSnapshots,
       restTimer: restTimer.snapshot(),
       exerciseIds: sessionExerciseIds,
       startedAt: sessionStartedAtRef.current,
@@ -301,6 +323,7 @@ export default function ActiveWorkoutSession() {
     activePlannedExerciseIds,
     activePlannedExerciseRestSeconds,
     activeLayoutSnapshot,
+    activeExerciseSnapshots,
     restTimer,
   ]);
 
@@ -757,8 +780,8 @@ export default function ActiveWorkoutSession() {
   // --- Loading / Error states ---
 
   if (
-    isLoading ||
-    (hydrated && restoredIds.length > 0 && !selectedExercises.length)
+    (isLoading && !activeExerciseSnapshots) ||
+    (hydrated && restoredIds.length > 0 && !selectedExercises.length && !activeExerciseSnapshots)
   ) {
     return (
       <SafeAreaProvider>
@@ -772,7 +795,7 @@ export default function ActiveWorkoutSession() {
     );
   }
 
-  if ((error || (!selectedExercises.length && !isLoading)) && hydrated) {
+  if (((error && !activeExerciseSnapshots) || (!selectedExercises.length && !isLoading)) && hydrated) {
     return (
       <SafeAreaProvider>
         <SafeAreaView style={styles.safeArea}>

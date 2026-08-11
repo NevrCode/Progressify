@@ -223,6 +223,19 @@ export const deleteSessionProgression = async (id: number) => {
   }
 };
 
+/** Restores the same saved session and its still-associated sets. */
+export const restoreSessionProgression = async (id: number) => {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await api.post(`/v1/gym/exercise-sessions/${id}/restore`, null, {
+      headers,
+    });
+    return response.data;
+  } catch (error: any) {
+    handleApiError(error, "Restore session failed");
+  }
+};
+
 export const createExerciseSession = async (
   exerciseProgressionId: number,
   dto: GymExerciseSessionRequestDTO,

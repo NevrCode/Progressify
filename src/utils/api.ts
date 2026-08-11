@@ -2,8 +2,8 @@ import { API_BASE_URL } from "@/constants/apiConfig";
 import { getAccessToken } from "@/services/authSessionService";
 import {
   cacheResponse,
-  enqueueMutation,
   getCachedResponse,
+  syncQueue,
 } from "@/services/syncQueueService";
 import { refreshAuthSession } from "@/services/tokenRefreshService";
 import { create as createAxios } from "axios";
@@ -136,7 +136,7 @@ api.interceptors.response.use(
           const idempotencyKey =
             getHeader(originalRequest.headers, "Idempotency-Key") ??
             Crypto.randomUUID();
-          const pendingId = await enqueueMutation(
+          const pendingId = await syncQueue.enqueue(
             originalRequest.url || "",
             (originalRequest.method || "POST").toUpperCase() as
               | "POST"

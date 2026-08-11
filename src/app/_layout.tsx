@@ -6,7 +6,10 @@ import { DiaryProvider } from "@/context/DairyContext";
 import { ThemeProvider, useTheme } from "@/context/ThemeContext";
 import { UnitPreferenceProvider } from "@/context/UnitPreferenceContext";
 import { usePatchNotes } from "@/hooks/usePatchNote";
-import { startOfflineSyncLifecycle } from "@/services/syncQueueService";
+import {
+  bindSyncQueueQueryClient,
+  startOfflineSyncLifecycle,
+} from "@/services/syncQueueService";
 import { shouldRetryApiError } from "@/utils/apiError";
 import { relativeLuminance } from "@/utils/color-contrast";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -50,6 +53,7 @@ export default function RootLayout() {
     [],
   );
   useEffect(() => startOfflineSyncLifecycle(), []);
+  useEffect(() => bindSyncQueueQueryClient(queryClient), [queryClient]);
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>

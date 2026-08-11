@@ -225,6 +225,16 @@ export const deleteFoodEntry = async (id: number) => {
   }
 };
 
+/** Restores the exact soft-deleted diary entry; it never creates a replacement. */
+export const restoreFoodEntry = async (id: number) => {
+  try {
+    const response = await api.post(`/v1/food-diary/${id}/restore`);
+    return response.data;
+  } catch (error: any) {
+    throw new Error(getApiErrorMessage(error, "Restore food entry failed"));
+  }
+};
+
 export const findFoodByBarcode = async (
   barcode: string,
 ): Promise<FatSecretFoodDetail> => {

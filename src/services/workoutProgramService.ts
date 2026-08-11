@@ -65,6 +65,40 @@ export type StartedWorkoutDTO = {
   layout_revision_snapshot?: number | null;
 };
 
+/**
+ * Immutable server-side record used by the future repeat-last-workout action.
+ * It is intentionally separate from an active-workout launch payload: the
+ * layout and logged values survive later edits or deletion of their sources.
+ */
+export type CompletedWorkoutExerciseDTO = Omit<PlannedExerciseDTO, "id"> & {
+  planned_exercise_id: number;
+  sets: {
+    id: number;
+    set_number: number;
+    weight: number;
+    reps: number;
+    rir: number;
+    set_type: "WORKING" | "WARMUP";
+  }[];
+};
+
+export type CompletedWorkoutSnapshotDTO = {
+  snapshot_version: 1;
+  workout_session_id: number;
+  completed_at: string;
+  program: {
+    id: number;
+    name: string;
+    template_type: ProgramTemplate;
+  } | null;
+  routine: {
+    id: number;
+    name: string;
+  };
+  exercises: CompletedWorkoutExerciseDTO[];
+  exercise_groups: ExerciseGroupDTO[];
+};
+
 export type ProgramLayoutBlockRequest =
   | { type: "EXERCISE"; planned_exercise_id: number }
   | {
@@ -189,6 +223,12 @@ export const deleteWorkoutRoutine = async (id: number) => {
   }
 };
 
+/** Restores the same empty routine record; the API does not recreate children. */
+export const restoreWorkoutRoutine = (id: number) =>
+  call<WorkoutRoutineDTO>(async () =>
+    api.post(`/v1/gym/routines/${id}/restore`, null, { headers: await headers() }),
+  );
+
 export const addPlannedExercise = (routineId: number, request: PlannedExerciseRequest) =>
   call<PlannedExerciseDTO>(async () =>
     api.post(`/v1/gym/routines/${routineId}/exercises`, request, {
@@ -221,4 +261,20 @@ export const completeWorkoutSession = (id: number) =>
     api.post(`/v1/gym/workout-sessions/${id}/complete`, null, {
       headers: await headers(),
     }),
+  );
+
+/** Reads the latest immutable completion snapshot. It does not start or alter a workout. */
+export const getLatestRepeatableWorkoutSnapshot = () =>
+  call<CompletedWorkoutSnapshotDTO>(async () =>
+    api.get("/v1/gym/workout-sessions/latest-repeatable", { headers: await headers() }),
+  );
+
+/** Starts a new active session from the supplied immutable completion identity. */
+export const repeatCompletedWorkout = (completedWorkoutSessionId: number) =>
+  call<StartedWorkoutDTO>(async () =>
+    api.post(
+      `/v1/gym/workout-sessions/${completedWorkoutSessionId}/repeat`,
+      null,
+      { headers: { ...(await headers()), "Idempotency-Key": Crypto.randomUUID() } },
+    ),
   );

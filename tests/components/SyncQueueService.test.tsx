@@ -1,10 +1,13 @@
 /// <reference types="jest" />
 
 import {
+  bindSyncQueueQueryClient,
+  cancelPendingDeleteMutation,
   discardFailedMutation,
   enqueueMutation,
   getSyncStatusSnapshot,
   processSyncQueue,
+  retryConflictAsFreshMutation,
   retryFailedMutation,
 } from "@/services/syncQueueService";
 
@@ -15,13 +18,16 @@ type Row = {
   method: string;
   url: string;
   body: string | null;
-  status: "PENDING" | "SYNCING" | "FAILED";
+  status: "PENDING" | "SYNCING" | "FAILED" | "CONFLICT";
   attempt_count: number;
   next_attempt_at: number;
   created_at: number;
   updated_at: number;
   last_error: string | null;
   last_status: number | null;
+  last_attempt_at?: number | null;
+  error_category?: string | null;
+  conflict_metadata?: string | null;
 };
 
 const mockRows: Row[] = [];
@@ -37,7 +43,7 @@ const mockDatabase = {
       const owned = mockRows.filter((row) => row.owner_id === owner);
       return {
         pending: owned.filter((row) => row.status === "PENDING" || row.status === "SYNCING").length,
-        failed: owned.filter((row) => row.status === "FAILED").length,
+        failed: owned.filter((row) => row.status === "FAILED" || row.status === "CONFLICT").length,
       };
     }
     if (sql.includes("SELECT last_success_at FROM sync_metadata")) {
@@ -45,16 +51,25 @@ const mockDatabase = {
         ? null
         : { last_success_at: mockLastSuccessfulSyncAt };
     }
+    if (sql.includes("SELECT idempotency_key, status FROM offline_mutations")) {
+      return mockRows.find((row) => row.owner_id === args[0] && row.id === args[1]) ?? null;
+    }
+    if (sql.includes("SELECT method, status FROM offline_mutations")) {
+      return mockRows.find((row) => row.owner_id === args[0] && row.id === args[1]) ?? null;
+    }
+    if (sql.includes("SELECT url, status FROM offline_mutations")) {
+      return mockRows.find((row) => row.owner_id === args[0] && row.id === args[1]) ?? null;
+    }
     if (sql.includes("SELECT * FROM offline_mutations")) {
       const owner = args[0];
       return mockRows
-        .filter((row) => row.owner_id === owner && (row.status === "PENDING" || row.status === "FAILED"))
+        .filter((row) => row.owner_id === owner && (row.status === "PENDING" || row.status === "FAILED" || row.status === "CONFLICT"))
         .sort((left, right) => left.created_at - right.created_at)[0] ?? null;
     }
     if (sql.includes("SELECT id FROM offline_mutations")) {
       const owner = args[0];
       const row = mockRows
-        .filter((item) => item.owner_id === owner && item.status === "FAILED")
+        .filter((item) => item.owner_id === owner && (item.status === "FAILED" || item.status === "CONFLICT"))
         .sort((left, right) => left.created_at - right.created_at)[0];
       return row ? { id: row.id } : null;
     }
@@ -63,6 +78,12 @@ const mockDatabase = {
   getAllAsync: jest.fn(async (sql: string, ...args: unknown[]) => {
     if (sql.includes("FROM offline_mutations")) {
       const owner = args[0];
+      if (sql.includes("status, attempt_count")) {
+        return mockRows
+          .filter((row) => row.owner_id === owner)
+          .sort((left, right) => left.created_at - right.created_at)
+          .map((row) => ({ ...row }));
+      }
       return mockRows
         .filter((row) => row.owner_id === owner && row.status === "FAILED")
         .sort((left, right) => left.created_at - right.created_at)
@@ -86,24 +107,33 @@ const mockDatabase = {
           method: String(method), url: String(url), body: body == null ? null : String(body),
           status: "PENDING", attempt_count: 0, next_attempt_at: Number(nextAttempt),
           created_at: Number(created), updated_at: Number(updated), last_error: null, last_status: null,
+          last_attempt_at: null, error_category: null, conflict_metadata: null,
         });
       }
     } else if (sql.includes("SET status = 'SYNCING'")) {
-      const row = mockRows.find((item) => item.id === args[1]);
+      const row = mockRows.find((item) => item.id === args[2]);
       if (row) row.status = "SYNCING";
     } else if (sql.includes("WHERE owner_id = ? AND id = ? AND status = 'FAILED'") && sql.includes("SET status = 'PENDING'")) {
       const row = mockRows.find(
         (item) =>
-          item.owner_id === args[3] &&
-          item.id === args[4] &&
+          item.owner_id === args[2] &&
+          item.id === args[3] &&
           item.status === "FAILED",
       );
       if (row) {
         row.status = "PENDING";
         row.attempt_count = 0;
-        row.created_at = Number(args[1]);
-        row.updated_at = Number(args[2]);
+        row.updated_at = Number(args[1]);
       }
+    } else if (sql.includes("method = 'DELETE' AND status = 'PENDING'")) {
+      const index = mockRows.findIndex(
+        (item) => item.owner_id === args[0] && item.id === args[1] && item.method === "DELETE" && item.status === "PENDING",
+      );
+      if (index >= 0) {
+        mockRows.splice(index, 1);
+        return { changes: 1 };
+      }
+      return { changes: 0 };
     } else if (sql.includes("DELETE FROM offline_mutations") && sql.includes("owner_id = ? AND id = ?")) {
       const index = mockRows.findIndex(
         (item) =>
@@ -123,6 +153,24 @@ const mockDatabase = {
         row.status = "FAILED";
         row.last_error = String(args[1]);
         row.last_status = typeof args[2] === "number" ? args[2] : null;
+      }
+    } else if (sql.includes("SET status = 'CONFLICT'")) {
+      const row = mockRows.find((item) => item.id === args.at(-1));
+      if (row) {
+        row.status = "CONFLICT";
+        row.last_status = Number(args[1]);
+        row.error_category = String(args[2]);
+        row.conflict_metadata = String(args[3]);
+      }
+    } else if (sql.includes("SET idempotency_key = ?")) {
+      const row = mockRows.find((item) => item.owner_id === args[4] && item.id === args[5]);
+      if (row) {
+        row.idempotency_key = String(args[0]);
+        row.body = args[1] == null ? null : String(args[1]);
+        row.status = "PENDING";
+        row.attempt_count = 0;
+        row.error_category = null;
+        row.conflict_metadata = null;
       }
     } else if (sql.includes("SET status = 'PENDING', attempt_count = ?")) {
       const row = mockRows.find((item) => item.id === args[5]);
@@ -191,6 +239,35 @@ describe("offline synchronization queue", () => {
     expect(getSyncStatusSnapshot().lastSuccessfulSyncAt).toEqual(
       expect.any(Number),
     );
+  });
+
+  it("cancels only the owner's unsent delete without reordering remaining work", async () => {
+    await enqueueMutation("/first", "POST", { order: 1 }, "first-key");
+    const deletionId = await enqueueMutation("/v1/food-diary/7", "DELETE", null, "delete-key");
+    await enqueueMutation("/last", "PATCH", { order: 3 }, "last-key");
+
+    await expect(cancelPendingDeleteMutation(deletionId)).resolves.toEqual({ status: "cancelled" });
+    expect(mockRows.map((row) => row.url)).toEqual(["/first", "/last"]);
+
+    await processSyncQueue();
+    expect(mockRequest.mock.calls.map(([request]) => request.url)).toEqual(["/first", "/last"]);
+  });
+
+  it("does not cancel another owner's delete or a delete already syncing", async () => {
+    const ownerDeletion = await enqueueMutation("/v1/food-diary/7", "DELETE", null, "owner-delete");
+    mockOwnerId = "owner-b";
+    await expect(cancelPendingDeleteMutation(ownerDeletion)).resolves.toEqual({ status: "not_found" });
+
+    mockOwnerId = "owner-a";
+    mockRows[0].status = "SYNCING";
+    await expect(cancelPendingDeleteMutation(ownerDeletion)).resolves.toEqual({ status: "already_syncing_or_sent" });
+    expect(mockRows).toHaveLength(1);
+  });
+
+  it("refuses a pending non-delete without changing it", async () => {
+    const mutationId = await enqueueMutation("/v1/food-diary/7", "PATCH", { quantity: 2 }, "update-key");
+    await expect(cancelPendingDeleteMutation(mutationId)).resolves.toEqual({ status: "not_pending_delete" });
+    expect(mockRows).toHaveLength(1);
   });
 
   it("preserves creation order while replaying queued mutations", async () => {
@@ -318,5 +395,72 @@ describe("offline synchronization queue", () => {
     expect(getSyncStatusSnapshot().failedItems).toEqual([
       expect.objectContaining({ id: "failed-second" }),
     ]);
+  });
+
+  it("persists a redacted semantic conflict and blocks later replay", async () => {
+    mockRequest.mockRejectedValue({
+      isAxiosError: true,
+      message: "private server response",
+      response: {
+        status: 409,
+        data: {
+          code: "ROUTINE_LAYOUT_REVISION_CONFLICT",
+          details: { expected_revision: 4, current_revision: 5, token: "never-store" },
+        },
+      },
+    });
+    await enqueueMutation("/v1/gym/programs/123/layout?token=private", "PUT", { expected_revision: 4 }, "conflict-key");
+    await enqueueMutation("/v1/gym/routines", "POST", { name: "Later" }, "later-key");
+    await processSyncQueue();
+
+    expect(mockRows[0]).toMatchObject({ status: "CONFLICT", error_category: "Conflicting server change" });
+    expect(mockRows[1].status).toBe("PENDING");
+    expect(getSyncStatusSnapshot().items).toEqual([
+      expect.objectContaining({
+        resource: "Workout",
+        status: "CONFLICT",
+        conflict: expect.objectContaining({ expectedRevision: 4, currentRevision: 5 }),
+      }),
+      expect.objectContaining({ blockedByEarlierOperation: true }),
+    ]);
+    const visible = JSON.stringify(getSyncStatusSnapshot().items);
+    expect(visible).not.toContain("private server response");
+    expect(visible).not.toContain("never-store");
+    expect(visible).not.toContain("/123");
+  });
+
+  it("requires a fresh key and explicit replacement body to retry a conflict", async () => {
+    mockRows.push({
+      id: "conflict", owner_id: "owner-a", idempotency_key: "old-key", method: "PUT",
+      url: "/v1/gym/programs/123/layout", body: JSON.stringify({ expected_revision: 4 }),
+      status: "CONFLICT", attempt_count: 1, next_attempt_at: 0, created_at: 1, updated_at: 1,
+      last_error: null, last_status: 409, last_attempt_at: 1,
+      error_category: "Conflicting server change", conflict_metadata: "{}",
+    });
+
+    await expect(retryConflictAsFreshMutation("conflict", {
+      data: { expected_revision: 5 }, idempotencyKey: "old-key",
+    })).rejects.toThrow("new idempotency key");
+
+    mockRequest.mockRejectedValue({
+      isAxiosError: true,
+      message: "still invalid",
+      response: { status: 422, data: { code: "VALIDATION_ERROR" } },
+    });
+    await retryConflictAsFreshMutation("conflict", {
+      data: { expected_revision: 5 }, idempotencyKey: "fresh-key",
+    });
+    expect(mockRows[0]).toMatchObject({
+      status: "FAILED", idempotency_key: "fresh-key", body: JSON.stringify({ expected_revision: 5 }),
+    });
+  });
+
+  it("invalidates the relevant React Query data after queued replay", async () => {
+    const queryClient = { invalidateQueries: jest.fn(async () => undefined) } as any;
+    const unbind = bindSyncQueueQueryClient(queryClient);
+    await enqueueMutation("/v1/gym/routines", "POST", {}, "gym-key");
+    await processSyncQueue();
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["gym"] });
+    unbind();
   });
 });

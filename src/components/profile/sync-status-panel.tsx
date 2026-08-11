@@ -16,6 +16,7 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useState } from "react";
 import { Text, View } from "react-native";
+import { type Href, useRouter } from "expo-router";
 
 type SyncAction = string | null;
 
@@ -28,6 +29,7 @@ const formatSyncTime = (value: number | null) => {
 };
 
 export function SyncStatusPanel() {
+  const router = useRouter();
   const { theme } = useTheme();
   const semantics = getThemeSemantics(theme);
   const { alert } = useAlert();
@@ -36,6 +38,11 @@ export function SyncStatusPanel() {
 
   const hasFailed = status.failed > 0;
   const hasPending = status.pending > 0;
+  const onlyVisibleConflicts =
+    status.failedItems.length > 0 &&
+    status.failedItems.every(
+      (item) => item.errorCategory === "Conflicting server change",
+    );
   const color = !status.isOnline
     ? semantics.warning
     : hasFailed
@@ -211,16 +218,25 @@ export function SyncStatusPanel() {
       {hasPending || hasFailed ? (
         <View style={styles.actions}>
           {hasFailed ? (
-            <AppButton
-              label="Retry all"
-              size="compact"
-              loading={action === "retry" || status.isSyncing}
-              disabled={!status.isOnline}
-              onPress={() =>
-                void runAction("retry", retryFailedMutations)
-              }
-              style={styles.action}
-            />
+            onlyVisibleConflicts ? (
+              <AppButton
+                label="Review conflicts"
+                size="compact"
+                onPress={() => router.push("/syncDetails" as Href)}
+                style={styles.action}
+              />
+            ) : (
+              <AppButton
+                label="Retry all"
+                size="compact"
+                loading={action === "retry" || status.isSyncing}
+                disabled={!status.isOnline}
+                onPress={() =>
+                  void runAction("retry", retryFailedMutations)
+                }
+                style={styles.action}
+              />
+            )
           ) : (
             <AppButton
               label="Sync now"
@@ -240,6 +256,13 @@ export function SyncStatusPanel() {
               style={styles.action}
             />
           ) : null}
+          <AppButton
+            label="Sync details"
+            variant="secondary"
+            size="compact"
+            onPress={() => router.push("/syncDetails" as Href)}
+            style={styles.action}
+          />
         </View>
       ) : null}
 
@@ -253,6 +276,7 @@ export function SyncStatusPanel() {
           </Text>
           {status.failedItems.map((item, index) => {
             const isNext = index === 0;
+            const isConflict = item.errorCategory === "Conflicting server change";
             const itemAction = `retry-${item.id}`;
             return (
               <View
@@ -296,18 +320,27 @@ export function SyncStatusPanel() {
                 </Text>
                 {isNext ? (
                   <View style={styles.itemActions}>
-                    <AppButton
-                      label="Retry this"
-                      size="compact"
-                      loading={action === itemAction}
-                      disabled={!status.isOnline || status.isSyncing}
-                      onPress={() =>
-                        void runAction(itemAction, () =>
-                          retryFailedMutation(item.id),
-                        )
-                      }
-                      style={styles.action}
-                    />
+                    {isConflict ? (
+                      <AppButton
+                        label="Review conflict"
+                        size="compact"
+                        onPress={() => router.push("/syncDetails" as Href)}
+                        style={styles.action}
+                      />
+                    ) : (
+                      <AppButton
+                        label="Retry this"
+                        size="compact"
+                        loading={action === itemAction}
+                        disabled={!status.isOnline || status.isSyncing}
+                        onPress={() =>
+                          void runAction(itemAction, () =>
+                            retryFailedMutation(item.id),
+                          )
+                        }
+                        style={styles.action}
+                      />
+                    )}
                     <AppButton
                       label="Discard this"
                       variant="destructive"

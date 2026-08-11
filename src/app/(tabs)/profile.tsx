@@ -48,6 +48,11 @@ const menuSections: { title: string; items: MenuItem[] }[] = [
         description: "Metric or imperial units",
       },
       {
+        icon: "vibration",
+        label: "Rest timer feedback",
+        description: "Vibration when your rest ends",
+      },
+      {
         icon: "checklist",
         label: "Setup checklist",
         description: "Review your first steps",
@@ -183,6 +188,8 @@ export default function Profile() {
               onPress={() => {
                 if (item.label === "Appearance") router.push("/appearance");
                 if (item.label === "Measurements") router.push("/measurementPreferences");
+                // The route is auto-discovered by Expo Router; generated route types refresh on the next dev start.
+                if (item.label === "Rest timer feedback") router.push("/restTimerFeedback" as never);
                 if (item.label === "Setup checklist") {
                   setOnboardingPreference("review");
                   router.push("/home");

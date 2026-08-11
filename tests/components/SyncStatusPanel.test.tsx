@@ -41,6 +41,7 @@ jest.mock("@/services/syncQueueService", () => ({
   retryFailedMutation: jest.fn(async () => undefined),
   retryFailedMutations: jest.fn(async () => undefined),
 }));
+jest.mock("expo-router", () => ({ useRouter: () => ({ push: jest.fn() }) }));
 jest.mock("@expo/vector-icons", () => ({
   MaterialCommunityIcons: () => null,
 }));

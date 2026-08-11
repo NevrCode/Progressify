@@ -89,6 +89,8 @@ export type ActiveSessionDraft = {
   plannedExerciseRestSeconds?: Record<number, number>;
   /** Immutable routine/group arrangement captured when this workout started. */
   layoutSnapshot?: ActiveWorkoutLayoutSnapshot;
+  /** Immutable exercise labels/settings for a snapshot-based repeat launch. */
+  exerciseSnapshots?: Record<number, ActiveWorkoutExerciseSnapshot>;
   restTimer?: RestTimerSnapshot;
   exerciseIds: number[];
   startedAt: string;
@@ -105,6 +107,18 @@ export type ActiveSupersetSnapshot = {
 export type ActiveWorkoutLayoutSnapshot = {
   layoutRevision?: number | null;
   groups: ActiveSupersetSnapshot[];
+};
+
+/** Immutable display fields captured by a snapshot-based repeat launch. */
+export type ActiveWorkoutExerciseSnapshot = {
+  id: number;
+  name: string;
+  muscleGroup: string;
+  catalogExerciseId?: string | null;
+  targetRepMin?: number | null;
+  targetRepMax?: number | null;
+  targetRIR?: number | null;
+  notes?: string | null;
 };
 
 type DraftClock = {
@@ -530,6 +544,36 @@ const parsePlannedExerciseIds = (
   }, {});
 };
 
+const parseExerciseSnapshots = (
+  value: unknown,
+): Record<number, ActiveWorkoutExerciseSnapshot> | undefined | null => {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) return null;
+  const result: Record<number, ActiveWorkoutExerciseSnapshot> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (!isPositiveInteger(Number(key)) || !isRecord(item) || item.id !== Number(key) ||
+      typeof item.name !== "string" || typeof item.muscleGroup !== "string") return null;
+    const validOptionalPositive = (field: "targetRepMin" | "targetRepMax") =>
+      item[field] === undefined || item[field] === null || isPositiveInteger(item[field]);
+    if (!validOptionalPositive("targetRepMin") || !validOptionalPositive("targetRepMax") ||
+      (item.targetRIR !== undefined && item.targetRIR !== null &&
+        (!Number.isInteger(item.targetRIR) || Number(item.targetRIR) < 0))) return null;
+    if ((item.catalogExerciseId !== undefined && item.catalogExerciseId !== null && typeof item.catalogExerciseId !== "string") ||
+      (item.notes !== undefined && item.notes !== null && typeof item.notes !== "string")) return null;
+    result[Number(key)] = {
+      id: item.id as number,
+      name: item.name as string,
+      muscleGroup: item.muscleGroup as string,
+      ...(item.catalogExerciseId === undefined ? {} : { catalogExerciseId: item.catalogExerciseId as string | null }),
+      ...(item.targetRepMin === undefined ? {} : { targetRepMin: item.targetRepMin as number | null }),
+      ...(item.targetRepMax === undefined ? {} : { targetRepMax: item.targetRepMax as number | null }),
+      ...(item.targetRIR === undefined ? {} : { targetRIR: item.targetRIR as number | null }),
+      ...(item.notes === undefined ? {} : { notes: item.notes as string | null }),
+    };
+  }
+  return result;
+};
+
 /**
  * Validates a rest-duration map received from a route or persisted draft.
  * Zero is intentional: it disables the automatic rest timer for that exercise.
@@ -680,6 +724,7 @@ export const parseActiveSessionDraft = (
   const exerciseIds = parseNumberList(value.exerciseIds);
   const completedIds = parseNumberList(value.completedIds);
   const plannedExerciseIds = parsePlannedExerciseIds(value.plannedExerciseIds);
+  const exerciseSnapshots = parseExerciseSnapshots(value.exerciseSnapshots);
   const plannedExerciseRestSeconds =
     value.plannedExerciseRestSeconds === undefined
       ? undefined
@@ -691,6 +736,7 @@ export const parseActiveSessionDraft = (
     !exerciseIds ||
     !completedIds ||
     plannedExerciseIds === null ||
+    exerciseSnapshots === null ||
     plannedExerciseRestSeconds === null ||
     restTimer === null ||
     layoutSnapshot === null
@@ -726,6 +772,7 @@ export const parseActiveSessionDraft = (
       : { plannedExerciseRestSeconds }),
     ...(restTimer === undefined ? {} : { restTimer }),
     ...(layoutSnapshot === undefined ? {} : { layoutSnapshot }),
+    ...(exerciseSnapshots === undefined ? {} : { exerciseSnapshots }),
     exerciseIds,
     startedAt: value.startedAt,
     drafts,

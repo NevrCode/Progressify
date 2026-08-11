@@ -5,8 +5,9 @@ import {
   restoreRestTimerSnapshot,
   type RestTimerSnapshot,
 } from "@/features/workout-session/drafts";
+import { restTimerCompletionFeedback } from "@/features/workout-session/rest-timer-feedback";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Platform, Vibration } from "react-native";
+import { AppState } from "react-native";
 
 export type RestTimer = {
   active: boolean;
@@ -31,6 +32,8 @@ export function useRestTimer(): RestTimer {
   const [active, setActive] = useState(false);
   const endsAtRef = useRef<number | null>(null);
   const feedbackSentRef = useRef(false);
+  const completionGenerationRef = useRef(0);
+  const appStateRef = useRef(AppState.currentState);
   const stateRef = useRef({ active, paused, remainingSeconds, initialDuration });
   useEffect(() => {
     stateRef.current = { active, paused, remainingSeconds, initialDuration };
@@ -39,6 +42,7 @@ export function useRestTimer(): RestTimer {
   const dismiss = useCallback(() => {
     endsAtRef.current = null;
     feedbackSentRef.current = false;
+    completionGenerationRef.current += 1;
     setRemainingSeconds(0);
     setPaused(false);
     setActive(false);
@@ -55,6 +59,7 @@ export function useRestTimer(): RestTimer {
     }
     endsAtRef.current = now() + duration * 1000;
     feedbackSentRef.current = false;
+    completionGenerationRef.current += 1;
     setRemainingSeconds(duration);
     setInitialDuration(duration);
     setPaused(false);
@@ -67,6 +72,7 @@ export function useRestTimer(): RestTimer {
       const state = stateRef.current;
       if (state.active && !state.paused) {
         endsAtRef.current = next > 0 ? now() + next * 1000 : null;
+        if (next === 0) completionGenerationRef.current += 1;
       }
       return next;
     });
@@ -90,6 +96,7 @@ export function useRestTimer(): RestTimer {
     const restored = restoreRestTimerSnapshot(snapshot ?? undefined);
     endsAtRef.current = restored?.endsAt ?? null;
     feedbackSentRef.current = false;
+    completionGenerationRef.current += 1;
     setRemainingSeconds(restored?.remainingSeconds ?? 0);
     setInitialDuration(restored?.initialDuration ?? DEFAULT_REST_SECONDS);
     setPaused(restored?.paused ?? false);
@@ -104,6 +111,24 @@ export function useRestTimer(): RestTimer {
     });
   }, []);
 
+  const completeWithoutFeedback = useCallback(() => {
+    endsAtRef.current = null;
+    feedbackSentRef.current = true;
+    completionGenerationRef.current += 1;
+    setRemainingSeconds(0);
+  }, []);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      appStateRef.current = nextAppState;
+      if (nextAppState !== "active") return;
+
+      const endsAt = endsAtRef.current;
+      if (endsAt !== null && endsAt <= now()) completeWithoutFeedback();
+    });
+    return () => subscription.remove();
+  }, [completeWithoutFeedback]);
+
   useEffect(() => {
     if (!active || paused) return;
     const tick = () => {
@@ -116,13 +141,14 @@ export function useRestTimer(): RestTimer {
       }
       endsAtRef.current = null;
       setRemainingSeconds(0);
-      if (!feedbackSentRef.current && Platform.OS !== "web") {
+      if (!feedbackSentRef.current && appStateRef.current === "active") {
         feedbackSentRef.current = true;
-        try {
-          Vibration.vibrate([0, 500, 200, 500]);
-        } catch {
-          // Device feedback must never interrupt the workout.
-        }
+        const completionGeneration = completionGenerationRef.current;
+        void restTimerCompletionFeedback.notifyForegroundCompletion({
+          isCurrent: () => completionGeneration === completionGenerationRef.current,
+        });
+      } else {
+        feedbackSentRef.current = true;
       }
     };
     const interval = setInterval(tick, 250);

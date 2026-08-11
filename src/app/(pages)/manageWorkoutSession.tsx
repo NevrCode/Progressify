@@ -1,5 +1,9 @@
 import { gymStyles } from "@/assets/styles/gym.style";
 import { AppButton } from "@/components/base/app-button";
+import {
+  DurableUndoSnackbar,
+  type DurableUndoSnackbarState,
+} from "@/components/base/durable-undo-snackbar";
 import { DateOnlyField } from "@/components/base/date-only-field";
 import {
   ActionStatus,
@@ -27,9 +31,11 @@ import {
   ExerciseProgressionDTO,
   ExerciseSessionDTO,
   GymExerciseSessionRequestDTO,
+  restoreSessionProgression,
   updateExerciseSession,
   WorkoutSetDTO,
 } from "@/services/gymService";
+import { syncQueue } from "@/services/syncQueueService";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -55,6 +61,10 @@ type EditableSet = {
   reps: string;
   rir: string;
   set_type: WorkoutSetType;
+};
+type SessionDeleteUndo = DurableUndoSnackbarState & {
+  pendingId?: string;
+  sessionId?: number;
 };
 
 type SessionPoint = {
@@ -156,6 +166,7 @@ export default function ManageWorkoutSession() {
   const [editableSets, setEditableSets] = useState<EditableSet[]>([]);
   const [actionFeedback, setActionFeedback] =
     useState<ActionFeedback | null>(null);
+  const [deleteUndo, setDeleteUndo] = useState<SessionDeleteUndo | null>(null);
 
   const {
     data: dashboard,
@@ -367,6 +378,13 @@ export default function ManageWorkoutSession() {
             try {
               const result =
                 await deleteSessionMutation.mutateAsync(session.id);
+              setDeleteUndo({
+                phase: "countdown",
+                label: `session from ${session.session_date}`,
+                expiresAt: Date.now() + 5000,
+                sessionId: session.id,
+                ...(isOfflineQueuedResponse(result) ? { pendingId: result.pending_id } : {}),
+              });
               setActionFeedback({
                 status: isOfflineQueuedResponse(result) ? "info" : "success",
                 title: isOfflineQueuedResponse(result)
@@ -389,6 +407,37 @@ export default function ManageWorkoutSession() {
         },
       ],
     );
+  };
+  const undoSessionDeletion = async () => {
+    const undo = deleteUndo;
+    if (!undo || undo.phase !== "countdown" || !undo.sessionId) return;
+    setDeleteUndo({ phase: "undoing", label: undo.label });
+    try {
+      if (undo.pendingId) {
+        const cancellation = await syncQueue.cancelPendingDelete(undo.pendingId);
+        if (cancellation.status !== "cancelled") {
+          setDeleteUndo({ phase: "unavailable", label: undo.label, message: "Undo is unavailable because deletion has already started syncing." });
+          return;
+        }
+      } else {
+        const restored = await restoreSessionProgression(undo.sessionId);
+        await queryClient.invalidateQueries({ queryKey: ["gym"] });
+        await refetch();
+        setDeleteUndo({
+          phase: "restored",
+          label: undo.label,
+          ...(isOfflineQueuedResponse(restored)
+            ? { message: "Restoration saved locally and will sync in order." }
+            : {}),
+        });
+        return;
+      }
+      await queryClient.invalidateQueries({ queryKey: ["gym"] });
+      await refetch();
+      setDeleteUndo({ phase: "restored", label: undo.label });
+    } catch (error) {
+      setDeleteUndo({ phase: "error", label: undo.label, message: toApiError(error).message });
+    }
   };
 
   if (isLoading) {
@@ -1020,6 +1069,12 @@ export default function ManageWorkoutSession() {
           </ShadowGlowCard>
         </View>
       </Modal>
+      <DurableUndoSnackbar
+        onExpired={() => setDeleteUndo((current) => current?.phase === "countdown" ? { phase: "unavailable", label: current.label, message: "Undo period expired." } : current)}
+        onUndo={() => void undoSessionDeletion()}
+        state={deleteUndo}
+        theme={theme}
+      />
     </SafeAreaView>
   );
 }

@@ -133,36 +133,48 @@ const greenTheme: ThemeType = {
   bar: "#0e6b1a",
 };
 
+// Signature identity theme — the app's default. Electric lime green against
+// near-black: energetic and "alive" rather than the muted/serious tone most
+// fitness apps default to, chosen deliberately over an earlier orange
+// version during a design pass. `secondary` keeps a warm orange accent for
+// contrast (e.g. secondary CTA tiles) so the palette isn't monochrome-green;
+// `tertiary` is a brighter electric-lime pop reserved for small accents
+// (badges, the fiber macro bar) that shouldn't compete with `primary`.
+// `income` is intentionally cyan, not green, so "positive/on-track" reads as
+// a distinct signal from the primary brand color rather than a duplicate of
+// it. This is the one color combination meant to be recognizably
+// "Progressify"; the other themes below exist as optional alternates, not
+// competing identities.
 const darkGymTheme: ThemeType = {
-  primary: "#00E676",
-  secondary: "#00C853",
-  tertiary: "#1B5E20",
+  primary: "#22C55E",
+  secondary: "#FB923C",
+  tertiary: "#84CC16",
 
   background: "#0A0A0A",
 
-  text: "#E0E0E0",
+  text: "#E5E5E5",
   textBlack: "#FAFAFA",
-  textLight: "#929292",
+  textLight: "#9A9A9A",
 
   border: "#1E1E1E",
 
   white: "#FFFFFF",
 
-  expense: "#FF5252",
-  income: "#69F0AE",
+  expense: "#FF4D4D",
+  income: "#22D3EE",
 
   card: "#161616",
   shadow: "#000000",
-  bar: "#00E676",
+  bar: "#22C55E",
 };
 
 export const THEMES = {
+  darkGym: darkGymTheme,
   coffee: coffeeTheme,
   forest: forestTheme,
   purple: purpleTheme,
   ocean: oceanTheme,
   green: greenTheme,
-  darkGym: darkGymTheme,
 } as const satisfies Record<string, ThemeType>;
 export type ThemeName = keyof typeof THEMES;
 

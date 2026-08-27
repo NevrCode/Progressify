@@ -10,6 +10,7 @@ import { HomeTodaySummary } from "@/components/home/home-today-summary";
 import { InsightCard } from "@/components/home/insight-card";
 import { OnboardingChecklist } from "@/components/home/onboarding-checklist";
 import { WeeklyReviewCard } from "@/components/home/weekly-review-card";
+import { WeekStreak } from "@/components/gym/WeekStreak";
 import { useTheme } from "@/context/ThemeContext";
 import { useUnitPreference } from "@/context/UnitPreferenceContext";
 import { homeScreenStyles as styles } from "@/assets/styles/home-screen.style";
@@ -230,6 +231,46 @@ export default function HomeScreen() {
     }
     return dates;
   }, [exercises]);
+
+  // All-time trained dates (not just the rolling 7-day window above), used
+  // to power the streak callout and the calendar-week pips below. A
+  // consecutive-day streak has to look back past this week's boundary, so it
+  // needs the full session history, not sessionDatesThisWeek.
+  const allTrainedDates = useMemo(() => {
+    const dates = new Set<string>();
+    for (const exercise of exercises) {
+      for (const session of exercise.exercise_sessions ?? []) {
+        if (session.session_date) dates.add(session.session_date.slice(0, 10));
+      }
+    }
+    return dates;
+  }, [exercises]);
+
+  const currentStreak = useMemo(() => {
+    let count = 0;
+    const cursor = new Date(today);
+    if (!allTrainedDates.has(formatDateForApi(cursor))) {
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    while (allTrainedDates.has(formatDateForApi(cursor))) {
+      count += 1;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return count;
+  }, [allTrainedDates]);
+
+  const weekStreakDays = useMemo(() => {
+    const day = today.getDay();
+    const mondayOffset = day === 0 ? 6 : day - 1;
+    const monday = new Date(today);
+    monday.setHours(0, 0, 0, 0);
+    monday.setDate(monday.getDate() - mondayOffset);
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(monday);
+      date.setDate(monday.getDate() + index);
+      return allTrainedDates.has(formatDateForApi(date));
+    });
+  }, [allTrainedDates]);
 
   const recentTraining = useMemo(
     () =>
@@ -466,6 +507,20 @@ export default function HomeScreen() {
         <SectionLabel>This week</SectionLabel>
         <FadeSlideIn delay={120}>
           <ShadowGlowCard>
+            {currentStreak > 0 ? (
+              <View style={styles.streakRow}>
+                <MaterialCommunityIcons
+                  name="fire"
+                  size={18}
+                  color={theme.primary}
+                />
+                <Text style={[styles.streakText, { color: theme.text }]}>
+                  {currentStreak} day{currentStreak === 1 ? "" : "s"} in a row
+                  {currentStreak >= 3 ? " — keep it going" : ""}
+                </Text>
+              </View>
+            ) : null}
+            <WeekStreak filledDays={weekStreakDays} />
             <View style={styles.weekRow}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.weekValue, { color: theme.text }]}>

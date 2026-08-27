@@ -11,7 +11,7 @@ const themeLabels: Record<string, string> = {
   purple: "Purple",
   ocean: "Ocean",
   green: "Green",
-  darkGym: "Dark Gym",
+  darkGym: "Signature",
 };
 
 const ColorDot = ({
@@ -174,8 +174,8 @@ export default function AppearanceSettings() {
                   <ColorDot color={currentTheme.secondary} label="Accent" textColor={currentTheme.textLight} />
                   <ColorDot color={currentTheme.card} label="Card" textColor={currentTheme.textLight} />
                   <ColorDot color={currentTheme.textBlack} label="Text" textColor={currentTheme.textLight} />
-                  <ColorDot color={currentTheme.expense} label="Expense" textColor={currentTheme.textLight} />
-                  <ColorDot color={currentTheme.income} label="Income" textColor={currentTheme.textLight} />
+                  <ColorDot color={currentTheme.expense} label="Alert" textColor={currentTheme.textLight} />
+                  <ColorDot color={currentTheme.income} label="On track" textColor={currentTheme.textLight} />
                 </View>
 
                 {/* Mini button preview */}

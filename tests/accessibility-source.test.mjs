@@ -32,7 +32,9 @@ test("workout controls identify destructive actions and rest timer state", () =>
 });
 
 test("visual training summaries provide concise screen-reader alternatives", () => {
-  const gym = read("../src/app/(tabs)/gymProgression.tsx");
+  const progressionCard = read(
+    "../src/components/gym/exercise-progression-card.tsx",
+  );
   const sessionManager = read(
     "../src/app/(pages)/manageWorkoutSession.tsx",
   );
@@ -41,7 +43,7 @@ test("visual training summaries provide concise screen-reader alternatives", () 
   );
   const heatmap = read("../src/components/gym/MuscleHeatmap.tsx");
 
-  assert.match(gym, /<ProgressionChartFrame/);
+  assert.match(progressionCard, /<ProgressionChartFrame/);
   assert.match(sessionManager, /<ProgressionChartFrame/);
   assert.match(progressionFrame, /accessibilityRole="image"/);
   assert.match(

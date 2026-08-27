@@ -1,15 +1,13 @@
 import { gymStyles } from "@/assets/styles/gym.style";
 import { AppButton } from "@/components/base/app-button";
 import { FormField } from "@/components/base/form-field";
-import { IconButton } from "@/components/base/icon-button";
 import { ModalHeader } from "@/components/base/modal-header";
 import { PageHeader } from "@/components/base/page-header";
 import { PaginationNavigator } from "@/components/base/pagination-navigator";
-import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
 import { StatePanel } from "@/components/base/state-panel";
 import { TabScreenScrollView } from "@/components/base/tab-screen-scroll-view";
 import { ExerciseCatalogPicker } from "@/components/gym/exercise-catalog-picker";
-import { ProgressionChartFrame } from "@/components/gym/progression-chart-frame";
+import { ExerciseProgressionCard } from "@/components/gym/exercise-progression-card";
 import {
   EXERCISE_PAGE_SIZE,
   ExerciseProgressionCardSkeletons,
@@ -24,27 +22,33 @@ import {
   useExerciseProgressionPage,
   useGymDashboard,
 } from "@/hooks/useGymDashboard";
-import {
-  calculateEstimatedOneRepMax,
-  calculateWorkingSetVolume,
-} from "@/utils/workoutMetrics";
 import { isWorkingSet } from "@/types/workout-set";
 import { buildProgressionChartSummary } from "@/utils/progression-chart-summary";
-import { displayMass, formatMass, massUnitLabel, type MeasurementSystem } from "@/utils/measurement-units";
+import { formatMass, massUnitLabel } from "@/utils/measurement-units";
+import { calculateWorkingSetVolume } from "@/utils/workoutMetrics";
+import {
+  buildSessionProgression,
+  get1RMTrend,
+  toDateSortValue,
+} from "@/features/gym/exercise-progression";
 
 import {
   createExerciseProgression,
   deleteExerciseProgression,
   ExerciseProgressionDTO,
-  ExerciseSessionDTO,
   GymExerciseProgressionRequestDTO,
   updateExerciseProgression,
 } from "@/services/gymService";
-import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
+import { MaterialIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useDeferredValue, useMemo, useState } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useMemo,
+  useState,
+} from "react";
 import {
   KeyboardAvoidingView,
   Modal,
@@ -56,17 +60,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { LineChart } from "react-native-gifted-charts";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
-type SessionProgressionPoint = {
-  sessionDate: string;
-  topWeight: number;
-  bestReps: number;
-  estimated1RM: number;
-  totalVolume: number;
-  totalSets: number;
-};
 type ModalKind = "exercise" | "set";
 type ModalMode = "create" | "edit";
 type ExerciseEntryStep = "catalog" | "details";
@@ -87,71 +82,6 @@ type ModalState =
       parentExerciseId?: number;
     };
 
-const formatSessionLabel = (value?: string) => {
-  if (!value) return "Undated";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value.slice(0, 10);
-
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
-};
-const getDayMonthYear = (value?: string) => {
-  const monthNames = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
-  if (!value) return "";
-
-  const month = monthNames[new Date(value).getMonth()];
-  const day = new Date(value).getDate();
-  const y = new Date(value).getFullYear();
-  return month + " " + day + ", " + y;
-};
-const getDayMonth = (value?: string) => {
-  const monthNames = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
-  if (!value) return "";
-
-  const month = monthNames[new Date(value).getMonth()];
-  const day = new Date(value).getDate();
-  return month + " " + day;
-};
-
-const toDateSortValue = (value?: string) => {
-  if (!value) return Number.MAX_SAFE_INTEGER;
-
-  const parsed = new Date(value).getTime();
-  if (!Number.isNaN(parsed)) return parsed;
-
-  const fallback = Date.parse(value.slice(0, 10));
-  return Number.isNaN(fallback) ? Number.MAX_SAFE_INTEGER : fallback;
-};
-
 const formatDateForApi = (value: Date | string) => {
   const date = typeof value === "string" ? new Date(value) : value;
 
@@ -165,92 +95,11 @@ const formatDateForApi = (value: Date | string) => {
 const normalizeOptionalDate = (value?: string) =>
   value?.trim() ? value : undefined;
 
-const buildSessionProgression = (
-  exerciseSessions: ExerciseSessionDTO[],
-): SessionProgressionPoint[] => {
-  const points = exerciseSessions
-    .map((session) => {
-      const sessionDate = session.session_date ?? "";
-      const sessionSets = (session.sets ?? []).filter(isWorkingSet);
-
-      if (!sessionDate || sessionSets.length === 0) {
-        return null;
-      }
-
-      const sortedSets = [...sessionSets].sort(
-        (a, b) => a.set_number - b.set_number,
-      );
-
-      const topSet = sortedSets.reduce((best, current) => {
-        if (current.weight > best.weight) {
-          return current;
-        }
-
-        if (current.weight === best.weight && current.reps > best.reps) {
-          return current;
-        }
-
-        return best;
-      });
-
-      const totalVolume = calculateWorkingSetVolume(sortedSets);
-
-      const estimated1RM = calculateEstimatedOneRepMax(
-        topSet.weight,
-        topSet.reps,
-      );
-
-      return {
-        key: `${session.id}-${sessionDate}`,
-
-        label: formatSessionLabel(sessionDate),
-
-        sessionDate,
-
-        topWeight: topSet.weight,
-
-        bestReps: topSet.reps,
-
-        estimated1RM,
-
-        totalSets: sortedSets.length,
-
-        totalVolume,
-      };
-    })
-    .filter(Boolean);
-
-  return (points as SessionProgressionPoint[]).sort(
-    (a, b) => toDateSortValue(a.sessionDate) - toDateSortValue(b.sessionDate),
-  );
-};
-
-const get1RMTrend = (
-  points: SessionProgressionPoint[],
-  measurementSystem: MeasurementSystem,
-): { value: string; isPositive: boolean } | null => {
-  if (points.length < 2) return null;
-  const latest = points[points.length - 1];
-  const previous = points[points.length - 2];
-
-  if (previous.estimated1RM <= 0) return null;
-
-  const diff = latest.estimated1RM - previous.estimated1RM;
-  const pct = (diff / previous.estimated1RM) * 100;
-
-  if (Math.abs(diff) < 0.1) return null;
-
-  return {
-    value: `${diff > 0 ? "+" : "-"}${displayMass(Math.abs(diff), measurementSystem)} ${massUnitLabel(measurementSystem)} (${diff > 0 ? "+" : ""}${pct.toFixed(0)}%)`,
-    isPositive: diff > 0,
-  };
-};
-
 export default function GymProgression() {
   const router = useRouter();
   const { theme } = useTheme();
   const { measurementSystem } = useUnitPreference();
-  const styles = gymStyles(theme);
+  const styles = useMemo(() => gymStyles(theme), [theme]);
   const queryClient = useQueryClient();
   const { storedSession, hasActiveSession, checking, refresh, discard } =
     useActiveSession();
@@ -324,14 +173,18 @@ export default function GymProgression() {
     }
     return volume;
   }, [exerciseProgressions]);
-  const manageWorkoutSession = (exercise: ExerciseProgressionDTO) => {
-    router.push({
-      pathname: "/manageWorkoutSession",
-      params: {
-        exerciseId: String(exercise.id),
-      },
-    });
-  };
+
+  const manageWorkoutSession = useCallback(
+    (exercise: ExerciseProgressionDTO) => {
+      router.push({
+        pathname: "/manageWorkoutSession",
+        params: {
+          exerciseId: String(exercise.id),
+        },
+      });
+    },
+    [router],
+  );
 
   const invalidateGym = async () => {
     await queryClient.invalidateQueries({ queryKey: ["gym"] });
@@ -363,7 +216,7 @@ export default function GymProgression() {
       mode: null,
     });
 
-  const openExerciseModal = (item?: ExerciseProgressionDTO) => {
+  const openExerciseModal = useCallback((item?: ExerciseProgressionDTO) => {
     setExerciseEntryStep(item ? "details" : "catalog");
     setExerciseForm({
       catalog_exercise_id: item?.catalog_exercise_id ?? null,
@@ -379,7 +232,8 @@ export default function GymProgression() {
       mode: item ? "edit" : "create",
       itemId: item?.id,
     });
-  };
+  }, []);
+
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search.trim());
   const progressionPageQuery = useExerciseProgressionPage({
@@ -400,6 +254,37 @@ export default function GymProgression() {
       { text: "Delete", style: "destructive", onPress: onConfirm },
     ]);
   };
+
+  const handleToggleExpand = useCallback((exerciseId: number) => {
+    setExpandedExerciseId((current) =>
+      current === exerciseId ? null : exerciseId,
+    );
+  }, []);
+
+  const handleDeleteExercise = useCallback(
+    (exercise: ExerciseProgressionDTO) => {
+      confirmDelete(
+        "Delete exercise progression",
+        "This exercise and its linked data will be removed.",
+        async () => {
+          setDeletingExerciseId(exercise.id);
+          try {
+            await deleteExerciseMutation.mutateAsync(exercise.id);
+            if (pagedExercises.length === 1 && exercisePage > 0) {
+              setExercisePage((page) => page - 1);
+            }
+          } finally {
+            setDeletingExerciseId(null);
+          }
+        },
+      );
+      // confirmDelete and pagedExercises/exercisePage are read at call time
+      // via closures re-created on every render; the callback identity only
+      // needs to change when the mutation itself does.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [deleteExerciseMutation, exercisePage, pagedExercises.length],
+  );
 
   const handleSubmit = async () => {
     try {
@@ -482,47 +367,32 @@ export default function GymProgression() {
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
           keyboardShouldPersistTaps="handled"
-          style={{ maxHeight: 520 }}
-          contentContainerStyle={{ gap: 14 }}
+          style={styles.exerciseFormScroll}
+          contentContainerStyle={styles.exerciseFormScrollContent}
         >
           <View
-            style={{
-              padding: 12,
-              gap: 4,
-              borderRadius: 12,
-              borderCurve: "continuous",
-              borderWidth: 1,
-              borderColor: exerciseForm.catalog_exercise_id
-                ? theme.primary + "35"
-                : theme.border,
-              backgroundColor: exerciseForm.catalog_exercise_id
-                ? theme.primary + "10"
-                : theme.background,
-            }}
+            style={[
+              styles.exerciseModalLinkCard,
+              exerciseForm.catalog_exercise_id
+                ? styles.exerciseModalLinkCardLinked
+                : styles.exerciseModalLinkCardUnlinked,
+            ]}
           >
             <Text
               selectable
-              style={{
-                color: exerciseForm.catalog_exercise_id
-                  ? theme.primary
-                  : theme.textBlack,
-                fontSize: 12,
-                fontFamily: "PlusJakartaSans_700Bold",
-              }}
+              style={[
+                styles.exerciseModalLinkTitle,
+                exerciseForm.catalog_exercise_id
+                  ? styles.exerciseModalLinkTitleLinked
+                  : styles.exerciseModalLinkTitleUnlinked,
+              ]}
             >
               {exerciseForm.catalog_exercise_id
                 ? "Linked to exercise catalog"
                 : "Custom exercise"}
             </Text>
             {exerciseForm.catalog_exercise_id ? (
-              <Text
-                selectable
-                style={{
-                  color: theme.textLight,
-                  fontSize: 11,
-                  fontFamily: "PlusJakartaSans_500Medium",
-                }}
-              >
+              <Text selectable style={styles.exerciseModalLinkId}>
                 {exerciseForm.catalog_exercise_id}
               </Text>
             ) : null}
@@ -548,14 +418,8 @@ export default function GymProgression() {
             accessibilityRole="button"
             accessibilityLabel="Choose session date"
             onPress={() => setOpenDate(true)}
-            // style={styles.input}
           >
-            <View
-              style={[
-                styles.input,
-                { flexDirection: "row", alignItems: "center", gap: 5 },
-              ]}
-            >
+            <View style={[styles.input, styles.dateChooserRow]}>
               <MaterialIcons
                 name="calendar-month"
                 color={styles.inlineActionText.color}
@@ -669,113 +533,29 @@ export default function GymProgression() {
         {/* ── Header ── */}
         <PageHeader eyebrow="Progressify" title="Progression" />
 
-        <View
-          style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            backgroundColor: theme.card,
-            borderRadius: 16,
-            padding: 14,
-            borderWidth: 1,
-            borderColor: theme.primary + "30",
-          }}
-        >
-          <View style={{ flex: 1, alignItems: "center" }}>
-            <Text
-              style={{
-                fontSize: 11,
-                fontWeight: "700",
-                fontFamily: "PlusJakartaSans_700Bold",
-                color: theme.textLight,
-                textTransform: "uppercase",
-                marginBottom: 4,
-              }}
-            >
-              Exercises
-            </Text>
-            <Text
-              style={{
-                fontSize: 16,
-                fontWeight: "900",
-                fontFamily: "PlusJakartaSans_800ExtraBold",
-                color: theme.textBlack,
-              }}
-            >
+        <View style={styles.statsBar}>
+          <View style={styles.statsColumn}>
+            <Text style={styles.statsLabel}>Exercises</Text>
+            <Text style={styles.statsValue}>
               {exerciseProgressions.length}
             </Text>
           </View>
-          <View
-            style={{
-              width: 1,
-              backgroundColor: theme.border + "50",
-            }}
-          />
-          <View style={{ flex: 1, alignItems: "center" }}>
-            <Text
-              style={{
-                fontSize: 11,
-                fontWeight: "700",
-                fontFamily: "PlusJakartaSans_700Bold",
-                color: theme.textLight,
-                textTransform: "uppercase",
-                marginBottom: 4,
-              }}
-            >
-              Best 1RM
-            </Text>
-            <Text
-              style={{
-                fontSize: 16,
-                fontWeight: "900",
-                fontFamily: "PlusJakartaSans_800ExtraBold",
-                color: theme.textBlack,
-              }}
-              numberOfLines={1}
-            >
+          <View style={styles.statsDivider} />
+          <View style={styles.statsColumn}>
+            <Text style={styles.statsLabel}>Best 1RM</Text>
+            <Text style={styles.statsValue} numberOfLines={1}>
               {best1RM > 0 ? formatMass(best1RM, measurementSystem, 0) : "-"}
             </Text>
             {best1RM > 0 && bestMuscleName ? (
-              <Text
-                style={{
-                  color: theme.primary,
-                  fontSize: 8,
-                  fontWeight: "800",
-                  fontFamily: "PlusJakartaSans_800ExtraBold",
-                  marginTop: 2,
-                }}
-                numberOfLines={1}
-              >
+              <Text style={styles.statsSubValue} numberOfLines={1}>
                 {bestMuscleName}
               </Text>
             ) : null}
           </View>
-          <View
-            style={{
-              width: 1,
-              backgroundColor: theme.border + "50",
-            }}
-          />
-          <View style={{ flex: 1, alignItems: "center" }}>
-            <Text
-              style={{
-                fontSize: 11,
-                fontWeight: "700",
-                fontFamily: "PlusJakartaSans_700Bold",
-                color: theme.textLight,
-                textTransform: "uppercase",
-                marginBottom: 4,
-              }}
-            >
-              Volume
-            </Text>
-            <Text
-              style={{
-                fontSize: 16,
-                fontWeight: "900",
-                fontFamily: "PlusJakartaSans_800ExtraBold",
-                color: theme.textBlack,
-              }}
-            >
+          <View style={styles.statsDivider} />
+          <View style={styles.statsColumn}>
+            <Text style={styles.statsLabel}>Volume</Text>
+            <Text style={styles.statsValue}>
               {totalVolume > 0
                 ? totalVolume >= 1000
                   ? `${(totalVolume / 1000).toFixed(1)}k `
@@ -792,42 +572,12 @@ export default function GymProgression() {
           accessibilityHint="Choose a routine or start a workout"
           onPress={() => router.push("/(pages)/programs")}
           activeOpacity={0.8}
-          style={{ marginBottom: 12 }}
+          style={styles.launcherCard}
         >
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              backgroundColor: theme.card,
-              borderRadius: 16,
-              padding: 16,
-              borderWidth: 1,
-              borderColor: theme.primary + "30",
-              shadowColor: theme.shadow,
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.03,
-              shadowRadius: 8,
-              elevation: 2,
-            }}
-          >
-            <View style={{ flex: 1 }}>
-              <Text
-                style={{
-                  color: theme.textBlack,
-                  fontSize: 15,
-                  fontWeight: "800",
-                }}
-              >
-                Active Program
-              </Text>
-              <Text
-                style={{
-                  color: theme.textLight,
-                  fontSize: 12,
-                  fontWeight: "600",
-                  marginTop: 2,
-                }}
-              >
+          <View style={styles.launcherCardInner}>
+            <View style={styles.launcherTextWrap}>
+              <Text style={styles.launcherTitle}>Active Program</Text>
+              <Text style={styles.launcherSubtitle}>
                 Choose a routine or manage your training plan
               </Text>
             </View>
@@ -843,53 +593,20 @@ export default function GymProgression() {
           <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel={`Resume ${storedSession.routineName ?? "active workout"}`}
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              backgroundColor: theme.primary + "15",
-              borderRadius: 16,
-              paddingVertical: 12,
-              paddingHorizontal: 16,
-              gap: 10,
-              borderWidth: 1.5,
-              borderColor: theme.primary + "40",
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.1,
-              shadowRadius: 6,
-              elevation: 3,
-              marginBottom: 12,
-            }}
+            style={styles.resumeBanner}
             onPress={() => router.push("/(pages)/activeWorkoutSession")}
             activeOpacity={0.75}
           >
             <View
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                marginRight: 2,
-              }}
+              style={[
+                styles.resumeDot,
+                { backgroundColor: theme.primary },
+              ]}
             />
-            <Text
-              style={{
-                flex: 1,
-                color: theme.primary,
-                fontSize: 14,
-                fontWeight: "800",
-              }}
-            >
+            <Text style={styles.resumeText}>
               Active {storedSession.routineName ?? "Manual Workout"}
             </Text>
-            <Text
-              style={{
-                color: theme.primary,
-                fontSize: 13,
-                fontWeight: "900",
-                marginRight: 6,
-              }}
-            >
-              Resume →
-            </Text>
+            <Text style={styles.resumeAction}>Resume →</Text>
             <TouchableOpacity
               accessibilityRole="button"
               accessibilityLabel="Discard active workout"
@@ -918,37 +635,15 @@ export default function GymProgression() {
           </TouchableOpacity>
         </View>
         {/* ── Search Input Bar ── */}
-        <View
-          style={{
-            backgroundColor: theme.card,
-            width: "100%",
-            borderWidth: 1,
-            borderColor: theme.border,
-            flexDirection: "row",
-            alignItems: "center",
-            paddingHorizontal: 14,
-            borderRadius: 24,
-            shadowColor: theme.shadow,
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.03,
-            shadowRadius: 8,
-            elevation: 2,
-          }}
-        >
+        <View style={styles.searchBar}>
           <MaterialIcons
             name="search"
             size={22}
             color={theme.primary}
-            style={{ marginRight: 10 }}
+            style={styles.searchIcon}
           />
           <TextInput
-            style={{
-              color: theme.textBlack,
-              fontWeight: "600",
-              fontSize: 14,
-              flex: 1,
-              paddingVertical: 10,
-            }}
+            style={styles.searchInput}
             placeholder="Search exercise..."
             placeholderTextColor={theme.textBlack + "80"}
             value={search}
@@ -998,399 +693,35 @@ export default function GymProgression() {
             const latestSessionSets = latestSession?.sets ?? [];
             const sessionProgression =
               buildSessionProgression(exerciseSessions);
-            const hasSessionHistory = sessionProgression.length > 0;
             const trend = get1RMTrend(sessionProgression, measurementSystem);
             const chartSummary = buildProgressionChartSummary(
               exercise.name ?? "Exercise",
               sessionProgression,
-              { formatValue: (kilograms) => formatMass(kilograms, measurementSystem) },
+              {
+                formatValue: (kilograms) =>
+                  formatMass(kilograms, measurementSystem),
+              },
             );
-            const expanded = expandedExerciseId === exercise.id;
 
             return (
-              <ShadowGlowCard
+              <ExerciseProgressionCard
                 key={exercise.id}
-                style={{
-                  borderColor: theme.primary + "20",
-                  borderWidth: 1,
-                }}
-              >
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel={`${expanded ? "Collapse" : "Expand"} ${exercise.name ?? "exercise"} progression`}
-                  accessibilityState={{ expanded }}
-                  style={{
-                    flex: 1,
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                  }}
-                  activeOpacity={0.7}
-                  onPress={() =>
-                    setExpandedExerciseId(
-                      expandedExerciseId === exercise.id ? null : exercise.id,
-                    )
-                  }
-                >
-                  <View style={styles.exerciseHeader}>
-                    <View style={{ flex: 1 }}>
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "center",
-                          gap: 6,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <Text style={styles.exerciseName}>{exercise.name}</Text>
-                      </View>
-
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          gap: 6,
-                          marginTop: 6,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        {exercise.muscle_group && (
-                          <View
-                            style={{
-                              backgroundColor: theme.primary + "10",
-                              borderRadius: 8,
-                              paddingHorizontal: 6,
-                              paddingVertical: 2,
-                              borderWidth: 1,
-                              borderColor: theme.primary + "20",
-                            }}
-                          >
-                            <Text
-                              style={{
-                                fontSize: 11,
-                                fontWeight: "800",
-                                color: theme.primary,
-                                textTransform: "capitalize",
-                              }}
-                            >
-                              {exercise.muscle_group}
-                            </Text>
-                          </View>
-                        )}
-                        {trend && (
-                          <View
-                            style={{
-                              backgroundColor: trend.isPositive
-                                ? theme.income + "15"
-                                : theme.expense + "15",
-                              borderRadius: 8,
-                              paddingHorizontal: 6,
-                              paddingVertical: 2,
-                              borderWidth: 1,
-                              borderColor: trend.isPositive
-                                ? theme.income + "30"
-                                : theme.expense + "30",
-                            }}
-                          >
-                            <Text
-                              style={{
-                                fontSize: 11,
-                                fontWeight: "800",
-                                color: trend.isPositive
-                                  ? theme.income
-                                  : theme.expense,
-                              }}
-                            >
-                              {trend.isPositive ? "▲" : "▼"} {trend.value}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-
-                      <Text style={[styles.exerciseSubMeta, { marginTop: 6 }]}>
-                        Last session:{" "}
-                        {latestSession
-                          ? getDayMonthYear(latestSession.session_date)
-                          : "-"}
-                      </Text>
-                    </View>
-                    <View style={styles.cardActionIcons}>
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          gap: 6,
-                          alignItems: "flex-start",
-                        }}
-                      >
-                        <IconButton
-                          accessibilityLabel={`Edit ${exercise.name ?? ""}`}
-                          onPress={() => openExerciseModal(exercise)}
-                          icon={
-                            <MaterialIcons
-                              name="edit-document"
-                              size={14}
-                              color={theme.primary}
-                            />
-                          }
-                        />
-                        <IconButton
-                          accessibilityLabel={`Delete ${exercise.name ?? ""}`}
-                          variant="destructive"
-                          loading={deletingExerciseId === exercise.id}
-                          onPress={() =>
-                            confirmDelete(
-                              "Delete exercise progression",
-                              "This exercise and its linked data will be removed.",
-                              async () => {
-                                setDeletingExerciseId(exercise.id);
-                                try {
-                                  await deleteExerciseMutation.mutateAsync(
-                                    exercise.id,
-                                  );
-                                  if (
-                                    pagedExercises.length === 1 &&
-                                    exercisePage > 0
-                                  ) {
-                                    setExercisePage((page) => page - 1);
-                                  }
-                                } finally {
-                                  setDeletingExerciseId(null);
-                                }
-                              },
-                            )
-                          }
-                          icon={
-                            <MaterialIcons
-                              name="delete-outline"
-                              size={14}
-                              color={theme.expense}
-                            />
-                          }
-                        />
-                      </View>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-
-                {expandedExerciseId === exercise.id && (
-                  <>
-                    <View style={styles.subsectionHeader}>
-                      <View>
-                        <Text
-                          style={[styles.subsectionTitle, { marginBottom: 8 }]}
-                        >
-                          Session progression ({massUnitLabel(measurementSystem)})
-                        </Text>
-                      </View>
-                    </View>
-
-                    {hasSessionHistory ? (
-                      <>
-                        <ProgressionChartFrame
-                          summary={chartSummary}
-                          style={[
-                            styles.chartBlock,
-                            {
-                              shadowColor: theme.shadow,
-                              shadowOffset: { width: 0, height: 3 },
-                              shadowOpacity: 0.04,
-                              shadowRadius: 6,
-                              elevation: 1,
-                            },
-                          ]}
-                        >
-                          <LineChart
-                            areaChart
-                            curved
-                            isAnimated
-                             data={[...sessionProgression].map((point) => ({
-                               value: displayMass(point.estimated1RM, measurementSystem),
-                               label: getDayMonth(point.sessionDate),
-                               dataPointText: `${displayMass(point.estimated1RM, measurementSystem)}`,
-                             }))}
-                             scrollToEnd
-                             scrollAnimation={false}
-                             height={220}
-                            spacing={56}
-                            initialSpacing={18}
-                            endSpacing={18}
-                            thickness={4}
-                            color={theme.primary}
-                            startFillColor={theme.primary}
-                            endFillColor={theme.primary}
-                            startOpacity={0.25}
-                            endOpacity={0.02}
-                            hideRules={false}
-                            rulesColor={`${theme.background}`}
-                            rulesType="dashed"
-                            yAxisColor={theme.background}
-                            xAxisColor={theme.background}
-                            hideYAxisText={false}
-                            yAxisTextStyle={{
-                              color: theme.textLight,
-                              fontSize: 11,
-                            }}
-                            backgroundColor={theme.background}
-                            xAxisLabelTextStyle={{
-                              color: theme.textLight,
-                              fontSize: 11,
-                              marginTop: 6,
-                            }}
-                            noOfSections={4}
-                            maxValue={
-                              Math.max(
-                                ...sessionProgression.map(
-                                  (p) => displayMass(p.estimated1RM, measurementSystem),
-                                ),
-                              ) + 5
-                            }
-                            dataPointsColor={theme.primary}
-                            dataPointsRadius={6}
-                            textColor={theme.text}
-                            textFontSize={11}
-                            textShiftY={-14}
-                            textShiftX={-10}
-                            focusedDataPointColor={theme.white}
-                            focusedDataPointRadius={8}
-                            showVerticalLines
-                            verticalLinesColor={`${theme.border}33`}
-                            pointerConfig={{
-                              pointerStripHeight: 160,
-                              pointerStripColor: `${theme.primary}66`,
-                              pointerStripWidth: 2,
-                              pointerColor: theme.primary,
-                              radius: 7,
-                              activatePointersOnLongPress: true,
-                              autoAdjustPointerLabelPosition: true,
-                              // gifted-charts hands the pointer every series
-                              // item under the cursor; this chart has one
-                              // series, so only the first is read.
-                              pointerLabelComponent: (
-                                items: { value?: number }[],
-                              ) => {
-                                const item = items[0];
-                                if (!item) return null;
-                                return (
-                                  <View
-                                    style={{
-                                      backgroundColor: theme.card,
-                                      paddingHorizontal: 12,
-                                      paddingVertical: 8,
-                                      borderRadius: 12,
-                                      borderWidth: 1,
-                                      borderColor: theme.border,
-                                    }}
-                                  >
-                                    <Text
-                                      style={{
-                                        color: theme.text,
-                                        fontWeight: "700",
-                                      }}
-                                    >
-                                      {item.value}
-                                    </Text>
-                                  </View>
-                                );
-                              },
-                            }}
-                          />
-                        </ProgressionChartFrame>
-                      </>
-                    ) : (
-                      <StatePanel
-                        variant="empty"
-                        compact
-                        embedded
-                        title="No progression history"
-                        message="Record exercise sessions with sets to build this graph over time."
-                        primaryAction={{
-                          label: "Manage sessions",
-                          onPress: () => manageWorkoutSession(exercise),
-                        }}
-                      />
-                    )}
-
-                    <View
-                      style={[
-                        styles.subsectionHeader,
-                        { marginTop: 16, marginBottom: 8 },
-                      ]}
-                    >
-                      <Text style={styles.subsectionTitle}>
-                        Latest workout session
-                      </Text>
-                      <TouchableOpacity
-                        accessibilityRole="button"
-                        accessibilityLabel={`Manage workout sessions for ${exercise.name ?? "exercise"}`}
-                        style={styles.inlineAction}
-                        onPress={() => manageWorkoutSession(exercise)}
-                      >
-                        <MaterialIcons
-                          name="edit"
-                          size={16}
-                          color={theme.primary}
-                        />
-
-                        <Text style={styles.inlineActionText}>Manage</Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    {latestSessionSets.length ? (
-                      <View style={[styles.setTable, { marginBottom: 12 }]}>
-                        <View style={styles.setTableHeader}>
-                          <Text style={styles.setHeaderText}>Set</Text>
-                          <Text style={styles.setHeaderText}>Weight ({massUnitLabel(measurementSystem)})</Text>
-                          <Text style={styles.setHeaderText}>Reps</Text>
-                          <Text style={styles.setHeaderText}>RIR</Text>
-                        </View>
-                        {latestSessionSets.map((set) => (
-                          <View key={set.id} style={styles.setRow}>
-                            <Text
-                              style={[
-                                styles.setValue,
-                                set.set_type === "WARMUP" && {
-                                  color: theme.primary,
-                                },
-                              ]}
-                            >
-                              {set.set_type === "WARMUP"
-                                ? `W${set.set_number}`
-                                : `#${set.set_number}`}
-                            </Text>
-                            <Text style={styles.setValue}>{formatMass(set.weight, measurementSystem)}</Text>
-                            <Text style={styles.setValue}>{set.reps}</Text>
-                            <Text style={styles.setValue}>{set.rir ?? 0}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    ) : (
-                      <StatePanel
-                        variant="empty"
-                        compact
-                        embedded
-                        title="No sets in the latest session"
-                        message="Add sets to record weight, repetitions, and RIR for this workout."
-                        primaryAction={{
-                          label: "Manage sets",
-                          onPress: () => manageWorkoutSession(exercise),
-                        }}
-                      />
-                    )}
-
-                    <View style={styles.saveAndNoteRow}>
-                      {!!exercise.notes && (
-                        <View style={styles.noteRow}>
-                          <MaterialCommunityIcons
-                            name="notebook-outline"
-                            size={18}
-                            color={theme.primary}
-                          />
-                          <Text style={styles.noteText}>{exercise.notes}</Text>
-                        </View>
-                      )}
-                    </View>
-                  </>
-                )}
-              </ShadowGlowCard>
+                exercise={exercise}
+                expanded={expandedExerciseId === exercise.id}
+                deleting={deletingExerciseId === exercise.id}
+                latestSession={latestSession}
+                latestSessionSets={latestSessionSets}
+                sessionProgression={sessionProgression}
+                trend={trend}
+                chartSummary={chartSummary}
+                measurementSystem={measurementSystem}
+                theme={theme}
+                styles={styles}
+                onToggleExpand={handleToggleExpand}
+                onEdit={openExerciseModal}
+                onDelete={handleDeleteExercise}
+                onManageSessions={manageWorkoutSession}
+              />
             );
           })
         ) : (

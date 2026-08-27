@@ -69,7 +69,7 @@ import {
 } from "@/utils/measurement-units";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { memo, useMemo, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -150,7 +150,27 @@ const statusColor = (status: string | undefined, theme: ThemeType) => {
   return theme.textLight;
 };
 
-export function MacroBar({
+// A short, specific line under the calorie stats — driven by the real
+// progress numbers, not a generic placeholder. Mirrors the streak callout
+// added to the Home screen: encouraging, but grounded in what actually
+// happened today.
+const calorieEncouragement = (
+  consumed: number,
+  remaining: number,
+  goal: number,
+  status: string | undefined,
+) => {
+  if (consumed <= 0) return "Nothing logged yet — add your first meal.";
+  if (status === "OVER" || remaining < 0) {
+    return "A little over today — tomorrow's a clean slate.";
+  }
+  if (goal > 0 && remaining / goal <= 0.15) {
+    return "Almost there for the day, nice pacing.";
+  }
+  return "On track, with plenty of room left today.";
+};
+
+function MacroBarComponent({
   label,
   unit,
   progress,
@@ -167,14 +187,8 @@ export function MacroBar({
 }) {
   const percentage = Math.min(progress.percentage, 100);
   return (
-    <View style={{ marginBottom: 12 }}>
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          marginBottom: 4,
-        }}
-      >
+    <View style={style.macroBarWrap}>
+      <View style={style.macroBarLabelRow}>
         <Text style={[style.listMeta, { color, fontWeight: "700" }]}>
           {label}
         </Text>
@@ -186,28 +200,15 @@ export function MacroBar({
           <Text style={{ color }}>{progress.percentage.toFixed(0)}%</Text>
         </Text>
       </View>
-      <View
-        style={{
-          height: 6,
-          borderRadius: 3,
-          backgroundColor: theme.border ?? "#eee",
-        }}
-      >
+      <View style={style.macroBarTrack}>
         <View
-          style={{
-            height: 6,
-            borderRadius: 3,
-            width: `${percentage}%`,
-            backgroundColor: color,
-          }}
+          style={[
+            style.macroBarFillBase,
+            { width: `${percentage}%`, backgroundColor: color },
+          ]}
         />
       </View>
-      <Text
-        style={[
-          style.listMeta,
-          { textAlign: "right", marginTop: 2, fontSize: 11 },
-        ]}
-      >
+      <Text style={[style.listMeta, style.macroBarRemainingText]}>
         {progress.remaining.toFixed(1)}
         {unit} remaining
       </Text>
@@ -215,13 +216,19 @@ export function MacroBar({
   );
 }
 
+/**
+ * Memoized: the intake summary renders up to eight of these per render, and
+ * they only change when their own theme/progress/color inputs change.
+ */
+export const MacroBar = memo(MacroBarComponent);
+
 // ── MacroBar component ────────────────────────────────────────────────────────
 export default function FoodDiary() {
   const { theme } = useTheme();
   const { measurementSystem } = useUnitPreference();
   const nutritionAccents = getNutritionAccents(theme.background);
   const semantics = getThemeSemantics(theme);
-  const styles = gymStyles(theme);
+  const styles = useMemo(() => gymStyles(theme), [theme]);
   const { alert } = useAlert();
   const { selectedDate, setSelectedDate } = useDiaryContext();
   const [activeTab, setActiveTab] = useState<"SINGLE" | "PREP">("SINGLE");
@@ -550,7 +557,7 @@ export default function FoodDiary() {
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
+        style={styles.flexOne}
       >
         <TabScreenScrollView
           contentContainerStyle={styles.container}
@@ -580,8 +587,8 @@ export default function FoodDiary() {
 
           {/* ── ONBOARDING FORM (step by step) ─────────────────────────────── */}
           {formOpen && (
-            <ShadowGlowCard style={{ padding: 16 }}>
-              <View style={[styles.sectionHeader, { marginBottom: 12 }]}>
+            <ShadowGlowCard style={styles.formCard}>
+              <View style={[styles.sectionHeader, styles.sectionHeaderSpacing12]}>
                 <Text style={styles.sectionTitle}>
                   {step === 0
                     ? "Step 1 — Your Body"
@@ -617,7 +624,7 @@ export default function FoodDiary() {
               {/* Step 0 — body metrics */}
               {step === 0 && (
                 <>
-                  <View style={[styles.chipRow, { marginBottom: 12 }]}>
+                  <View style={[styles.chipRow, styles.chipRowSpacing12]}>
                     {genderOptions.map((g) => (
                       <SelectionCard
                         key={g.value}
@@ -625,7 +632,7 @@ export default function FoodDiary() {
                         label={g.label}
                         onPress={() => setGender(g.value)}
                         selected={gender === g.value}
-                        style={{ flex: 1 }}
+                        style={styles.flexOne}
                       />
                     ))}
                   </View>
@@ -638,10 +645,10 @@ export default function FoodDiary() {
                     onChangeText={setWeight}
                   />
                   {measurementSystem === "IMPERIAL" ? (
-                    <View style={{ flexDirection: "row", gap: 8 }}>
+                    <View style={styles.rowGap8}>
                       <FormField
                         accessibilityLabel="Height in feet"
-                        containerStyle={{ flex: 1 }}
+                        containerStyle={styles.flexOne}
                         label="Height (ft)"
                         keyboardType="number-pad"
                         placeholder="ft"
@@ -651,7 +658,7 @@ export default function FoodDiary() {
                       />
                       <FormField
                         accessibilityLabel="Height in inches"
-                        containerStyle={{ flex: 1 }}
+                        containerStyle={styles.flexOne}
                         label="Height (in)"
                         keyboardType="number-pad"
                         placeholder="in"
@@ -692,20 +699,20 @@ export default function FoodDiary() {
                       label={a.label}
                       onPress={() => setActivity(a.value)}
                       selected={activity === a.value}
-                      style={{ marginBottom: 8 }}
+                      style={styles.optionSpacing8}
                     />
                   ))}
-                  <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
+                  <View style={styles.stepNavRow}>
                     <AppButton
                       label="Back"
                       onPress={() => setStep(0)}
-                      style={{ flex: 1 }}
+                      style={styles.flexOne}
                       variant="secondary"
                     />
                     <AppButton
                       label="Next"
                       onPress={() => setStep(2)}
-                      style={{ flex: 2 }}
+                      style={styles.flexTwo}
                     />
                   </View>
                 </>
@@ -721,21 +728,21 @@ export default function FoodDiary() {
                       label={g.label}
                       onPress={() => setGoal(g.value)}
                       selected={goal === g.value}
-                      style={{ marginBottom: 8 }}
+                      style={styles.optionSpacing8}
                     />
                   ))}
-                  <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
+                  <View style={styles.stepNavRow}>
                     <AppButton
                       label="Back"
                       onPress={() => setStep(1)}
-                      style={{ flex: 1 }}
+                      style={styles.flexOne}
                       variant="secondary"
                     />
                     <AppButton
                       label="Save Profile"
                       loading={saveMutation.isPending}
                       onPress={saveProfile}
-                      style={{ flex: 2 }}
+                      style={styles.flexTwo}
                     />
                   </View>
                 </>
@@ -745,7 +752,7 @@ export default function FoodDiary() {
 
           {/* ── MANUAL OVERRIDE FORM ─────────────────────────────────── */}
           {overrideOpen && (
-            <ShadowGlowCard style={{ padding: 16 }}>
+            <ShadowGlowCard style={styles.formCard}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Override Goals</Text>
                 <IconButton
@@ -771,14 +778,7 @@ export default function FoodDiary() {
                   onDismiss={() => setFoodActionFeedback(null)}
                 />
               ) : null}
-              <View
-                style={{
-                  flexDirection: "column",
-                  gap: 8,
-                  marginBottom: 12,
-                  marginTop: 12,
-                }}
-              >
+              <View style={styles.overrideFieldsColumn}>
                 {[
                   {
                     label: "Calories (kcal)",
@@ -820,30 +820,16 @@ export default function FoodDiary() {
 
           {hasProfile && !formOpen && !overrideOpen && (
             <>
-              <ShadowGlowCard
-                style={{
-                  borderColor: theme.primary + "20",
-                  borderWidth: 1.5,
-                }}
-              >
-                <View style={[styles.sectionHeader, { marginBottom: 14 }]}>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 6,
-                    }}
-                  >
+              <ShadowGlowCard style={styles.intakeSummaryCardBorder}>
+                <View style={[styles.sectionHeader, styles.sectionHeaderSpacing14]}>
+                  <View style={styles.rowGap6Center}>
                     <Text style={styles.sectionTitle}>Intake Summary</Text>
                   </View>
                   <Text
                     style={[
                       styles.listMeta,
-                      {
-                        color: statusColor(todayDairySummary?.status, theme),
-                        fontWeight: "800",
-                        fontFamily: "PlusJakartaSans_800ExtraBold",
-                      },
+                      styles.statusLabelText,
+                      { color: statusColor(todayDairySummary?.status, theme) },
                     ]}
                   >
                     {summaryLoading
@@ -857,7 +843,7 @@ export default function FoodDiary() {
                 ) : prog ? (
                   <>
                     {/* Big calorie stats */}
-                    <View style={[styles.heroStats, { marginBottom: 16 }]}>
+                    <View style={[styles.heroStats, styles.heroStatsSpacing16]}>
                       <View style={styles.heroStat}>
                         <Text
                           style={[
@@ -894,6 +880,14 @@ export default function FoodDiary() {
                         <Text style={styles.listMeta}>kcal</Text>
                       </View>
                     </View>
+                    <Text style={styles.calorieEncouragementText}>
+                      {calorieEncouragement(
+                        prog.calories.consumed,
+                        prog.calories.remaining,
+                        prog.calories.goal,
+                        todayDairySummary?.status,
+                      )}
+                    </Text>
 
                     {/* Macro progress bars */}
                     <MacroBar
@@ -965,14 +959,7 @@ export default function FoodDiary() {
                       </>
                     )}
 
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        marginTop: 8,
-                      }}
-                    >
+                    <View style={styles.macroActionsRow}>
                       <TouchableOpacity
                         accessibilityRole="button"
                         accessibilityLabel={
@@ -989,27 +976,15 @@ export default function FoodDiary() {
                         </Text>
                       </TouchableOpacity>
 
-                      <View style={{ flexDirection: "row", gap: 8 }}>
+                      <View style={styles.rowGap8}>
                         <TouchableOpacity
                           accessibilityRole="button"
                           accessibilityLabel="Open nutrition profile"
                           hitSlop={6}
-                          style={{
-                            paddingHorizontal: 10,
-                            paddingVertical: 5,
-                            borderRadius: 8,
-                            backgroundColor: theme.primary + "12",
-                          }}
+                          style={styles.pillButton}
                           onPress={openForm}
                         >
-                          <Text
-                            style={{
-                              fontSize: 11,
-                              fontWeight: "800",
-                              fontFamily: "PlusJakartaSans_800ExtraBold",
-                              color: theme.primary,
-                            }}
-                          >
+                          <Text style={styles.pillButtonText}>
                             Edit Profile
                           </Text>
                         </TouchableOpacity>
@@ -1018,22 +993,10 @@ export default function FoodDiary() {
                           accessibilityRole="button"
                           accessibilityLabel="Override nutrition goals"
                           hitSlop={6}
-                          style={{
-                            paddingHorizontal: 10,
-                            paddingVertical: 5,
-                            borderRadius: 8,
-                            backgroundColor: theme.primary + "12",
-                          }}
+                          style={styles.pillButton}
                           onPress={openOverride}
                         >
-                          <Text
-                            style={{
-                              fontSize: 11,
-                              fontWeight: "800",
-                              fontFamily: "PlusJakartaSans_800ExtraBold",
-                              color: theme.primary,
-                            }}
-                          >
+                          <Text style={styles.pillButtonText}>
                             Override
                           </Text>
                         </TouchableOpacity>

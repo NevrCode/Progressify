@@ -14,7 +14,14 @@ export const homeScreenStyles = StyleSheet.create({
   heroTitle: { fontFamily: "PlusJakartaSans_800ExtraBold", fontSize: 20 },
   heroMeta: { fontFamily: "PlusJakartaSans_500Medium", fontSize: 11, lineHeight: 17 },
   inlineAction: { fontFamily: "PlusJakartaSans_700Bold", fontSize: 11 },
-  weekRow: { alignItems: "center", flexDirection: "row", gap: 16 },
+  streakRow: { alignItems: "center", flexDirection: "row", gap: 6 },
+  streakText: { fontFamily: "PlusJakartaSans_700Bold", fontSize: 12 },
+  weekRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 16,
+    marginTop: 14,
+  },
   weekValue: {
     fontFamily: "PlusJakartaSans_800ExtraBold",
     fontSize: 32,

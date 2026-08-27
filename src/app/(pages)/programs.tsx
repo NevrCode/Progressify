@@ -12,6 +12,11 @@ import { PageHeader } from "@/components/base/page-header";
 import { SegmentedControl } from "@/components/base/segmented-control";
 import { StatePanel } from "@/components/base/state-panel";
 import { ProgramLayoutEditor } from "@/components/gym/program-layout-editor";
+import { AvailableExerciseRow } from "@/components/gym/available-exercise-row";
+import { InactiveProgramCard } from "@/components/gym/inactive-program-card";
+import { RoutineLauncherCard } from "@/components/gym/routine-launcher-card";
+import { RoutineManageCard } from "@/components/gym/routine-manage-card";
+import { programsStyles } from "@/assets/styles/programs.style";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
@@ -50,21 +55,17 @@ import {
 import { toApiError } from "@/utils/apiError";
 import { isOfflineQueuedResponse } from "@/utils/offline-response";
 import { syncQueue } from "@/services/syncQueueService";
-import { MaterialIcons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
   Text,
-  TouchableOpacity,
   View,
 } from "react-native";
-import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
-import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const templateOptions = [
@@ -103,93 +104,9 @@ type ScopedActionFeedback = ActionFeedback & {
   surface: FeedbackSurface;
 };
 
-function SwipeToDeleteExerciseRow({
-  exerciseName,
-  onDelete,
-}: {
-  exerciseName: string;
-  onDelete: () => void;
-}) {
-  const { theme } = useTheme();
-
-  const deleteAction = (methods: SwipeableMethods) => (
-    <TouchableOpacity
-      accessibilityLabel={`Delete ${exerciseName}`}
-      accessibilityRole="button"
-      activeOpacity={0.75}
-      onPress={() => {
-        methods.close();
-        onDelete();
-      }}
-      style={{
-        alignItems: "center",
-        backgroundColor: theme.expense,
-        borderRadius: 10,
-        flexDirection: "row",
-        gap: 6,
-        justifyContent: "center",
-        marginRight: 8,
-        paddingHorizontal: 16,
-      }}
-    >
-      <MaterialIcons name="delete-outline" size={18} color={theme.white} />
-      <Text
-        style={{
-          color: theme.white,
-          fontFamily: "PlusJakartaSans_700Bold",
-          fontSize: 11,
-        }}
-      >
-        Delete
-      </Text>
-    </TouchableOpacity>
-  );
-
-  return (
-    <ReanimatedSwipeable
-      friction={2}
-      leftThreshold={48}
-      overshootLeft={false}
-      renderLeftActions={(_progress, _translation, methods) =>
-        deleteAction(methods)
-      }
-    >
-      <View
-        accessible
-        accessibilityActions={[
-          { name: "delete", label: `Delete ${exerciseName}` },
-        ]}
-        accessibilityLabel={exerciseName}
-        onAccessibilityAction={(event) => {
-          if (event.nativeEvent.actionName === "delete") onDelete();
-        }}
-        style={{
-          backgroundColor: theme.background,
-          borderCurve: "continuous",
-          borderRadius: 10,
-          justifyContent: "center",
-          minHeight: 38,
-          paddingHorizontal: 12,
-          paddingVertical: 7,
-        }}
-      >
-        <Text
-          selectable
-          style={{
-            color: theme.textBlack,
-            fontFamily: "PlusJakartaSans_700Bold",
-            fontSize: 12,
-          }}
-        >
-          {exerciseName}
-        </Text>
-      </View>
-    </ReanimatedSwipeable>
-  );
-}
-
 export default function ProgramsScreen() {
   const { theme } = useTheme();
+  const styles = useMemo(() => programsStyles(theme), [theme]);
   const { alert } = useAlert();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -582,21 +499,82 @@ export default function ProgramsScreen() {
     );
   };
 
-  const card = {
-    padding: 16,
-    gap: 12,
-    borderRadius: 16,
-    borderCurve: "continuous" as const,
-    borderWidth: 1,
-    borderColor: theme.border,
-    backgroundColor: theme.card,
+  // Stable callback identities for the memoized row/card components below.
+  // `run`, the mutations, and the alert-confirm helpers above are all
+  // recreated on every render (react-query mutation objects are not stable
+  // across renders), so the callbacks the memoized children receive are
+  // built once via a latest-ref forwarder — the same pattern used for
+  // `ActiveWorkoutExerciseList`'s `stableActions`.
+  const latestActions = {
+    onStart: (routineId: number) =>
+      run("start workout", () => startMutation.mutateAsync(routineId)),
+    onActivate: (programId: number) =>
+      run("activate program", () => activateMutation.mutateAsync(programId)),
+    onDuplicate: confirmDuplicateRoutine,
+    onDelete: confirmDeleteRoutine,
+    onAddExercise: (routine: WorkoutRoutineDTO) => setExerciseRoutine(routine),
+    onDeleteExercise: (plannedId: number) =>
+      run("remove exercise", () =>
+        deleteExerciseMutation.mutateAsync(plannedId),
+      ),
+    onSaveRest: saveRestSeconds,
+    onAddAvailableExercise: (exerciseId: number) => {
+      const routine = exerciseRoutine;
+      const exercise = availableExercises.find(
+        (item) => item.id === exerciseId,
+      );
+      if (!routine || !exercise) return;
+      void run(
+        "add exercise",
+        () =>
+          addExerciseMutation.mutateAsync({
+            routine,
+            exerciseId,
+          }),
+        {
+          surface: "exercise",
+          successMessage: `${exercise.name} was added to the routine.`,
+        },
+      );
+    },
   };
+  const latestActionsRef = useRef(latestActions);
+  useEffect(() => {
+    latestActionsRef.current = latestActions;
+  });
+  const actions = useMemo(
+    () => ({
+      onStart: (routineId: number) => latestActionsRef.current.onStart(routineId),
+      onActivate: (programId: number) =>
+        latestActionsRef.current.onActivate(programId),
+      onDuplicate: (routine: WorkoutRoutineDTO) =>
+        latestActionsRef.current.onDuplicate(routine),
+      onDelete: (routine: WorkoutRoutineDTO) =>
+        latestActionsRef.current.onDelete(routine),
+      onAddExercise: (routine: WorkoutRoutineDTO) =>
+        latestActionsRef.current.onAddExercise(routine),
+      onDeleteExercise: (plannedId: number) =>
+        latestActionsRef.current.onDeleteExercise(plannedId),
+      onSaveRest: (planned: PlannedExerciseDTO) =>
+        latestActionsRef.current.onSaveRest(planned),
+      onAddAvailableExercise: (exerciseId: number) =>
+        latestActionsRef.current.onAddAvailableExercise(exerciseId),
+    }),
+    [],
+  );
+  const onChangeRestDraft = (plannedId: number, value: string) =>
+    setRestSecondsDrafts((current) => ({ ...current, [plannedId]: value }));
+
+  const savingRestForPlannedId =
+    updateRestMutation.isPending && updateRestMutation.variables
+      ? updateRestMutation.variables.planned.id
+      : null;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+    <SafeAreaView style={styles.screen}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ padding: 20, paddingBottom: 48, gap: 16 }}
+        contentContainerStyle={styles.scrollContent}
       >
         <PageHeader eyebrow="Training structure" title="Workout Program" />
 
@@ -608,7 +586,7 @@ export default function ProgramsScreen() {
         ) : null}
 
         {programsQuery.isLoading ? (
-          <Text selectable style={{ color: theme.textLight }}>
+          <Text selectable style={styles.loadingText}>
             Loading your program…
           </Text>
         ) : programsQuery.isError ? (
@@ -627,48 +605,24 @@ export default function ProgramsScreen() {
           />
         ) : activeProgram ? (
           <>
-            <View style={card}>
-              <Text
-                selectable
-                style={{
-                  color: theme.primary,
-                  fontSize: 11,
-                  fontFamily: "PlusJakartaSans_700Bold",
-                }}
-              >
-                ACTIVE PROGRAM
+            <View style={styles.heroCard}>
+              <Text selectable style={styles.heroCardLabel}>
+                Active program
               </Text>
-              <Text
-                selectable
-                style={{
-                  color: theme.textBlack,
-                  fontSize: 21,
-                  fontFamily: "PlusJakartaSans_800ExtraBold",
-                }}
-              >
+              <Text selectable style={styles.heroCardTitle}>
                 {activeProgram.name}
               </Text>
-              <Text selectable style={{ color: theme.textLight, fontSize: 12 }}>
+              <Text selectable style={styles.heroCardMeta}>
                 {activeProgram.routines.length} routines ·{" "}
                 {activeProgram.template_type.replaceAll("_", " ")}
               </Text>
             </View>
 
-            <View style={{ gap: 5 }}>
-              <Text
-                selectable
-                style={{
-                  color: theme.textBlack,
-                  fontSize: 17,
-                  fontFamily: "PlusJakartaSans_800ExtraBold",
-                }}
-              >
+            <View style={styles.sectionGap5}>
+              <Text selectable style={styles.titleMD}>
                 Choose today&apos;s workout
               </Text>
-              <Text
-                selectable
-                style={{ color: theme.textLight, fontSize: 11, lineHeight: 17 }}
-              >
+              <Text selectable style={styles.subtitleHint}>
                 Pick a routine and start immediately.
               </Text>
             </View>
@@ -677,68 +631,19 @@ export default function ProgramsScreen() {
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: 10, paddingRight: 20 }}
+                contentContainerStyle={styles.launcherScrollContent}
               >
                 {activeProgram.routines.map((routine) => (
-                  <View
+                  <RoutineLauncherCard
                     key={`launcher-${routine.id}`}
-                    style={[
-                      card,
-                      {
-                        width: 230,
-                        justifyContent: "space-between",
-                        borderColor: theme.primary + "25",
-                      },
-                    ]}
-                  >
-                    <View style={{ gap: 5 }}>
-                      <Text
-                        selectable
-                        style={{
-                          color: theme.textBlack,
-                          fontSize: 16,
-                          fontFamily: "PlusJakartaSans_800ExtraBold",
-                        }}
-                      >
-                        {routine.name}
-                      </Text>
-                      <Text
-                        selectable
-                        style={{ color: theme.textLight, fontSize: 11 }}
-                      >
-                        {routine.planned_exercises.length} exercises
-                      </Text>
-                      <Text
-                        numberOfLines={2}
-                        style={{
-                          color: theme.textLight,
-                          fontSize: 10,
-                          lineHeight: 15,
-                          minHeight: 30,
-                        }}
-                      >
-                        {routine.planned_exercises.length > 0
-                          ? routine.planned_exercises
-                              .slice(0, 3)
-                              .map((exercise) => exercise.exercise_name)
-                              .join(" · ")
-                          : "Add exercises before starting this routine."}
-                      </Text>
-                    </View>
-                    <AppButton
-                      label="Start workout"
-                      disabled={!routine.planned_exercises.length}
-                      loading={
-                        startMutation.isPending &&
-                        startMutation.variables === routine.id
-                      }
-                      onPress={() =>
-                        run("start workout", () =>
-                          startMutation.mutateAsync(routine.id),
-                        )
-                      }
-                    />
-                  </View>
+                    routine={routine}
+                    starting={
+                      startMutation.isPending &&
+                      startMutation.variables === routine.id
+                    }
+                    styles={styles}
+                    onStart={actions.onStart}
+                  />
                 ))}
               </ScrollView>
             ) : (
@@ -762,15 +667,8 @@ export default function ProgramsScreen() {
 
             {showManage ? (
               <>
-                <View style={card}>
-                  <Text
-                    selectable
-                    style={{
-                      color: theme.textBlack,
-                      fontSize: 14,
-                      fontFamily: "PlusJakartaSans_700Bold",
-                    }}
-                  >
+                <View style={styles.card}>
+                  <Text selectable style={styles.titleXS}>
                     Program actions
                   </Text>
                   <AppButton
@@ -784,15 +682,8 @@ export default function ProgramsScreen() {
                   />
                 </View>
 
-                <View style={card}>
-                  <Text
-                    selectable
-                    style={{
-                      color: theme.textBlack,
-                      fontSize: 14,
-                      fontFamily: "PlusJakartaSans_700Bold",
-                    }}
-                  >
+                <View style={styles.card}>
+                  <Text selectable style={styles.titleXS}>
                     Routine order and supersets
                   </Text>
                   <ProgramLayoutEditor
@@ -804,120 +695,33 @@ export default function ProgramsScreen() {
                 </View>
 
                 {activeProgram.routines.map((routine) => (
-                  <View key={routine.id} style={card}>
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        gap: 12,
-                      }}
-                    >
-                      <View style={{ flex: 1, gap: 3 }}>
-                        <Text
-                          selectable
-                          style={{
-                            color: theme.textBlack,
-                            fontSize: 17,
-                            fontFamily: "PlusJakartaSans_800ExtraBold",
-                          }}
-                        >
-                          {routine.name}
-                        </Text>
-                        <Text
-                          selectable
-                          style={{ color: theme.textLight, fontSize: 11 }}
-                        >
-                          {routine.planned_exercises.length} exercises
-                        </Text>
-                      </View>
-                      <AppButton
-                        label="Start"
-                        disabled={!routine.planned_exercises.length}
-                        loading={
-                          startMutation.isPending &&
-                          startMutation.variables === routine.id
-                        }
-                        onPress={() =>
-                          run("start workout", () =>
-                            startMutation.mutateAsync(routine.id),
-                          )
-                        }
-                      />
-                    </View>
-
-                    <AppButton
-                      label="Duplicate routine"
-                      variant="secondary"
-                      loading={
-                        duplicateRoutineMutation.isPending &&
-                        duplicateRoutineMutation.variables === routine.id
-                      }
-                      onPress={() => confirmDuplicateRoutine(routine)}
-                    />
-                    <AppButton
-                      disabled={routine.planned_exercises.length > 0}
-                      label={routine.planned_exercises.length > 0 ? "Remove exercises to delete routine" : "Delete routine"}
-                      variant="ghost"
-                      onPress={() => confirmDeleteRoutine(routine)}
-                    />
-
-                    {routine.planned_exercises.map((planned) => {
-                      const restSeconds =
-                        restSecondsDrafts[planned.id] ??
-                        String(planned.rest_seconds ?? 90);
-                      return (
-                        <View key={planned.id} style={{ gap: 8 }}>
-                          <SwipeToDeleteExerciseRow
-                            exerciseName={planned.exercise_name}
-                            onDelete={() =>
-                              run("remove exercise", () =>
-                                deleteExerciseMutation.mutateAsync(planned.id),
-                              )
-                            }
-                          />
-                          <FormField
-                            accessibilityLabel={`Rest time for ${planned.exercise_name}`}
-                            helperText="0–3600 seconds. Used by the rest timer after each set."
-                            keyboardType="number-pad"
-                            label="Rest between sets (seconds)"
-                            onChangeText={(value) =>
-                              setRestSecondsDrafts((current) => ({
-                                ...current,
-                                [planned.id]: value,
-                              }))
-                            }
-                            value={restSeconds}
-                          />
-                          <AppButton
-                            label="Save rest time"
-                            variant="secondary"
-                            loading={
-                              updateRestMutation.isPending &&
-                              updateRestMutation.variables?.planned.id === planned.id
-                            }
-                            onPress={() => saveRestSeconds(planned)}
-                          />
-                        </View>
-                      );
-                    })}
-                    <AppButton
-                      label="Add exercise"
-                      variant="secondary"
-                      onPress={() => setExerciseRoutine(routine)}
-                    />
-                  </View>
+                  <RoutineManageCard
+                    key={routine.id}
+                    routine={routine}
+                    starting={
+                      startMutation.isPending &&
+                      startMutation.variables === routine.id
+                    }
+                    duplicating={
+                      duplicateRoutineMutation.isPending &&
+                      duplicateRoutineMutation.variables === routine.id
+                    }
+                    restSecondsDrafts={restSecondsDrafts}
+                    savingRestForPlannedId={savingRestForPlannedId}
+                    styles={styles}
+                    theme={theme}
+                    onStart={actions.onStart}
+                    onDuplicate={actions.onDuplicate}
+                    onDelete={actions.onDelete}
+                    onAddExercise={actions.onAddExercise}
+                    onDeleteExercise={actions.onDeleteExercise}
+                    onChangeRestDraft={onChangeRestDraft}
+                    onSaveRest={actions.onSaveRest}
+                  />
                 ))}
 
-                <View style={card}>
-                  <Text
-                    selectable
-                    style={{
-                      color: theme.textBlack,
-                      fontSize: 14,
-                      fontFamily: "PlusJakartaSans_700Bold",
-                    }}
-                  >
+                <View style={styles.card}>
+                  <Text selectable style={styles.titleXS}>
                     Add custom routine
                   </Text>
                   <FormField
@@ -954,32 +758,16 @@ export default function ProgramsScreen() {
           programs
             .filter((item) => item.status !== "ACTIVE")
             .map((program) => (
-              <View key={program.id} style={card}>
-                <Text
-                  selectable
-                  style={{
-                    color: theme.textBlack,
-                    fontFamily: "PlusJakartaSans_700Bold",
-                  }}
-                >
-                  {program.name}
-                </Text>
-                <Text
-                  selectable
-                  style={{ color: theme.textLight, fontSize: 11 }}
-                >
-                  {program.status}
-                </Text>
-                <AppButton
-                  label="Make active"
-                  variant="secondary"
-                  onPress={() =>
-                    run("activate program", () =>
-                      activateMutation.mutateAsync(program.id),
-                    )
-                  }
-                />
-              </View>
+              <InactiveProgramCard
+                key={program.id}
+                program={program}
+                activating={
+                  activateMutation.isPending &&
+                  activateMutation.variables === program.id
+                }
+                styles={styles}
+                onActivate={actions.onActivate}
+              />
             ))}
 
         {activeProgram && showManage ? (
@@ -1014,23 +802,9 @@ export default function ProgramsScreen() {
           behavior={Platform.OS === "ios" ? "padding" : "height"}
           style={{ flex: 1 }}
         >
-          <View
-            style={{
-              flex: 1,
-              justifyContent: "center",
-              padding: 20,
-              backgroundColor: "rgba(0,0,0,0.7)",
-            }}
-          >
-            <View style={[card, { backgroundColor: theme.card }]}>
-              <Text
-                selectable
-                style={{
-                  color: theme.textBlack,
-                  fontSize: 18,
-                  fontFamily: "PlusJakartaSans_800ExtraBold",
-                }}
-              >
+          <View style={styles.modalOverlayCenter}>
+            <View style={[styles.card, styles.modalCardCentered]}>
+              <Text selectable style={styles.titleLG}>
                 Create workout program
               </Text>
               {actionFeedback?.surface === "create" ? (
@@ -1051,11 +825,11 @@ export default function ProgramsScreen() {
                 value={template}
                 onChange={setTemplate}
               />
-              <View style={{ flexDirection: "row", gap: 10 }}>
+              <View style={styles.modalActionsRow}>
                 <AppButton
                   label="Cancel"
                   variant="secondary"
-                  style={{ flex: 1 }}
+                  style={styles.modalActionButton}
                   onPress={() =>
                     closeFeedbackSurface("create", () =>
                       setShowCreate(false),
@@ -1064,7 +838,7 @@ export default function ProgramsScreen() {
                 />
                 <AppButton
                   label="Create"
-                  style={{ flex: 1 }}
+                  style={styles.modalActionButton}
                   disabled={!programName.trim()}
                   loading={createMutation.isPending}
                   onPress={() =>
@@ -1092,31 +866,9 @@ export default function ProgramsScreen() {
           closeFeedbackSurface("exercise", () => setExerciseRoutine(null))
         }
       >
-        <View
-          style={{
-            flex: 1,
-            justifyContent: "flex-end",
-            backgroundColor: "rgba(0,0,0,0.65)",
-          }}
-        >
-          <View
-            style={[
-              card,
-              {
-                maxHeight: "78%",
-                borderBottomLeftRadius: 0,
-                borderBottomRightRadius: 0,
-              },
-            ]}
-          >
-            <Text
-              selectable
-              style={{
-                color: theme.textBlack,
-                fontSize: 18,
-                fontFamily: "PlusJakartaSans_800ExtraBold",
-              }}
-            >
+        <View style={styles.modalOverlayBottom}>
+          <View style={[styles.card, styles.modalCardSheet]}>
+            <Text selectable style={styles.titleLG}>
               Add to {exerciseRoutine?.name}
             </Text>
             {actionFeedback?.surface === "exercise" ? (
@@ -1127,53 +879,15 @@ export default function ProgramsScreen() {
             ) : null}
             <ScrollView
               contentInsetAdjustmentBehavior="automatic"
-              contentContainerStyle={{ gap: 8 }}
+              contentContainerStyle={styles.exerciseSheetScrollContent}
             >
               {availableExercises.map((exercise) => (
-                <TouchableOpacity
+                <AvailableExerciseRow
                   key={exercise.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Add ${exercise.name}`}
-                  onPress={() =>
-                    exerciseRoutine &&
-                    run(
-                      "add exercise",
-                      () =>
-                        addExerciseMutation.mutateAsync({
-                          routine: exerciseRoutine,
-                          exerciseId: exercise.id,
-                        }),
-                      {
-                        surface: "exercise",
-                        successMessage: `${exercise.name} was added to the routine.`,
-                      },
-                    )
-                  }
-                  style={{
-                    padding: 14,
-                    gap: 3,
-                    borderRadius: 12,
-                    borderCurve: "continuous",
-                    backgroundColor: theme.background,
-                  }}
-                >
-                  <Text
-                    selectable
-                    style={{
-                      color: theme.textBlack,
-                      fontFamily: "PlusJakartaSans_700Bold",
-                    }}
-                  >
-                    {exercise.name}
-                  </Text>
-                  <Text
-                    selectable
-                    style={{ color: theme.textLight, fontSize: 11 }}
-                  >
-                    {exercise.muscle_group ?? "Exercise"} ·{" "}
-                    {exercise.target_rep_range ?? "8-12"} reps
-                  </Text>
-                </TouchableOpacity>
+                  exercise={exercise}
+                  styles={styles}
+                  onAdd={actions.onAddAvailableExercise}
+                />
               ))}
             </ScrollView>
             <AppButton

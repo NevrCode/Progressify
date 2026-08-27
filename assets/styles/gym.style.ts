@@ -1,4 +1,5 @@
 import { ThemeType } from "@/constants/colors";
+import { FONT_FAMILIES, STAT_FONT_FAMILIES } from "@/constants/typography";
 import { createWithFont } from "./fontHelper";
 
 export const gymStyles = (theme: ThemeType) =>
@@ -27,8 +28,8 @@ export const gymStyles = (theme: ThemeType) =>
     },
     title: {
       color: theme.textBlack,
-      fontSize: 26,
-      fontWeight: "900",
+      fontSize: 24,
+      fontWeight: "800",
       letterSpacing: -0.5,
     },
     headerBadge: {
@@ -65,29 +66,30 @@ export const gymStyles = (theme: ThemeType) =>
     },
     heroStatLabel: {
       color: theme.textLight,
-      fontSize: 10,
-      fontWeight: "700",
+      fontSize: 11,
+      fontWeight: "800",
       textTransform: "uppercase",
       letterSpacing: 0.5,
     },
     heroCalorieStatLabel: {
       color: theme.expense,
-      fontSize: 10,
-      fontWeight: "700",
+      fontSize: 11,
+      fontWeight: "800",
       textTransform: "uppercase",
       letterSpacing: 0.5,
     },
     heroCalorieStatLabelLowerCase: {
       color: theme.expense,
-      fontSize: 10,
-      fontWeight: "700",
+      fontSize: 11,
+      fontWeight: "800",
       textTransform: "lowercase",
       letterSpacing: 0.5,
     },
     heroStatValue: {
       color: theme.textBlack,
-      fontSize: 20,
+      fontSize: 24,
       fontWeight: "900",
+      fontFamily: STAT_FONT_FAMILIES.black,
     },
     heroTopRow: {
       flexDirection: "row",
@@ -98,7 +100,7 @@ export const gymStyles = (theme: ThemeType) =>
     heroLabel: {
       color: theme.textLight,
       fontSize: 12,
-      fontWeight: "700",
+      fontWeight: "800",
       textTransform: "uppercase",
       letterSpacing: 0.8,
     },
@@ -139,19 +141,19 @@ export const gymStyles = (theme: ThemeType) =>
     activeSessionBannerText: {
       flex: 1,
       color: theme.primary,
-      fontSize: 13,
+      fontSize: 14,
       fontWeight: "700",
     },
     activeSessionBannerAction: {
       color: theme.primary,
-      fontSize: 13,
-      fontWeight: "800",
+      fontSize: 14,
+      fontWeight: "700",
     },
     startWorkoutCard: {
       flexDirection: "row",
       alignItems: "center",
       backgroundColor: theme.card,
-      borderRadius: 14,
+      borderRadius: 16,
       padding: 14,
       gap: 12,
       borderWidth: 1,
@@ -167,8 +169,8 @@ export const gymStyles = (theme: ThemeType) =>
     },
     startWorkoutTitle: {
       color: theme.textBlack,
-      fontSize: 15,
-      fontWeight: "900",
+      fontSize: 16,
+      fontWeight: "800",
     },
     startWorkoutMeta: {
       color: theme.textLight,
@@ -195,7 +197,7 @@ export const gymStyles = (theme: ThemeType) =>
     filterChipText: {
       color: theme.textBlack,
       fontSize: 12,
-      fontWeight: "800",
+      fontWeight: "700",
     },
     filterChipTextActive: {
       color: theme.background,
@@ -219,7 +221,7 @@ export const gymStyles = (theme: ThemeType) =>
     sectionMeta: {
       color: theme.textLight,
       fontSize: 12,
-      fontWeight: "700",
+      fontWeight: "600",
     },
     subsectionHeader: {
       flexDirection: "row",
@@ -240,14 +242,14 @@ export const gymStyles = (theme: ThemeType) =>
     inlineActionText: {
       color: theme.primary,
       fontSize: 12,
-      fontWeight: "800",
+      fontWeight: "700",
     },
     splitGrid: {
       gap: 12,
     },
     splitCard: {
       backgroundColor: theme.card,
-      borderRadius: 14,
+      borderRadius: 16,
       padding: 16,
       gap: 8,
       borderWidth: 1,
@@ -256,17 +258,17 @@ export const gymStyles = (theme: ThemeType) =>
     splitName: {
       color: theme.textBlack,
       fontSize: 16,
-      fontWeight: "900",
+      fontWeight: "800",
     },
     splitMeta: {
       color: theme.textLight,
       fontSize: 12,
-      fontWeight: "700",
+      fontWeight: "600",
     },
     splitLiftCount: {
       color: theme.primary,
       fontSize: 12,
-      fontWeight: "800",
+      fontWeight: "700",
     },
     smallInput: {},
     cardActionRow: {
@@ -282,7 +284,7 @@ export const gymStyles = (theme: ThemeType) =>
     },
     listCard: {
       backgroundColor: theme.card,
-      borderRadius: 14,
+      borderRadius: 16,
       padding: 16,
       gap: 12,
       borderWidth: 1,
@@ -324,12 +326,12 @@ export const gymStyles = (theme: ThemeType) =>
     },
     volumeText: {
       color: theme.textBlack,
-      fontSize: 13,
+      fontSize: 14,
       fontWeight: "900",
     },
     exerciseCard: {
       backgroundColor: theme.card,
-      borderRadius: 14,
+      borderRadius: 16,
       padding: 16,
       gap: 12,
       borderWidth: 1,
@@ -386,7 +388,7 @@ export const gymStyles = (theme: ThemeType) =>
     sessionSummaryValue: {
       color: theme.textBlack,
       fontSize: 14,
-      fontWeight: "800",
+      fontWeight: "700",
     },
     sessionSummaryMeta: {
       color: theme.textLight,
@@ -404,13 +406,13 @@ export const gymStyles = (theme: ThemeType) =>
     pointLabel: {
       color: theme.textLight,
       fontSize: 11,
-      fontWeight: "700",
+      fontWeight: "800",
       textTransform: "uppercase",
     },
     pointValue: {
       color: theme.textBlack,
-      fontSize: 13,
-      fontWeight: "800",
+      fontSize: 14,
+      fontWeight: "700",
       marginTop: 2,
     },
     setTable: {
@@ -451,13 +453,13 @@ export const gymStyles = (theme: ThemeType) =>
     setValue: {
       flex: 1,
       color: theme.textBlack,
-      fontSize: 13,
+      fontSize: 14,
       fontWeight: "700",
     },
     mealPrepSetValue: {
       flex: 1,
       color: theme.textBlack,
-      fontSize: 13,
+      fontSize: 14,
       fontWeight: "700",
     },
     setActionCell: {
@@ -481,8 +483,8 @@ export const gymStyles = (theme: ThemeType) =>
     },
     saveSetButtonText: {
       color: theme.background,
-      fontSize: 13,
-      fontWeight: "800",
+      fontSize: 14,
+      fontWeight: "700",
     },
     saveAndNoteRow: {
       flexDirection: "row",
@@ -499,7 +501,7 @@ export const gymStyles = (theme: ThemeType) =>
     },
     blueprintCard: {
       backgroundColor: theme.card,
-      borderRadius: 14,
+      borderRadius: 16,
       padding: 16,
       gap: 6,
       borderWidth: 1,
@@ -513,14 +515,14 @@ export const gymStyles = (theme: ThemeType) =>
     },
     emptyCard: {
       backgroundColor: theme.card,
-      borderRadius: 14,
+      borderRadius: 16,
       padding: 20,
       borderWidth: 1,
       borderColor: theme.border,
     },
     emptyTitle: {
       color: theme.textBlack,
-      fontSize: 15,
+      fontSize: 16,
       fontWeight: "800",
     },
     emptyText: {
@@ -550,7 +552,7 @@ export const gymStyles = (theme: ThemeType) =>
     },
     loadingText: {
       color: theme.textLight,
-      fontSize: 13,
+      fontSize: 14,
       fontWeight: "700",
     },
     errorState: {
@@ -567,7 +569,7 @@ export const gymStyles = (theme: ThemeType) =>
     },
     errorText: {
       color: theme.textLight,
-      fontSize: 13,
+      fontSize: 14,
       fontWeight: "600",
       lineHeight: 20,
     },
@@ -578,6 +580,10 @@ export const gymStyles = (theme: ThemeType) =>
       padding: 20,
       backgroundColor: "rgba(0, 0, 0, 0.7)",
     },
+    // Standard modal tier: same 16px radius as the content-card family below,
+    // so a modal reads as "a card popped forward" rather than a different
+    // surface language. sessionModalCard is the deliberate exception — see
+    // its comment.
     modalCard: {
       width: "100%",
       maxHeight: "94%",
@@ -628,8 +634,8 @@ export const gymStyles = (theme: ThemeType) =>
     },
     booleanToggleText: {
       color: theme.textBlack,
-      fontSize: 13,
-      fontWeight: "800",
+      fontSize: 14,
+      fontWeight: "700",
     },
     booleanToggleTextActive: {
       color: theme.white,
@@ -653,8 +659,8 @@ export const gymStyles = (theme: ThemeType) =>
     },
     secondaryButtonText: {
       color: theme.textLight,
-      fontSize: 13,
-      fontWeight: "800",
+      fontSize: 14,
+      fontWeight: "700",
     },
     primaryButton: {
       minWidth: 96,
@@ -667,8 +673,8 @@ export const gymStyles = (theme: ThemeType) =>
     },
     primaryButtonText: {
       color: theme.background,
-      fontSize: 13,
-      fontWeight: "800",
+      fontSize: 14,
+      fontWeight: "700",
     },
     dateSelectionRow: {
       flex: 3,
@@ -692,6 +698,739 @@ export const gymStyles = (theme: ThemeType) =>
       color: theme.textBlack,
       fontSize: 14,
       fontWeight: "900",
+    },
+    // Deliberately not the same bordered-card surface as every other block on
+    // this screen. Solid primary fill is the one "hero" moment on the
+    // progression tab — a block-color stat bar rather than another rounded
+    // white card with a hairline border, per the identity pass.
+    statsBar: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      backgroundColor: theme.primary,
+      borderRadius: 20,
+      padding: 16,
+    },
+    statsColumn: {
+      flex: 1,
+      alignItems: "center",
+    },
+    statsDivider: {
+      width: 1,
+      backgroundColor: theme.background + "30",
+    },
+    statsLabel: {
+      fontSize: 11,
+      fontWeight: "800",
+      color: theme.background + "E6",
+      textTransform: "uppercase",
+      letterSpacing: 0.6,
+      marginBottom: 4,
+    },
+    statsValue: {
+      fontSize: 24,
+      fontWeight: "900",
+      color: theme.background,
+      fontFamily: STAT_FONT_FAMILIES.black,
+    },
+    statsSubValue: {
+      color: theme.background + "E6",
+      fontSize: 11,
+      fontWeight: "800",
+      marginTop: 2,
+    },
+    launcherCard: {
+      marginBottom: 12,
+    },
+    launcherCardInner: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: theme.card,
+      borderRadius: 16,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: theme.primary + "30",
+      shadowColor: theme.shadow,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.03,
+      shadowRadius: 8,
+      elevation: 2,
+    },
+    launcherTextWrap: {
+      flex: 1,
+    },
+    launcherTitle: {
+      color: theme.textBlack,
+      fontSize: 16,
+      fontWeight: "800",
+    },
+    launcherSubtitle: {
+      color: theme.textLight,
+      fontSize: 12,
+      fontWeight: "600",
+      marginTop: 2,
+    },
+    resumeBanner: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: theme.primary + "15",
+      borderRadius: 16,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      gap: 10,
+      borderWidth: 1.5,
+      borderColor: theme.primary + "40",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.1,
+      shadowRadius: 6,
+      elevation: 3,
+      marginBottom: 12,
+    },
+    resumeDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      marginRight: 2,
+    },
+    resumeText: {
+      flex: 1,
+      color: theme.primary,
+      fontSize: 14,
+      fontWeight: "700",
+    },
+    resumeAction: {
+      color: theme.primary,
+      fontSize: 14,
+      fontWeight: "700",
+      marginRight: 6,
+    },
+    searchBar: {
+      backgroundColor: theme.card,
+      width: "100%",
+      borderWidth: 1,
+      borderColor: theme.border,
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 14,
+      borderRadius: 24,
+      shadowColor: theme.shadow,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.03,
+      shadowRadius: 8,
+      elevation: 2,
+    },
+    searchIcon: {
+      marginRight: 10,
+    },
+    searchInput: {
+      color: theme.textBlack,
+      fontWeight: "600",
+      fontSize: 14,
+      flex: 1,
+      paddingVertical: 10,
+    },
+    exerciseCardOutline: {
+      borderColor: theme.primary + "20",
+      borderWidth: 1,
+    },
+    exerciseCardToggle: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    exerciseTitleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      flexWrap: "wrap",
+    },
+    exerciseTagsRow: {
+      flexDirection: "row",
+      gap: 6,
+      marginTop: 6,
+      flexWrap: "wrap",
+    },
+    muscleTag: {
+      backgroundColor: theme.primary + "10",
+      borderRadius: 8,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderWidth: 1,
+      borderColor: theme.primary + "20",
+    },
+    muscleTagText: {
+      fontSize: 11,
+      fontWeight: "800",
+      color: theme.primary,
+      textTransform: "capitalize",
+    },
+    trendTagPositive: {
+      backgroundColor: theme.income + "15",
+      borderRadius: 8,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderWidth: 1,
+      borderColor: theme.income + "30",
+    },
+    trendTagNegative: {
+      backgroundColor: theme.expense + "15",
+      borderRadius: 8,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderWidth: 1,
+      borderColor: theme.expense + "30",
+    },
+    trendTagTextPositive: {
+      fontSize: 11,
+      fontWeight: "800",
+      color: theme.income,
+    },
+    trendTagTextNegative: {
+      fontSize: 11,
+      fontWeight: "800",
+      color: theme.expense,
+    },
+    cardActionIconsCompact: {
+      flexDirection: "row",
+      gap: 6,
+      alignItems: "flex-start",
+    },
+    chartShadow: {
+      shadowColor: theme.shadow,
+      shadowOffset: { width: 0, height: 3 },
+      shadowOpacity: 0.04,
+      shadowRadius: 6,
+      elevation: 1,
+    },
+    pointerTooltip: {
+      backgroundColor: theme.card,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    pointerTooltipText: {
+      color: theme.text,
+      fontWeight: "700",
+    },
+    warmupSetValue: {
+      color: theme.primary,
+    },
+    chartAxisLabel: {
+      color: theme.textLight,
+      fontSize: 11,
+    },
+    chartXAxisLabel: {
+      color: theme.textLight,
+      fontSize: 11,
+      marginTop: 6,
+    },
+    exerciseModalLinkCard: {
+      padding: 12,
+      gap: 4,
+      borderRadius: 12,
+      borderCurve: "continuous",
+      borderWidth: 1,
+    },
+    exerciseModalLinkCardLinked: {
+      borderColor: theme.primary + "35",
+      backgroundColor: theme.primary + "10",
+    },
+    exerciseModalLinkCardUnlinked: {
+      borderColor: theme.border,
+      backgroundColor: theme.background,
+    },
+    exerciseModalLinkTitle: {
+      fontSize: 12,
+      fontFamily: "PlusJakartaSans_700Bold",
+    },
+    exerciseModalLinkTitleLinked: {
+      color: theme.primary,
+    },
+    exerciseModalLinkTitleUnlinked: {
+      color: theme.textBlack,
+    },
+    exerciseModalLinkId: {
+      color: theme.textLight,
+      fontSize: 11,
+      fontFamily: "PlusJakartaSans_500Medium",
+    },
+    dateChooserRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+    },
+    exerciseFormScroll: {
+      maxHeight: 520,
+    },
+    exerciseFormScrollContent: {
+      gap: 14,
+    },
+    flexOne: {
+      flex: 1,
+    },
+    // Second, larger modal tier (24px vs modalCard's 16px): reserved for the
+    // full-screen-feeling session editor sheet specifically, since it's a
+    // dense multi-field editor rather than a simple confirm/prompt modal.
+    // Any new modal should default to modalCard's 16px unless it has the
+    // same "sheet" scale and density as this one.
+    sessionModalCard: {
+      width: "92%",
+      maxHeight: "82%",
+      padding: 16,
+      borderRadius: 24,
+      backgroundColor: theme.card,
+    },
+    sessionModalHeaderSpacing: {
+      marginBottom: 14,
+    },
+    sessionModalScrollContent: {
+      gap: 12,
+    },
+    notesLabel: {
+      fontSize: 11,
+      fontWeight: "800",
+      fontFamily: "PlusJakartaSans_800ExtraBold",
+      color: theme.textLight,
+      textTransform: "uppercase",
+      letterSpacing: 1,
+      marginBottom: 6,
+    },
+    notesInputExtra: {
+      backgroundColor: theme.background,
+      borderRadius: 14,
+      borderWidth: 1.5,
+      borderColor: theme.border,
+      padding: 12,
+      color: theme.textBlack,
+      minHeight: 60,
+      textAlignVertical: "top",
+    },
+    setsSubHeaderRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginTop: 8,
+    },
+    setsSubHeaderTitle: {
+      fontSize: 14,
+      fontWeight: "800",
+      fontFamily: "PlusJakartaSans_800ExtraBold",
+      color: theme.textBlack,
+    },
+    addSetButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 10,
+      backgroundColor: theme.primary + "12",
+    },
+    addSetButtonText: {
+      fontSize: 12,
+      fontWeight: "800",
+      fontFamily: "PlusJakartaSans_800ExtraBold",
+      color: theme.primary,
+    },
+    setGrid: {
+      borderWidth: 1.5,
+      borderColor: theme.border,
+      borderRadius: 16,
+      backgroundColor: theme.background,
+      overflow: "hidden",
+    },
+    setGridHeaderRow: {
+      flexDirection: "row",
+      backgroundColor: theme.card,
+      borderBottomWidth: 1.5,
+      borderBottomColor: theme.border,
+      paddingVertical: 8,
+      paddingHorizontal: 8,
+    },
+    setGridHeaderCellSet: {
+      flex: 1,
+      fontSize: 11,
+      fontWeight: "800",
+      fontFamily: "PlusJakartaSans_800ExtraBold",
+      color: theme.textLight,
+      textAlign: "center",
+    },
+    setGridHeaderCellWeight: {
+      flex: 2.2,
+      fontSize: 11,
+      fontWeight: "800",
+      fontFamily: "PlusJakartaSans_800ExtraBold",
+      color: theme.textLight,
+      textAlign: "center",
+    },
+    setGridHeaderCellNarrow: {
+      flex: 1.8,
+      fontSize: 11,
+      fontWeight: "800",
+      fontFamily: "PlusJakartaSans_800ExtraBold",
+      color: theme.textLight,
+      textAlign: "center",
+    },
+    setGridHeaderSpacer: {
+      flex: 1,
+    },
+    setRowBase: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 6,
+      paddingHorizontal: 8,
+    },
+    setNumberToggle: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    setNumberText: {
+      fontSize: 12,
+      fontWeight: "900",
+      fontFamily: "PlusJakartaSans_800ExtraBold",
+      textAlign: "center",
+    },
+    setNumberTextWarmup: {
+      color: theme.primary,
+    },
+    setNumberTextWorking: {
+      color: theme.textBlack,
+    },
+    setTypeCaption: {
+      fontSize: 11,
+      color: theme.textLight,
+    },
+    setCellWeight: {
+      flex: 2.2,
+      paddingHorizontal: 4,
+    },
+    setCellReps: {
+      flex: 1.8,
+      paddingHorizontal: 4,
+    },
+    setCellRir: {
+      flex: 1.8,
+      paddingHorizontal: 4,
+    },
+    setCellInput: {
+      backgroundColor: theme.card,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: theme.border,
+      color: theme.textBlack,
+      fontSize: 14,
+      fontWeight: "600",
+      paddingVertical: 6,
+      textAlign: "center",
+    },
+    setDeleteCell: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    sessionModalActionsRow: {
+      flexDirection: "row",
+      gap: 8,
+      marginTop: 14,
+    },
+    sessionModalActionButton: {
+      flex: 1,
+    },
+    setRowWarmupBackground: {
+      backgroundColor: theme.primary + "0A",
+    },
+    setRowNoBorder: {
+      borderBottomWidth: 0,
+    },
+    setRowBorder: {
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border + "50",
+    },
+    flexTwo: {
+      flex: 2,
+    },
+    macroBarWrap: {
+      marginBottom: 12,
+    },
+    macroBarLabelRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      marginBottom: 4,
+    },
+    macroBarTrack: {
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: theme.border ?? "#eee",
+    },
+    macroBarFillBase: {
+      height: 6,
+      borderRadius: 3,
+    },
+    macroBarRemainingText: {
+      textAlign: "right",
+      marginTop: 2,
+      fontSize: 11,
+    },
+    formCard: {
+      padding: 16,
+    },
+    sectionHeaderSpacing12: {
+      marginBottom: 12,
+    },
+    sectionHeaderSpacing14: {
+      marginBottom: 14,
+    },
+    chipRowSpacing12: {
+      marginBottom: 12,
+    },
+    rowGap8: {
+      flexDirection: "row",
+      gap: 8,
+    },
+    rowGap6Center: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+    stepNavRow: {
+      flexDirection: "row",
+      gap: 8,
+      marginTop: 4,
+    },
+    overrideFieldsColumn: {
+      flexDirection: "column",
+      gap: 8,
+      marginBottom: 12,
+      marginTop: 12,
+    },
+    intakeSummaryCardBorder: {
+      borderColor: theme.primary + "20",
+      borderWidth: 1.5,
+    },
+    heroStatsSpacing16: {
+      marginBottom: 16,
+    },
+    calorieEncouragementText: {
+      color: theme.primary,
+      fontSize: 12,
+      fontWeight: "700",
+      marginTop: -8,
+      marginBottom: 12,
+    },
+    macroActionsRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginTop: 8,
+    },
+    pillButton: {
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 8,
+      backgroundColor: theme.primary + "12",
+    },
+    pillButtonText: {
+      fontSize: 11,
+      fontWeight: "800",
+      fontFamily: "PlusJakartaSans_800ExtraBold",
+      color: theme.primary,
+    },
+    statusLabelText: {
+      fontWeight: "800",
+      fontFamily: "PlusJakartaSans_800ExtraBold",
+    },
+    optionSpacing8: {
+      marginBottom: 8,
+    },
+    foodDiaryCard: {
+      backgroundColor: theme.background,
+      borderColor: theme.primary + "20",
+      borderWidth: 1.5,
+    },
+    foodDiaryCardFlush: {
+      backgroundColor: theme.background,
+      borderColor: theme.primary + "20",
+      borderWidth: 1.5,
+      padding: 0,
+      overflow: "hidden",
+    },
+    macroPillBase: {
+      borderRadius: 20,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+    },
+    macroPillText: {
+      fontSize: 11,
+      fontWeight: "600",
+    },
+    prepRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      gap: 12,
+      borderBottomWidth: 0.5,
+      borderBottomColor: theme.border ?? "#eee",
+    },
+    prepRowAccent: {
+      width: 4,
+      height: 36,
+      borderRadius: 3,
+      flexShrink: 0,
+    },
+    prepRowBody: {
+      flex: 1,
+      minWidth: 0,
+    },
+    prepRowName: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: theme.textBlack,
+      marginBottom: 4,
+    },
+    prepRowMacroRow: {
+      flexDirection: "row",
+      gap: 5,
+      alignItems: "center",
+      flexWrap: "wrap",
+    },
+    prepRowFoodCount: {
+      fontSize: 11,
+      color: theme.textLight,
+    },
+    mealPrepSectionHeaderSpacing: {
+      marginBottom: 8,
+    },
+    inlineFeedbackSpacing: {
+      marginTop: 10,
+    },
+    inputSpacingTop8: {
+      marginTop: 8,
+    },
+    draftItemsList: {
+      gap: 8,
+      marginTop: 8,
+    },
+    draftItemCard: {
+      backgroundColor: theme.background,
+      borderRadius: 12,
+      borderWidth: 0.5,
+      borderColor: theme.border ?? "#eee",
+      borderLeftWidth: 3.5,
+      padding: 12,
+    },
+    draftItemHeaderRow: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    draftItemRemoveButton: {
+      marginLeft: 10,
+    },
+    draftItemMacroRow: {
+      flexDirection: "row",
+      gap: 5,
+      marginTop: 6,
+      flexWrap: "wrap",
+    },
+    draftTotalsRow: {
+      flexDirection: "row",
+      gap: 5,
+      justifyContent: "center",
+      flexWrap: "wrap",
+      marginTop: 10,
+      padding: 10,
+      backgroundColor: theme.card,
+      borderRadius: 10,
+      borderWidth: 0.5,
+      borderColor: theme.border ?? "#eee",
+    },
+    addFoodButtonSpacing: {
+      marginTop: 10,
+    },
+    savePrepButtonSpacing: {
+      marginTop: 12,
+    },
+    loadingIndicatorSpacing: {
+      marginTop: 16,
+    },
+    modalBackdropBottom: {
+      justifyContent: "flex-end",
+    },
+    fullWidth: {
+      width: "100%",
+    },
+    logModalCardPadding: {
+      paddingBottom: 24,
+    },
+    mealTypeLabel: {
+      fontSize: 12,
+      fontWeight: "800",
+      color: theme.textLight,
+      textTransform: "uppercase",
+      letterSpacing: 0.8,
+      marginTop: 4,
+      marginBottom: 2,
+      fontFamily: FONT_FAMILIES.bold,
+    },
+    mealTypeOptionsRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 10,
+    },
+    mealTypeOption: {
+      flex: 1,
+      borderRadius: 12,
+      borderWidth: 1.5,
+      paddingVertical: 16,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    mealTypeOptionText: {
+      fontSize: 14,
+      fontWeight: "700",
+    },
+    logModalActionsRow: {
+      flexDirection: "row",
+      gap: 10,
+      marginTop: 18,
+    },
+    logModalCancelButton: {
+      flex: 1,
+      backgroundColor: theme.background,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: theme.border ?? "#eee",
+      paddingVertical: 13,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    logModalCancelButtonText: {
+      color: theme.textLight,
+      fontSize: 14,
+      fontWeight: "700",
+      fontFamily: FONT_FAMILIES.bold,
+    },
+    logModalConfirmButton: {
+      flex: 2,
+      backgroundColor: theme.primary,
+      borderRadius: 12,
+      paddingVertical: 13,
+      alignItems: "center",
+      justifyContent: "center",
+      shadowColor: theme.primary,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.2,
+      shadowRadius: 8,
+      elevation: 3,
+    },
+    logModalConfirmButtonText: {
+      color: theme.white ?? "#fff",
+      fontSize: 14,
+      fontWeight: "700",
+      fontFamily: "PlusJakartaSans_800ExtraBold",
     },
   });
 

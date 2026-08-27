@@ -3,12 +3,19 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("session progression charts initially show the latest data points", async () => {
-  const source = await readFile("src/app/(tabs)/gymProgression.tsx", "utf8");
+  const cardSource = await readFile(
+    "src/components/gym/exercise-progression-card.tsx",
+    "utf8",
+  );
+  const progressionSource = await readFile(
+    "src/features/gym/exercise-progression.ts",
+    "utf8",
+  );
 
-  assert.match(source, /<LineChart[\s\S]*?scrollToEnd/);
-  assert.match(source, /scrollAnimation=\{false\}/);
+  assert.match(cardSource, /<LineChart[\s\S]*?scrollToEnd/);
+  assert.match(cardSource, /scrollAnimation=\{false\}/);
   assert.match(
-    source,
+    progressionSource,
     /toDateSortValue\(a\.sessionDate\)\s*-\s*toDateSortValue\(b\.sessionDate\)/,
   );
 });

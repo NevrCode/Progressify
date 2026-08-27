@@ -1,10 +1,12 @@
+import { AppButton } from "@/components/base/app-button";
+import { FormField } from "@/components/base/form-field";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { deleteMyAccount } from "@/services/authService";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, ScrollView, Text, TextInput, TouchableOpacity } from "react-native";
+import { ScrollView, Text, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function DeleteAccountScreen() {
@@ -46,38 +48,36 @@ export default function DeleteAccountScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
       <ScrollView contentContainerStyle={{ padding: 24, gap: 16 }}>
-        <TouchableOpacity onPress={() => router.back()}><Text style={{ color: theme.primary }}>Back</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" hitSlop={8} onPress={() => router.back()}><Text style={{ color: theme.primary }}>Back</Text></TouchableOpacity>
         <Text style={{ color: theme.textBlack, fontSize: 28, fontWeight: "800" }}>Delete account</Text>
         <Text style={{ color: theme.textLight, lineHeight: 22 }}>
           This permanently removes your account, sessions, workout history, nutrition diary, profile, goals, financial records, uploads and offline copies on this device.
         </Text>
-        <Text style={{ color: theme.text, fontWeight: "700" }}>Current password</Text>
-        <TextInput
+        <FormField
+          label="Current password"
           value={password}
           onChangeText={setPassword}
           secureTextEntry
           autoCapitalize="none"
-          style={{ borderWidth: 1, borderColor: theme.border, borderRadius: 12, padding: 14, color: theme.text, backgroundColor: theme.card }}
           placeholder="Enter your password"
-          placeholderTextColor={theme.textLight}
         />
-        <Text style={{ color: theme.text, fontWeight: "700" }}>Type DELETE to confirm</Text>
-        <TextInput
+        <FormField
+          label="Type DELETE to confirm"
+          accessibilityLabel="Type DELETE to confirm account deletion"
           value={confirmation}
           onChangeText={setConfirmation}
           autoCapitalize="characters"
-          style={{ borderWidth: 1, borderColor: theme.border, borderRadius: 12, padding: 14, color: theme.text, backgroundColor: theme.card }}
           placeholder="DELETE"
-          placeholderTextColor={theme.textLight}
         />
-        <TouchableOpacity
+        <AppButton
+          label="Delete permanently"
+          variant="destructive"
+          accessibilityHint="This action cannot be undone"
           disabled={!ready}
+          loading={loading}
           onPress={requestFinalConfirmation}
-          style={{ backgroundColor: theme.expense, opacity: ready ? 1 : 0.45, padding: 16, borderRadius: 12, alignItems: "center" }}
-        >
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "#fff", fontWeight: "800" }}>Delete permanently</Text>}
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => router.push("/delete-account-info")}>
+        />
+        <TouchableOpacity accessibilityRole="link" accessibilityLabel="Read account deletion policy" onPress={() => router.push("/delete-account-info")}>
           <Text style={{ color: theme.primary, textAlign: "center" }}>Read the account deletion policy</Text>
         </TouchableOpacity>
       </ScrollView>

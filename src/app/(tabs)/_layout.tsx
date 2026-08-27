@@ -54,8 +54,8 @@ export default function TabsLayout() {
           tabBarLabel: "Gym",
           tabBarIcon: ({ focused }) => (
             <AnimatedTabIcon
-              family="font-awesome"
-              name="bar-chart"
+              family="material-community"
+              name="dumbbell"
               label="Gym"
               focused={focused}
               activeColor={theme.primary}
@@ -70,8 +70,8 @@ export default function TabsLayout() {
           tabBarLabel: "Food Diary",
           tabBarIcon: ({ focused }) => (
             <AnimatedTabIcon
-              family="material"
-              name="restaurant"
+              family="material-community"
+              name="food-apple"
               label="Food"
               focused={focused}
               activeColor={theme.primary}

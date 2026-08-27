@@ -15,5 +15,5 @@ export const useFoodDiarySummary = (date: string) =>
 export const useFoodEntries = () =>
   useQuery({
     queryKey: [...FOOD_DIARY_QUERY_KEY, "entries"],
-    queryFn: getFoodEntries,
+    queryFn: () => getFoodEntries(),
   });

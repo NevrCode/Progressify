@@ -1,12 +1,68 @@
 import { gymStyles } from "@/assets/styles/gym.style";
+import { AppButton } from "@/components/base/app-button";
+import { IconButton } from "@/components/base/icon-button";
+import { ScreenError, ScreenLoading } from "@/components/base/screen-state";
+import { ActiveWorkoutCompletion } from "@/components/gym/active-workout-completion";
+import { ActiveWorkoutExercisePicker } from "@/components/gym/active-workout-exercise-picker";
+import { RestTimerOverlay } from "@/components/gym/rest-timer-overlay";
+import {
+  ActiveWorkoutExerciseList,
+  type ActiveWorkoutExerciseActions,
+} from "@/features/workout-session/active-workout-exercise-list";
+import { SetUndoSnackbar } from "@/features/workout-session/set-undo-snackbar";
+import { completeDraftSetOnce } from "@/features/workout-session/set-completion-controller";
+import { getSupersetRestDecision } from "@/features/workout-session/superset-round-controller";
 import { useAlert } from "@/context/AlertContext";
+import { getErrorMessage } from "@/utils/apiError";
 import { useTheme } from "@/context/ThemeContext";
+import { useUnitPreference } from "@/context/UnitPreferenceContext";
+import {
+  ACTIVE_SESSION_DRAFT_VERSION,
+  appendExerciseDraftSet,
+  completeExerciseDraftSet,
+  createExerciseDraft,
+  duplicateExerciseDraftSet,
+  getExerciseRestSeconds,
+  getDurationLabel,
+  removeExerciseDraftSetWithUndo,
+  restoreRemovedExerciseDraftSet,
+  toggleExerciseDraftSetType,
+  type DraftSet,
+  type ExerciseDraft,
+  type RemovedDraftSet,
+  updateExerciseDraftSet,
+} from "@/features/workout-session/drafts";
+import {
+  resolveActiveSession,
+  type RestoredSession,
+} from "@/features/workout-session/restored-session";
+import {
+  type ActiveWorkoutRouteParams,
+  parseActiveWorkoutRouteLaunch,
+} from "@/features/workout-session/active-workout-launch";
+import {
+  type ActiveWorkoutExerciseState,
+  addActiveWorkoutExercise,
+  removeActiveWorkoutExercise,
+  swapActiveWorkoutExercise,
+} from "@/features/workout-session/active-workout-state";
+import {
+  CLOSED_PICKER,
+  closePicker,
+  type ExercisePickerState,
+  openAddPicker,
+  openSwapPicker,
+  pickerSearch,
+  pickerSwapTarget,
+  setPickerSearch,
+} from "@/features/workout-session/exercise-picker-state";
+import { useRestTimer } from "@/features/workout-session/use-rest-timer";
+import { summarizeWorkoutTotals } from "@/features/workout-session/workout-totals";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
 import {
   createExerciseSession,
   ExerciseProgressionDTO,
   GymExerciseSessionRequestDTO,
-  SplitType,
 } from "@/services/gymService";
 import {
   ActiveSessionData,
@@ -14,50 +70,19 @@ import {
   loadActiveSession,
   saveActiveSession,
 } from "@/services/sessionStorage";
+import { completeWorkoutSession } from "@/services/workoutProgramService";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   BackHandler,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
   ScrollView,
   Text,
-  TextInput,
   TouchableOpacity,
-  Vibration,
   View
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-
-type DraftSet = {
-  localId: string;
-  set_number: number;
-  weight: string;
-  reps: string;
-  rir: string;
-};
-
-type ExerciseDraft = {
-  exerciseId: number;
-  startedAt: string;
-  sets: DraftSet[];
-};
-
-const normalizeSplit = (split?: string): SplitType => {
-  const normalized = split?.toUpperCase();
-  if (normalized === "PULL" || normalized === "LEGS") return normalized;
-  return "PUSH";
-};
-
-const displaySplit = (split?: string) => {
-  const normalized = normalizeSplit(split);
-  return normalized.charAt(0) + normalized.slice(1).toLowerCase();
-};
 
 const getExerciseName = (exercise: ExerciseProgressionDTO) =>
   exercise.name ?? "Exercise";
@@ -73,143 +98,79 @@ const formatDateForApi = (value: Date | string) => {
 
 const getRandomInt = () => Math.floor(Math.random() * 100);
 
-const createEmptyExerciseDraft = (exerciseId: number): ExerciseDraft => ({
-  exerciseId,
-  startedAt: new Date().toISOString(),
-  sets: [
-    {
-      localId: `${Date.now()}-${exerciseId}-${getRandomInt()}`,
-      set_number: 1,
-      weight: "0",
-      reps: "0",
-      rir: "0",
-    },
-  ],
-});
 
-const getDurationLabel = (startedAt: string) => {
-  const elapsedMs = Date.now() - new Date(startedAt).getTime();
-  const minutes = Math.max(1, Math.round(elapsedMs / 60000));
-  return `${minutes} min`;
-};
-
-const getLastSessionHint = (
-  exercise: ExerciseProgressionDTO,
-): string | null => {
-  const sessions = exercise.exercise_sessions ?? [];
-  if (!sessions.length) return null;
-
-  const latest = sessions.reduce((best, current) => {
-    const bestDate = best.session_date ?? "";
-    const curDate = current.session_date ?? "";
-    return curDate > bestDate ? current : best;
-  });
-
-  const sets = (latest.sets ?? []).sort((a, b) => a.set_number - b.set_number);
-  if (!sets.length) return null;
-
-  const summary = sets.map((s) => `${s.weight}kg × ${s.reps}`).join(", ");
-
-  return summary;
-};
 
 export default function ActiveWorkoutSession() {
   const { theme } = useTheme();
-  const styles = gymStyles(theme);
+  const { measurementSystem } = useUnitPreference();
+  const styles = useMemo(() => gymStyles(theme), [theme]);
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { exerciseIds, split } = useLocalSearchParams<{
-    exerciseIds?: string;
-    split?: string;
-  }>();
+  // Stable so the memoized state screens do not re-render on every tick of the
+  // session timer.
+  const goBack = useCallback(() => router.back(), [router]);
+  const routeParams = useLocalSearchParams<ActiveWorkoutRouteParams>();
 
-  const [restoredIds, setRestoredIds] = useState<number[]>([]);
-  const [restoredSplit, setRestoredSplit] = useState<SplitType | null>(null);
-
-  // Rest Timer State
-  const [restTime, setRestTime] = useState<number>(0);
-  const [isRestPaused, setIsRestPaused] = useState<boolean>(false);
-  const [initialRestDuration, setInitialRestDuration] = useState<number>(90);
-  const [isRestActive, setIsRestActive] = useState<boolean>(false);
-
-  const startRestTimer = (seconds: number) => {
-    setRestTime(seconds);
-    setInitialRestDuration(seconds);
-    setIsRestPaused(false);
-    setIsRestActive(true);
-  };
-
-  const adjustRestTime = (seconds: number) => {
-    setRestTime((prev) => Math.max(0, prev + seconds));
-  };
-
-  const toggleRestPause = () => {
-    setIsRestPaused((prev) => !prev);
-  };
-
-  const stopRestTimer = () => {
-    setRestTime(0);
-    setIsRestPaused(false);
-    setIsRestActive(false);
-  };
-
-  const formatRestTime = (totalSeconds: number) => {
-    const mins = Math.floor(totalSeconds / 60);
-    const secs = totalSeconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
-
-  useEffect(() => {
-    let interval: any = null;
-    if (isRestActive && restTime > 0 && !isRestPaused) {
-      interval = setInterval(() => {
-        setRestTime((prev) => {
-          if (prev <= 1) {
-            clearInterval(interval);
-            if (Platform.OS !== "web") {
-              try {
-                Vibration.vibrate([0, 500, 200, 500]);
-              } catch {
-                // ignore
-              }
-            }
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else {
-      if (interval) clearInterval(interval);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isRestActive, restTime, isRestPaused]);
-
-  const selectedSplit = restoredSplit ?? normalizeSplit(split);
-  const selectedIds = useMemo(
-    () =>
-      (exerciseIds ?? "")
-        .split(",")
-        .map(Number)
-        .filter((id) => !Number.isNaN(id) && id > 0),
-    [exerciseIds],
+  // One value, one lifecycle: absent until hydration reads storage, then
+  // present. Previously seven independent slots that could only ever be written
+  // together.
+  const [restoredSession, setRestoredSession] = useState<RestoredSession | null>(
+    null,
   );
+
+  const restTimer = useRestTimer();
+  const restoreRestTimer = restTimer.restore;
+
+  // The route boundary: one parse of every param, with invalid optional
+  // metadata ignored so a malformed deep link still starts a manual workout.
+  //
+  // Keyed on the individual param strings, not on the params object:
+  // useLocalSearchParams returns a fresh object every render, so depending on it
+  // would rebuild `launch` each time and churn the identity of everything
+  // derived from it — including the exercise list's memo boundary.
+  const launch = useMemo(
+    () => parseActiveWorkoutRouteLaunch(routeParams),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      routeParams.exerciseIds,
+      routeParams.workoutSessionId,
+      routeParams.routineName,
+      routeParams.plannedExerciseMap,
+      routeParams.plannedExerciseRestMap,
+      routeParams.activeWorkoutLayout,
+    ],
+  );
+
+  const {
+    restoredExerciseIds: restoredIds,
+    workoutSessionId: activeWorkoutSessionId,
+    routineName: activeRoutineName,
+    plannedExerciseIds: activePlannedExerciseIds,
+    plannedExerciseRestSeconds: activePlannedExerciseRestSeconds,
+    layoutSnapshot: activeLayoutSnapshot,
+    exerciseSnapshots: activeExerciseSnapshots,
+  } = useMemo(
+    () => resolveActiveSession(restoredSession, launch),
+    [restoredSession, launch],
+  );
+
+  const selectedIds = launch.exerciseIds;
   const { alert } = useAlert();
 
   const sessionStartedAtRef = useRef(new Date().toISOString());
   const [elapsed, setElapsed] = useState("0 min");
   const [drafts, setDrafts] = useState<Record<number, ExerciseDraft>>({});
+  const draftsRef = useRef<Record<number, ExerciseDraft>>({});
   const [completedIds, setCompletedIds] = useState<Set<number>>(new Set());
   const [finishingId, setFinishingId] = useState<number | null>(null);
-  const [deletingSetKey, setDeletingSetKey] = useState<string | null>(null);
+  const [removedSet, setRemovedSet] = useState<RemovedDraftSet | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const completedSetClaimsRef = useRef(new Set<string>());
   const [allSaved, setAllSaved] = useState(false);
   const [hydrated, setHydrated] = useState(false);
-  const [showSwapModal, setShowSwapModal] = useState(false);
-  const [swapTargetId, setSwapTargetId] = useState<number | null>(null);
+  const [picker, setPicker] = useState<ExercisePickerState>(CLOSED_PICKER);
+  const exerciseSearch = pickerSearch(picker);
   const [currentExerciseIds, setCurrentExerciseIds] = useState<number[]>([]);
-  const [showAddExerciseModal, setShowAddExerciseModal] = useState(false);
-  const [exerciseSearch, setExerciseSearch] = useState("");
 
   const { data: dashboard, isLoading, error } = useGymDashboard();
 
@@ -230,25 +191,57 @@ export default function ActiveWorkoutSession() {
 
   const selectedExercises = useMemo(() => {
     return sessionExerciseIds
-      .map((id) => exerciseProgressions.find((e) => e.id === id))
+      .map((id) => {
+        const snapshot = activeExerciseSnapshots?.[id];
+        if (snapshot) {
+          const min = snapshot.targetRepMin;
+          const max = snapshot.targetRepMax;
+          return {
+            id,
+            catalog_exercise_id: snapshot.catalogExerciseId,
+            name: snapshot.name,
+            muscle_group: snapshot.muscleGroup,
+            target_rep_range: min ? `${min}-${max ?? min}` : undefined,
+            notes: snapshot.notes ?? undefined,
+          } satisfies ExerciseProgressionDTO;
+        }
+        return exerciseProgressions.find((e) => e.id === id);
+      })
       .filter((e): e is ExerciseProgressionDTO => e != null);
-  }, [sessionExerciseIds, exerciseProgressions]);
+  }, [sessionExerciseIds, exerciseProgressions, activeExerciseSnapshots]);
+
+  const activeGroupByExercise = useMemo(() => {
+    const groups = new Map<number, { id: string; memberIndex: number; size: number }>();
+    for (const group of activeLayoutSnapshot?.groups ?? []) {
+      group.memberExerciseIds.forEach((exerciseId, memberIndex) =>
+        groups.set(exerciseId, { id: group.id, memberIndex, size: group.memberExerciseIds.length }),
+      );
+    }
+    return groups;
+  }, [activeLayoutSnapshot]);
 
   useEffect(() => {
     if (hydrated) return;
     if (isLoading) return;
-    const allIds = selectedIds.length > 0 ? selectedIds : [];
-    if (allIds.length > 0 && !selectedExercises.length) return;
 
     const hydrate = async () => {
       const stored = await loadActiveSession();
 
-      if (!selectedIds.length && stored && stored.exerciseIds.length > 0) {
+      if (stored && stored.exerciseIds.length > 0) {
         sessionStartedAtRef.current = stored.startedAt;
+        draftsRef.current = stored.drafts;
         setDrafts(stored.drafts);
         setCompletedIds(new Set(stored.completedIds));
-        setRestoredIds(stored.exerciseIds);
-        setRestoredSplit(normalizeSplit(stored.split));
+        setRestoredSession({
+          exerciseIds: stored.exerciseIds,
+          workoutSessionId: stored.workoutSessionId ?? null,
+          routineName: stored.routineName ?? null,
+          plannedExerciseIds: stored.plannedExerciseIds ?? {},
+          plannedExerciseRestSeconds: stored.plannedExerciseRestSeconds ?? {},
+          layoutSnapshot: stored.layoutSnapshot,
+          exerciseSnapshots: stored.exerciseSnapshots,
+        });
+        restoreRestTimer(stored.restTimer);
         setCurrentExerciseIds(stored.exerciseIds);
         setHydrated(true);
         return;
@@ -257,8 +250,9 @@ export default function ActiveWorkoutSession() {
       if (selectedExercises.length) {
         const initial: Record<number, ExerciseDraft> = {};
         for (const exercise of selectedExercises) {
-          initial[exercise.id] = createEmptyExerciseDraft(exercise.id);
+          initial[exercise.id] = createExerciseDraft(exercise.id, exercise);
         }
+        draftsRef.current = initial;
         setDrafts(initial);
         setCurrentExerciseIds(selectedIds);
       }
@@ -266,17 +260,31 @@ export default function ActiveWorkoutSession() {
     };
 
     hydrate();
-  }, [hydrated, selectedExercises, selectedIds, isLoading]);
+  }, [hydrated, selectedExercises, selectedIds, isLoading, restoreRestTimer]);
 
   const saveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearedRef = useRef(false);
+
+  useEffect(
+    () => () => {
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    },
+    [],
+  );
 
   const persistState = useCallback(() => {
     if (!hydrated || allSaved || clearedRef.current) return;
     if (!sessionExerciseIds.length) return;
 
     const data: ActiveSessionData = {
-      split: selectedSplit,
+      version: ACTIVE_SESSION_DRAFT_VERSION,
+      workoutSessionId: activeWorkoutSessionId ?? undefined,
+      routineName: activeRoutineName,
+      plannedExerciseIds: activePlannedExerciseIds,
+      plannedExerciseRestSeconds: activePlannedExerciseRestSeconds,
+      layoutSnapshot: activeLayoutSnapshot,
+      exerciseSnapshots: activeExerciseSnapshots,
+      restTimer: restTimer.snapshot(),
       exerciseIds: sessionExerciseIds,
       startedAt: sessionStartedAtRef.current,
       drafts,
@@ -287,9 +295,15 @@ export default function ActiveWorkoutSession() {
     hydrated,
     allSaved,
     sessionExerciseIds,
-    selectedSplit,
     drafts,
     completedIds,
+    activeWorkoutSessionId,
+    activeRoutineName,
+    activePlannedExerciseIds,
+    activePlannedExerciseRestSeconds,
+    activeLayoutSnapshot,
+    activeExerciseSnapshots,
+    restTimer,
   ]);
 
   useEffect(() => {
@@ -373,79 +387,96 @@ export default function ActiveWorkoutSession() {
     field: keyof DraftSet,
     value: string,
   ) => {
-    // Strip leading zeros (e.g. "07" → "7") but keep "0" and "0." intact
-    let clean = value;
-    if (clean.length > 1 && clean[0] === "0" && clean[1] !== ".") {
-      clean = clean.replace(/^0+/, "") || "0";
-    }
-
     setDrafts((current) => {
-      const draft = current[exerciseId];
-      if (!draft) return current;
-      return {
-        ...current,
-        [exerciseId]: {
-          ...draft,
-          sets: draft.sets.map((s) =>
-            s.localId === localId ? { ...s, [field]: clean } : s,
-          ),
-        },
-      };
+      const next = updateExerciseDraftSet(current, exerciseId, localId, field, value);
+      draftsRef.current = next;
+      return next;
     });
   };
 
   const addDraftSet = (exerciseId: number) => {
     setDrafts((current) => {
-      const draft = current[exerciseId];
-      if (!draft) return current;
-      return {
-        ...current,
-        [exerciseId]: {
-          ...draft,
-          sets: [
-            ...draft.sets,
-            {
-              localId: `${Date.now()}-${exerciseId}-${getRandomInt()}`,
-              set_number: draft.sets.length + 1,
-              weight: "0",
-              reps: "0",
-              rir: "0",
-            },
-          ],
-        },
-      };
+      const next = appendExerciseDraftSet(current, exerciseId);
+      draftsRef.current = next;
+      return next;
     });
   };
 
   const deleteDraftSet = (exerciseId: number, localId: string) => {
-    if (deletingSetKey) return;
-    setDeletingSetKey(localId);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    const result = removeExerciseDraftSetWithUndo(drafts, exerciseId, localId);
+    if (!result.removed) return;
+    draftsRef.current = result.drafts;
+    setDrafts(result.drafts);
+    setRemovedSet(result.removed);
+    undoTimerRef.current = setTimeout(() => setRemovedSet(null), 5000);
+  };
 
-    setTimeout(() => {
-      setDrafts((current) => {
-        const draft = current[exerciseId];
-        if (!draft) return current;
+  const undoDeleteDraftSet = () => {
+    if (!removedSet) return;
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setDrafts((current) => {
+      const next = restoreRemovedExerciseDraftSet(current, removedSet);
+      draftsRef.current = next;
+      return next;
+    });
+    setRemovedSet(null);
+  };
 
-        const nextSets = draft.sets.filter((s) => s.localId !== localId);
+  const duplicateDraftSet = (exerciseId: number, localId: string) => {
+    setDrafts((current) => {
+      const next = duplicateExerciseDraftSet(current, exerciseId, localId);
+      draftsRef.current = next;
+      return next;
+    });
+  };
 
-        if (!nextSets.length) {
-          const copy = { ...current };
-          delete copy[exerciseId];
-          return copy;
-        }
+  const completeDraftSet = (exerciseId: number, localId: string) => {
+    const draftsBefore = draftsRef.current;
+    const set = draftsBefore[exerciseId]?.sets.find((candidate) => candidate.localId === localId);
+    if (!set) return;
+    const result = completeDraftSetOnce(
+      completedSetClaimsRef.current,
+      set,
+      () => {
+        const next = completeExerciseDraftSet(draftsRef.current, exerciseId, localId);
+        draftsRef.current = next;
+        setDrafts(next);
+      },
+      () => {
+        const decision = getSupersetRestDecision(
+          activeLayoutSnapshot,
+          draftsBefore,
+          exerciseId,
+          set,
+          activePlannedExerciseRestSeconds,
+          getExerciseRestSeconds(undefined, exerciseId),
+        );
+        const normalRest = getExerciseRestSeconds(activePlannedExerciseRestSeconds, exerciseId);
+        const seconds = set.set_type === "WARMUP"
+          ? normalRest
+          : decision.kind === "start"
+            ? decision.durationSeconds
+            : activeLayoutSnapshot?.groups.some((group) => group.memberExerciseIds.includes(exerciseId))
+              ? 0
+              : normalRest;
+        if (seconds > 0) restTimer.start(seconds);
+      },
+    );
+    if (result === "invalid") {
+      alert(
+        "Incomplete set",
+        `Set #${set.set_number} needs a numeric weight and reps greater than zero.`,
+      );
+    }
+  };
 
-        const reindexed = nextSets.map((s, idx) => ({
-          ...s,
-          set_number: idx + 1,
-        }));
-
-        return {
-          ...current,
-          [exerciseId]: { ...draft, sets: reindexed },
-        };
-      });
-      setDeletingSetKey(null);
-    }, 350);
+  const toggleDraftSetType = (exerciseId: number, localId: string) => {
+    setDrafts((current) => {
+      const next = toggleExerciseDraftSetType(current, exerciseId, localId);
+      draftsRef.current = next;
+      return next;
+    });
   };
 
   // --- Available exercises for swap ---
@@ -459,11 +490,34 @@ export default function ActiveWorkoutSession() {
         if (!keyword) return true;
         return (
           exercise.name?.toLowerCase().includes(keyword) ||
-          exercise.muscle_group?.toLowerCase().includes(keyword) ||
-          exercise.split?.toLowerCase().includes(keyword)
+          exercise.muscle_group?.toLowerCase().includes(keyword)
         );
       });
   }, [exerciseProgressions, sessionExerciseIds, exerciseSearch]);
+
+  /**
+   * Applies one atomic transition over the {ids, drafts, completedIds} triple.
+   *
+   * These three always move together; updating them through three independent
+   * setState calls is what previously let them drift. Also keeps `draftsRef` in
+   * step — the old inline remove/swap paths did not, which left the ref holding
+   * drafts for exercises no longer in the session.
+   */
+  const applyExerciseTransition = (
+    transition: (
+      state: ActiveWorkoutExerciseState,
+    ) => ActiveWorkoutExerciseState,
+  ) => {
+    const next = transition({
+      exerciseIds: sessionExerciseIds,
+      drafts: draftsRef.current,
+      completedIds,
+    });
+    draftsRef.current = next.drafts;
+    setCurrentExerciseIds(next.exerciseIds);
+    setDrafts(next.drafts);
+    setCompletedIds(new Set(next.completedIds));
+  };
 
   // --- Remove exercise from session ---
   const removeExercise = (exerciseId: number) => {
@@ -475,19 +529,10 @@ export default function ActiveWorkoutSession() {
       (s) => (parseFloat(s.weight) || 0) > 0 || (parseFloat(s.reps) || 0) > 0,
     );
 
-    const doRemove = () => {
-      setCurrentExerciseIds((prev) => prev.filter((id) => id !== exerciseId));
-      setDrafts((current) => {
-        const copy = { ...current };
-        delete copy[exerciseId];
-        return copy;
-      });
-      setCompletedIds((prev) => {
-        const next = new Set(prev);
-        next.delete(exerciseId);
-        return next;
-      });
-    };
+    const doRemove = () =>
+      applyExerciseTransition((state) =>
+        removeActiveWorkoutExercise(state, exerciseId),
+      );
 
     if (hasData) {
       alert(
@@ -506,60 +551,44 @@ export default function ActiveWorkoutSession() {
   // --- Swap exercise ---
   const openSwapModal = (exerciseId: number) => {
     if (finishingId === exerciseId) return;
-    setSwapTargetId(exerciseId);
-    setExerciseSearch("");
-    setShowSwapModal(true);
+    setPicker(openSwapPicker(exerciseId));
   };
 
   const closeExercisePicker = () => {
-    setShowSwapModal(false);
-    setShowAddExerciseModal(false);
-    setSwapTargetId(null);
-    setExerciseSearch("");
+    setPicker(closePicker);
   };
 
   const openAddExerciseModal = () => {
-    setExerciseSearch("");
-    setShowAddExerciseModal(true);
+    setPicker(openAddPicker());
+  };
+
+  const setExerciseSearch = (value: string) => {
+    setPicker((current) => setPickerSearch(current, value));
   };
 
   const addExerciseToSession = (exerciseId: number) => {
-    if (sessionExerciseIds.includes(exerciseId)) return;
-
-    setCurrentExerciseIds((prev) => {
-      const base = prev.length ? prev : sessionExerciseIds;
-      return [...base, exerciseId];
-    });
-    setDrafts((current) => ({
-      ...current,
-      [exerciseId]: createEmptyExerciseDraft(exerciseId),
-    }));
+    // addActiveWorkoutExercise is a no-op when the exercise is already present.
+    applyExerciseTransition((state) =>
+      addActiveWorkoutExercise(state, exerciseId),
+    );
     closeExercisePicker();
   };
 
   const swapExercise = (newExerciseId: number) => {
-    if (swapTargetId === null) return;
+    // The union guarantees a target whenever the picker is in swap mode, so this
+    // narrows rather than guarding against a state that can no longer exist.
+    const targetExerciseId = pickerSwapTarget(picker);
+    if (targetExerciseId === null) return;
 
-    const oldDraft = drafts[swapTargetId];
+    const oldDraft = drafts[targetExerciseId];
     const hasData = oldDraft?.sets.some(
       (s) => (parseFloat(s.weight) || 0) > 0 || (parseFloat(s.reps) || 0) > 0,
     );
 
     const doSwap = () => {
-      setCurrentExerciseIds((prev) =>
-        prev.map((id) => (id === swapTargetId ? newExerciseId : id)),
+      applyExerciseTransition((state) =>
+        swapActiveWorkoutExercise(state, targetExerciseId, newExerciseId),
       );
-      setDrafts((current) => {
-        const copy = { ...current };
-        delete copy[swapTargetId];
-        copy[newExerciseId] = createEmptyExerciseDraft(newExerciseId);
-        return copy;
-      });
-      setCompletedIds((prev) => {
-        const next = new Set(prev);
-        next.delete(swapTargetId);
-        return next;
-      });
       closeExercisePicker();
     };
 
@@ -594,7 +623,7 @@ export default function ActiveWorkoutSession() {
         "Incomplete set",
         `Set #${invalidSet.set_number} needs weight > 0, reps > 0, and RIR ≥ 0.`,
       );
-      return;
+      return false;
     }
 
     setFinishingId(exercise.id);
@@ -604,11 +633,14 @@ export default function ActiveWorkoutSession() {
       const payload: GymExerciseSessionRequestDTO = {
         session_date: sessionDate,
         notes: "",
+        workout_session_id: activeWorkoutSessionId ?? undefined,
+        planned_exercise_id: activePlannedExerciseIds[exercise.id],
         sets: draft.sets.map((s) => ({
           set_number: s.set_number,
           weight: parseFloat(s.weight) || 0,
           reps: parseFloat(s.reps) || 0,
           rir: parseFloat(s.rir) || 0,
+          set_type: s.set_type,
         })),
       };
 
@@ -616,6 +648,10 @@ export default function ActiveWorkoutSession() {
         exerciseProgressionId: exercise.id,
         payload,
       });
+
+      const completesWorkout =
+        !completedIds.has(exercise.id) &&
+        completedIds.size + 1 === selectedExercises.length;
 
       setCompletedIds((prev) => {
         const next = new Set(prev).add(exercise.id);
@@ -626,11 +662,26 @@ export default function ActiveWorkoutSession() {
         }
         return next;
       });
-    } catch (err: any) {
+
+      if (completesWorkout && activeWorkoutSessionId) {
+        try {
+          await completeWorkoutSession(activeWorkoutSessionId);
+        } catch (completionError) {
+          alert(
+            "Workout saved",
+            completionError instanceof Error
+              ? `Your sets were saved, but the routine could not be marked complete: ${completionError.message}`
+              : "Your sets were saved, but the routine could not be marked complete.",
+          );
+        }
+      }
+      return true;
+    } catch (err) {
       alert(
         "Save failed",
-        err?.message || "Could not save this exercise session.",
+        getErrorMessage(err, "Could not save this exercise session."),
       );
+      return false;
     } finally {
       setFinishingId(null);
     }
@@ -643,111 +694,125 @@ export default function ActiveWorkoutSession() {
       return;
     }
 
+    let everyExerciseSaved = true;
     for (const exercise of unfinished) {
-      await finishExercise(exercise);
+      everyExerciseSaved = (await finishExercise(exercise)) === true && everyExerciseSaved;
     }
+    if (everyExerciseSaved && unfinished.length > 1 && activeWorkoutSessionId) {
+      try {
+        await completeWorkoutSession(activeWorkoutSessionId);
+      } catch (completionError) {
+        alert(
+          "Workout saved",
+          completionError instanceof Error
+            ? `Your sets were saved, but the routine could not be marked complete: ${completionError.message}`
+            : "Your sets were saved, but the routine could not be marked complete.",
+        );
+      }
+    }
+  };
+
+  const applyProgressionRecommendation = (exercise: ExerciseProgressionDTO) => {
+    const recommendation = exercise.recommendation;
+    if (!recommendation || recommendation.suggested_weight == null) return;
+
+    const apply = () => {
+      const targetSets = Math.max(1, recommendation.target_sets);
+      const nextSets: DraftSet[] = Array.from({ length: targetSets }, (_, index) => ({
+        localId: `${Date.now()}-${exercise.id}-${index}-${getRandomInt()}`,
+        set_number: index + 1,
+        weight: String(recommendation.suggested_weight),
+        reps: String(recommendation.target_reps_min),
+        rir: String(recommendation.target_rir),
+        set_type: "WORKING",
+        completed: false,
+      }));
+
+      setDrafts((current) => ({
+        ...current,
+        [exercise.id]: {
+          exerciseId: exercise.id,
+          startedAt: current[exercise.id]?.startedAt ?? new Date().toISOString(),
+          sets: nextSets,
+        },
+      }));
+    };
+
+    const hasEnteredData = (drafts[exercise.id]?.sets ?? []).some(
+      (set) => Number(set.weight) > 0 || Number(set.reps) > 0,
+    );
+    if (hasEnteredData) {
+      alert(
+        "Apply progression suggestion?",
+        "This replaces the sets currently entered for this exercise. You can edit the suggested values afterward.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Apply", onPress: apply },
+        ],
+      );
+      return;
+    }
+    apply();
   };
 
   // --- Loading / Error states ---
 
   if (
-    isLoading ||
-    (hydrated && restoredIds.length > 0 && !selectedExercises.length)
+    (isLoading && !activeExerciseSnapshots) ||
+    (hydrated && restoredIds.length > 0 && !selectedExercises.length && !activeExerciseSnapshots)
   ) {
-    return (
-      <SafeAreaProvider>
-        <SafeAreaView style={styles.safeArea}>
-          <View style={styles.loadingState}>
-            <ActivityIndicator size="large" color={theme.primary} />
-            <Text style={styles.loadingText}>Loading session...</Text>
-          </View>
-        </SafeAreaView>
-      </SafeAreaProvider>
-    );
+    return <ScreenLoading message="Loading session..." theme={theme} />;
   }
 
-  if ((error || (!selectedExercises.length && !isLoading)) && hydrated) {
+  if (((error && !activeExerciseSnapshots) || (!selectedExercises.length && !isLoading)) && hydrated) {
     return (
-      <SafeAreaProvider>
-        <SafeAreaView style={styles.safeArea}>
-          <View style={styles.errorState}>
-            <Text style={styles.errorTitle}>Session unavailable</Text>
-            <Text style={styles.errorText}>
-              Could not load the selected exercises. Go back and try again.
-            </Text>
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => router.back()}
-            >
-              <Text style={styles.primaryButtonText}>Go back</Text>
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </SafeAreaProvider>
+      <ScreenError
+        title="Session unavailable"
+        message="Could not load the selected exercises. Go back and try again."
+        actionLabel="Go back"
+        onAction={goBack}
+        theme={theme}
+      />
     );
   }
 
   // --- Completion screen ---
 
   if (allSaved) {
-    const totalSets = selectedExercises.reduce((sum, e) => {
-      const draft = drafts[e.id];
-      return sum + (draft?.sets.length ?? 0);
-    }, 0);
-    const totalVolume = selectedExercises.reduce((sum, e) => {
-      const draft = drafts[e.id];
-      if (!draft) return sum;
-      return (
-        sum +
-        draft.sets.reduce(
-          (s, set) =>
-            s + (parseFloat(set.weight) || 0) * (parseFloat(set.reps) || 0),
-          0,
-        )
-      );
-    }, 0);
+    const { totalSets, totalVolume } = summarizeWorkoutTotals(
+      selectedExercises.map((exercise) => exercise.id),
+      drafts,
+    );
 
     return (
-      <SafeAreaProvider>
-        <SafeAreaView style={styles.safeArea}>
-          <View
-            style={[
-              styles.container,
-              { justifyContent: "center", alignItems: "center", flex: 1 },
-            ]}
-          >
-            <MaterialCommunityIcons
-              name="check-circle"
-              size={72}
-              color={theme.primary}
-            />
-            <Text
-              style={[styles.title, { textAlign: "center", marginTop: 16 }]}
-            >
-              Session Complete
-            </Text>
-            <Text
-              style={[
-                styles.exerciseMeta,
-                { textAlign: "center", marginTop: 8 },
-              ]}
-            >
-              {displaySplit(selectedSplit)} | {elapsed} | {totalSets} sets |{" "}
-              {totalVolume} vol
-            </Text>
-            <TouchableOpacity
-              style={[styles.primaryButton, { marginTop: 32, width: "100%" }]}
-              onPress={() => router.back()}
-            >
-              <Text style={styles.primaryButtonText}>Done</Text>
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </SafeAreaProvider>
+      <ActiveWorkoutCompletion
+        routineName={activeRoutineName}
+        elapsed={elapsed}
+        totalSets={totalSets}
+        totalVolume={totalVolume}
+        onDone={goBack}
+        theme={theme}
+      />
     );
   }
 
   // --- Main session view ---
+
+  // The list's action port. Names differ from the screen's handlers where the
+  // port describes intent rather than implementation: `swapExercise` opens the
+  // picker, it does not perform the swap.
+  const exerciseListActions: ActiveWorkoutExerciseActions = {
+    addSet: addDraftSet,
+    updateSet: updateDraftSet,
+    toggleSetType: toggleDraftSetType,
+    completeSet: completeDraftSet,
+    duplicateSet: duplicateDraftSet,
+    removeSet: deleteDraftSet,
+    swapExercise: openSwapModal,
+    removeExercise,
+    applyRecommendation: applyProgressionRecommendation,
+    finishExercise,
+  };
 
   return (
     <SafeAreaProvider>
@@ -773,7 +838,7 @@ export default function ActiveWorkoutSession() {
                   marginBottom: 2,
                 }}
               >
-                {displaySplit(selectedSplit)} Day
+                {activeRoutineName ?? "Manual Workout"}
               </Text>
               <Text
                 style={{
@@ -787,21 +852,14 @@ export default function ActiveWorkoutSession() {
                 Active Session
               </Text>
             </View>
-            <TouchableOpacity
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 14,
-                backgroundColor: theme.primary + "15",
-                borderWidth: 1.5,
-                borderColor: theme.primary + "30",
-                justifyContent: "center",
-                alignItems: "center",
-              }}
+            <IconButton
+              accessibilityLabel="Exit active workout"
+              icon={
+                <MaterialIcons name="close" size={22} color={theme.primary} />
+              }
               onPress={confirmExit}
-            >
-              <MaterialIcons name="close" size={22} color={theme.primary} />
-            </TouchableOpacity>
+              size="large"
+            />
           </View>
 
           <View
@@ -868,6 +926,9 @@ export default function ActiveWorkoutSession() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Exercises</Text>
             <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Add exercise to active workout"
+              accessibilityState={{ disabled: !!finishingId }}
               style={styles.inlineAction}
               onPress={openAddExerciseModal}
               disabled={!!finishingId}
@@ -888,617 +949,40 @@ export default function ActiveWorkoutSession() {
             </TouchableOpacity>
           </View>
 
-          {selectedExercises.map((exercise) => {
-            const draft = drafts[exercise.id];
-            const isCompleted = completedIds.has(exercise.id);
-            const isFinishing = finishingId === exercise.id;
-            const sets = draft?.sets ?? [];
-
-            return (
-              <View
-                key={exercise.id}
-                style={[
-                  styles.exerciseCard,
-                  isCompleted && {
-                    opacity: 0.6,
-                    borderWidth: 2,
-                    borderColor: theme.income,
-                  },
-                ]}
-              >
-                <View style={styles.exerciseHeader}>
-                  <View style={{ flex: 1 }}>
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 8,
-                      }}
-                    >
-                      <Text style={styles.exerciseName}>
-                        {getExerciseName(exercise)}
-                      </Text>
-                      {isCompleted && (
-                        <MaterialIcons
-                          name="check-circle"
-                          size={18}
-                          color={theme.income}
-                        />
-                      )}
-                    </View>
-                    <Text style={styles.exerciseMeta}>
-                      {displaySplit(exercise.split)} |{" "}
-                      {exercise.muscle_group ?? "-"} |{" "}
-                      {exercise.target_rep_range ?? "-"}
-                    </Text>
-                    {(() => {
-                      const hint = getLastSessionHint(exercise);
-                      if (!hint) return null;
-                      return (
-                        <Text
-                          style={{
-                            color: theme.textLight,
-                            fontSize: 11,
-                            fontWeight: "600",
-                            marginTop: 4,
-                          }}
-                          numberOfLines={1}
-                        >
-                          Last session: {hint}
-                        </Text>
-                      );
-                    })()}
-                  </View>
-                  {!isCompleted && (
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        gap: 6,
-                        alignItems: "flex-start",
-                      }}
-                    >
-                      <TouchableOpacity
-                        onPress={() => openSwapModal(exercise.id)}
-                        style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 8,
-                          backgroundColor: theme.primary + "15",
-                          justifyContent: "center",
-                          alignItems: "center",
-                        }}
-                      >
-                        <MaterialIcons
-                          name="swap-horiz"
-                          size={18}
-                          color={theme.primary}
-                        />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => removeExercise(exercise.id)}
-                        style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 8,
-                          backgroundColor: theme.expense + "15",
-                          justifyContent: "center",
-                          alignItems: "center",
-                        }}
-                      >
-                        <MaterialIcons
-                          name="delete-outline"
-                          size={18}
-                          color={theme.expense}
-                        />
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
-
-                {!isCompleted && (
-                  <View style={styles.subsectionHeader}>
-                    <Text style={styles.subsectionTitle}>Sets</Text>
-                    <TouchableOpacity
-                      style={styles.inlineAction}
-                      onPress={() => addDraftSet(exercise.id)}
-                      disabled={isFinishing}
-                    >
-                      <MaterialIcons
-                        name="add"
-                        size={16}
-                        color={isFinishing ? theme.textLight : theme.primary}
-                      />
-                      <Text
-                        style={[
-                          styles.inlineActionText,
-                          isFinishing && { color: theme.textLight },
-                        ]}
-                      >
-                        Add set
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                {sets.length > 0 && (
-                  <KeyboardAvoidingView
-                    behavior={Platform.OS === "ios" ? "padding" : "height"}
-                    style={{ flex: 1 }}
-                  >
-                    <View
-                      style={{
-                        borderWidth: 1.5,
-                        borderColor: theme.border,
-                        borderRadius: 16,
-                        backgroundColor: theme.background,
-                        overflow: "hidden",
-                        marginTop: 10,
-                      }}
-                    >
-                      {/* Table Header */}
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          backgroundColor: theme.card,
-                          borderBottomWidth: 1.5,
-                          borderBottomColor: theme.border,
-                          paddingVertical: 8,
-                          paddingHorizontal: 8,
-                        }}
-                      >
-                        <Text
-                          style={{
-                            flex: 1,
-                            fontSize: 10,
-                            fontWeight: "800",
-                            fontFamily: "PlusJakartaSans_800ExtraBold",
-                            color: theme.textLight,
-                            textAlign: "center",
-                          }}
-                        >
-                          SET
-                        </Text>
-                        <Text
-                          style={{
-                            flex: 2.2,
-                            fontSize: 10,
-                            fontWeight: "800",
-                            fontFamily: "PlusJakartaSans_800ExtraBold",
-                            color: theme.textLight,
-                            textAlign: "center",
-                          }}
-                        >
-                          WEIGHT
-                        </Text>
-                        <Text
-                          style={{
-                            flex: 1.8,
-                            fontSize: 10,
-                            fontWeight: "800",
-                            fontFamily: "PlusJakartaSans_800ExtraBold",
-                            color: theme.textLight,
-                            textAlign: "center",
-                          }}
-                        >
-                          REPS
-                        </Text>
-                        <Text
-                          style={{
-                            flex: 1.8,
-                            fontSize: 10,
-                            fontWeight: "800",
-                            fontFamily: "PlusJakartaSans_800ExtraBold",
-                            color: theme.textLight,
-                            textAlign: "center",
-                          }}
-                        >
-                          RIR
-                        </Text>
-                        <Text
-                          style={{
-                            flex: 1.6,
-                            fontSize: 10,
-                            fontWeight: "800",
-                            fontFamily: "PlusJakartaSans_800ExtraBold",
-                            color: theme.textLight,
-                            textAlign: "center",
-                          }}
-                        >
-                          ACT
-                        </Text>
-                      </View>
-
-                      {/* Table Rows */}
-                      {sets.map((set, idx) => (
-                        <View
-                          key={set.localId}
-                          style={{
-                            flexDirection: "row",
-                            alignItems: "center",
-                            borderBottomWidth: idx === sets.length - 1 ? 0 : 1,
-                            borderBottomColor: theme.border + "50",
-                            paddingVertical: 6,
-                            paddingHorizontal: 8,
-                          }}
-                        >
-                          <Text
-                            style={{
-                              flex: 1,
-                              fontSize: 13,
-                              fontWeight: "900",
-                              fontFamily: "PlusJakartaSans_800ExtraBold",
-                              color: theme.textBlack,
-                              textAlign: "center",
-                            }}
-                          >
-                            {set.set_number}
-                          </Text>
-
-                          {isCompleted ? (
-                            <>
-                              <Text
-                                style={{
-                                  flex: 2.2,
-                                  fontSize: 13,
-                                  fontWeight: "700",
-                                  color: theme.textBlack,
-                                  textAlign: "center",
-                                }}
-                              >
-                                {set.weight}kg
-                              </Text>
-                              <Text
-                                style={{
-                                  flex: 1.8,
-                                  fontSize: 13,
-                                  fontWeight: "700",
-                                  color: theme.textBlack,
-                                  textAlign: "center",
-                                }}
-                              >
-                                {set.reps}
-                              </Text>
-                              <Text
-                                style={{
-                                  flex: 1.8,
-                                  fontSize: 13,
-                                  fontWeight: "700",
-                                  color: theme.textBlack,
-                                  textAlign: "center",
-                                }}
-                              >
-                                {set.rir}
-                              </Text>
-                              <View style={{ flex: 1.6 }} />
-                            </>
-                          ) : (
-                            <>
-                              {/* Weight Input */}
-                              <View style={{ flex: 2.2, paddingHorizontal: 4 }}>
-                                <TextInput
-                                  style={{
-                                    backgroundColor: theme.card,
-                                    borderRadius: 8,
-                                    borderWidth: 1,
-                                    borderColor: theme.border,
-                                    color: theme.textBlack,
-                                    fontSize: 13,
-                                    fontWeight: "600",
-                                    paddingVertical: 6,
-                                    textAlign: "center",
-                                  }}
-                                  keyboardType="numeric"
-                                  value={set.weight}
-                                  onChangeText={(v) =>
-                                    updateDraftSet(
-                                      exercise.id,
-                                      set.localId,
-                                      "weight",
-                                      v,
-                                    )
-                                  }
-                                />
-                              </View>
-
-                              {/* Reps Input */}
-                              <View style={{ flex: 1.8, paddingHorizontal: 4 }}>
-                                <TextInput
-                                  style={{
-                                    backgroundColor: theme.card,
-                                    borderRadius: 8,
-                                    borderWidth: 1,
-                                    borderColor: theme.border,
-                                    color: theme.textBlack,
-                                    fontSize: 13,
-                                    fontWeight: "600",
-                                    paddingVertical: 6,
-                                    textAlign: "center",
-                                  }}
-                                  keyboardType="numeric"
-                                  value={set.reps}
-                                  onChangeText={(v) =>
-                                    updateDraftSet(
-                                      exercise.id,
-                                      set.localId,
-                                      "reps",
-                                      v,
-                                    )
-                                  }
-                                />
-                              </View>
-
-                              {/* RIR Input */}
-                              <View style={{ flex: 1.8, paddingHorizontal: 4 }}>
-                                <TextInput
-                                  style={{
-                                    backgroundColor: theme.card,
-                                    borderRadius: 8,
-                                    borderWidth: 1,
-                                    borderColor: theme.border,
-                                    color: theme.textBlack,
-                                    fontSize: 13,
-                                    fontWeight: "600",
-                                    paddingVertical: 6,
-                                    textAlign: "center",
-                                  }}
-                                  keyboardType="numeric"
-                                  value={set.rir}
-                                  onChangeText={(v) =>
-                                    updateDraftSet(
-                                      exercise.id,
-                                      set.localId,
-                                      "rir",
-                                      v,
-                                    )
-                                  }
-                                />
-                              </View>
-
-                              {/* Actions */}
-                              <View
-                                style={{
-                                  flex: 1.6,
-                                  flexDirection: "row",
-                                  justifyContent: "center",
-                                  alignItems: "center",
-                                  gap: 6,
-                                }}
-                              >
-                                <TouchableOpacity
-                                  onPress={() => startRestTimer(90)}
-                                  style={{
-                                    width: 26,
-                                    height: 26,
-                                    borderRadius: 6,
-                                    backgroundColor: theme.primary + "12",
-                                    justifyContent: "center",
-                                    alignItems: "center",
-                                  }}
-                                >
-                                  <MaterialCommunityIcons
-                                    name="timer-play-outline"
-                                    size={15}
-                                    color={theme.primary}
-                                  />
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                  onPress={() =>
-                                    deleteDraftSet(exercise.id, set.localId)
-                                  }
-                                  disabled={deletingSetKey === set.localId}
-                                  style={{
-                                    width: 26,
-                                    height: 26,
-                                    borderRadius: 6,
-                                    backgroundColor: theme.expense + "12",
-                                    justifyContent: "center",
-                                    alignItems: "center",
-                                  }}
-                                >
-                                  {deletingSetKey === set.localId ? (
-                                    <ActivityIndicator
-                                      size="small"
-                                      color={theme.expense}
-                                    />
-                                  ) : (
-                                    <MaterialIcons
-                                      name="delete-outline"
-                                      size={15}
-                                      color={theme.expense}
-                                    />
-                                  )}
-                                </TouchableOpacity>
-                              </View>
-                            </>
-                          )}
-                        </View>
-                      ))}
-                    </View>
-                  </KeyboardAvoidingView>
-                )}
-
-                {!isCompleted && (
-                  <TouchableOpacity
-                    style={[
-                      styles.saveSetButton,
-                      { opacity: isFinishing ? 0.6 : 1 },
-                    ]}
-                    onPress={() => finishExercise(exercise)}
-                    disabled={isFinishing}
-                  >
-                    {isFinishing ? (
-                      <ActivityIndicator size="small" color={theme.white} />
-                    ) : (
-                      <Text style={styles.saveSetButtonText}>
-                        Finish Exercise
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                )}
-              </View>
-            );
-          })}
+          <ActiveWorkoutExerciseList
+            exercises={selectedExercises}
+            drafts={drafts}
+            completedIds={completedIds}
+            finishingId={finishingId}
+            groupsByExercise={activeGroupByExercise}
+            measurementSystem={measurementSystem}
+            theme={theme}
+            actions={exerciseListActions}
+          />
 
           {/* Bottom spacer */}
           <View style={{ height: 20 }} />
         </ScrollView>
 
-        {/* Floating Rest Timer Overlay */}
-        {isRestActive && (
-          <LinearGradient
-            colors={
-              restTime === 0
-                ? [theme.income + "F2", theme.income]
-                : [theme.primary + "E6", theme.primary + "FF"]
-            }
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={{
-              marginHorizontal: 20,
-              marginBottom: 10,
-              borderRadius: 16,
-              paddingVertical: 12,
-              paddingHorizontal: 16,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              shadowColor: theme.shadow,
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.25,
-              shadowRadius: 10,
-              elevation: 8,
-              borderWidth: 1,
-              borderColor: restTime === 0 ? theme.income + "30" : theme.primary + "30",
-            }}
-          >
-            {/* Left section: Icon and Time */}
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-              <MaterialCommunityIcons
-                name={
-                  restTime === 0
-                    ? "bell-ring-outline"
-                    : isRestPaused
-                      ? "timer-off-outline"
-                      : "timer-sand"
-                }
-                size={26}
-                color={theme.background}
-              />
-              <View>
-                <Text
-                  style={{
-                    color: theme.background,
-                    fontSize: 10,
-                    fontWeight: "800",
-                    textTransform: "uppercase",
-                    letterSpacing: 0.8,
-                    opacity: 0.9,
-                  }}
-                >
-                  {restTime === 0 ? "Rest Finished" : "Rest Timer"}
-                </Text>
-                <Text
-                  style={{
-                    color: theme.background,
-                    fontSize: 22,
-                    fontWeight: "900",
-                    letterSpacing: -0.5,
-                    marginTop: 1,
-                  }}
-                >
-                  {restTime === 0 ? "Go Lift!" : formatRestTime(restTime)}
-                </Text>
-              </View>
-            </View>
+        <RestTimerOverlay
+          active={restTimer.active}
+          remainingSeconds={restTimer.remainingSeconds}
+          paused={restTimer.paused}
+          initialDuration={restTimer.initialDuration}
+          onAdjust={restTimer.adjust}
+          onTogglePause={restTimer.togglePause}
+          onRestart={restTimer.restart}
+          onDismiss={restTimer.dismiss}
+          theme={theme}
+        />
 
-            {/* Middle section: Action Controls */}
-            {restTime > 0 ? (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <TouchableOpacity
-                  onPress={() => adjustRestTime(-30)}
-                  style={{
-                    paddingHorizontal: 10,
-                    paddingVertical: 6,
-                    borderRadius: 8,
-                    backgroundColor: theme.background + "20",
-                    justifyContent: "center",
-                    alignItems: "center",
-                  }}
-                >
-                  <Text style={{ color: theme.background, fontSize: 11, fontWeight: "900" }}>-30s</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => adjustRestTime(30)}
-                  style={{
-                    paddingHorizontal: 10,
-                    paddingVertical: 6,
-                    borderRadius: 8,
-                    backgroundColor: theme.background + "20",
-                    justifyContent: "center",
-                    alignItems: "center",
-                  }}
-                >
-                  <Text style={{ color: theme.background, fontSize: 11, fontWeight: "900" }}>+30s</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <TouchableOpacity
-                  onPress={() => startRestTimer(initialRestDuration)}
-                  style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 6,
-                    borderRadius: 8,
-                    backgroundColor: theme.background,
-                    justifyContent: "center",
-                    alignItems: "center",
-                    flexDirection: "row",
-                    gap: 4,
-                  }}
-                >
-                  <MaterialIcons name="replay" size={14} color={theme.income} />
-                  <Text style={{ color: theme.income, fontSize: 11, fontWeight: "900" }}>Restart</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* Right section: Play/Pause/Dismiss */}
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              {restTime > 0 && (
-                <TouchableOpacity
-                  onPress={toggleRestPause}
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 10,
-                    backgroundColor: theme.background,
-                    justifyContent: "center",
-                    alignItems: "center",
-                  }}
-                >
-                  <MaterialCommunityIcons
-                    name={isRestPaused ? "play" : "pause"}
-                    size={20}
-                    color={theme.primary}
-                  />
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                onPress={stopRestTimer}
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 10,
-                  backgroundColor: theme.background + "20",
-                  justifyContent: "center",
-                  alignItems: "center",
-                }}
-              >
-                <MaterialCommunityIcons name="close" size={20} color={theme.background} />
-              </TouchableOpacity>
-            </View>
-          </LinearGradient>
-        )}
+        {removedSet ? (
+          <SetUndoSnackbar
+            setNumber={removedSet.set.set_number}
+            onUndo={undoDeleteDraftSet}
+            theme={theme}
+          />
+        ) : null}
 
         {/* Bottom bar */}
         <View
@@ -1510,128 +994,36 @@ export default function ActiveWorkoutSession() {
             borderTopColor: theme.border,
           }}
         >
-          <TouchableOpacity
-            style={[styles.primaryButton, { width: "100%" }]}
+          <AppButton
+            label={
+              completedIds.size === selectedExercises.length
+                ? "All Done"
+                : `Save All (${completedIds.size}/${selectedExercises.length} done)`
+            }
+            accessibilityLabel={
+              completedIds.size === selectedExercises.length
+                ? "Finish workout"
+                : `Save workout, ${completedIds.size} of ${selectedExercises.length} exercises completed`
+            }
+            loading={!!finishingId}
             onPress={finishAll}
-            disabled={!!finishingId}
-          >
-            {finishingId ? (
-              <ActivityIndicator color={theme.white} />
-            ) : (
-              <Text style={styles.primaryButtonText}>
-                {completedIds.size === selectedExercises.length
-                  ? "All Done"
-                  : `Save All (${completedIds.size}/${selectedExercises.length} done)`}
-              </Text>
-            )}
-          </TouchableOpacity>
+            style={{ width: "100%" }}
+          />
         </View>
 
-        {/* Swap Exercise Modal */}
-        <Modal
-          visible={showSwapModal}
-          animationType="slide"
-          transparent
-          onRequestClose={closeExercisePicker}
-        >
-          <View style={styles.modalBackdrop}>
-            <View style={[styles.modalCard, { maxHeight: "70%" }]}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Swap Exercise</Text>
-                <TouchableOpacity onPress={closeExercisePicker}>
-                  <MaterialIcons
-                    name="close"
-                    size={22}
-                    color={theme.textBlack}
-                  />
-                </TouchableOpacity>
-              </View>
-              <TextInput
-                style={styles.input}
-                placeholder="Search exercises..."
-                placeholderTextColor={theme.textLight}
-                value={exerciseSearch}
-                onChangeText={setExerciseSearch}
-              />
-              <ScrollView contentContainerStyle={{ gap: 8 }}>
-                {availableSessionExercises.length === 0 ? (
-                  <Text style={styles.emptyText}>
-                    No other exercises available.
-                  </Text>
-                ) : (
-                  availableSessionExercises.map((ex) => (
-                    <TouchableOpacity
-                      key={ex.id}
-                      style={styles.listCard}
-                      onPress={() => swapExercise(ex.id)}
-                    >
-                      <Text style={styles.listTitle}>
-                        {getExerciseName(ex)}
-                      </Text>
-                      <Text style={styles.listMeta}>
-                        {displaySplit(ex.split)} | {ex.muscle_group ?? "-"} |{" "}
-                        {ex.target_rep_range ?? "-"}
-                      </Text>
-                    </TouchableOpacity>
-                  ))
-                )}
-              </ScrollView>
-            </View>
-          </View>
-        </Modal>
-
-        {/* Add Exercise Modal */}
-        <Modal
-          visible={showAddExerciseModal}
-          animationType="slide"
-          transparent
-          onRequestClose={closeExercisePicker}
-        >
-          <View style={styles.modalBackdrop}>
-            <View style={[styles.modalCard, { maxHeight: "70%" }]}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Add Exercise</Text>
-                <TouchableOpacity onPress={closeExercisePicker}>
-                  <MaterialIcons
-                    name="close"
-                    size={22}
-                    color={theme.textBlack}
-                  />
-                </TouchableOpacity>
-              </View>
-              <TextInput
-                style={styles.input}
-                placeholder="Search exercises..."
-                placeholderTextColor={theme.textLight}
-                value={exerciseSearch}
-                onChangeText={setExerciseSearch}
-              />
-              <ScrollView contentContainerStyle={{ gap: 8 }}>
-                {availableSessionExercises.length === 0 ? (
-                  <Text style={styles.emptyText}>
-                    No more exercises available.
-                  </Text>
-                ) : (
-                  availableSessionExercises.map((ex) => (
-                    <TouchableOpacity
-                      key={ex.id}
-                      style={styles.listCard}
-                      onPress={() => addExerciseToSession(ex.id)}
-                    >
-                      <Text style={styles.listTitle}>
-                        {getExerciseName(ex)}
-                      </Text>
-                      <Text style={styles.listMeta}>
-                        {displaySplit(ex.split)} | {ex.muscle_group ?? "-"} |{" "}
-                        {ex.target_rep_range ?? "-"}
-                      </Text>
-                    </TouchableOpacity>
-                  ))
-                )}
-              </ScrollView>
-            </View>
-          </View>
-        </Modal>
+        {/* One picker: the two modes are mutually exclusive, so they were
+            always two instances of the same stateless component where at most
+            one could be visible. */}
+        <ActiveWorkoutExercisePicker
+          visible={picker.visible}
+          mode={picker.mode}
+          exercises={availableSessionExercises}
+          search={exerciseSearch}
+          onSearchChange={setExerciseSearch}
+          onSelect={picker.mode === "swap" ? swapExercise : addExerciseToSession}
+          onClose={closeExercisePicker}
+          theme={theme}
+        />
       </SafeAreaView>
     </SafeAreaProvider>
   );

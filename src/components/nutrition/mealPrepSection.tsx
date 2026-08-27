@@ -1,9 +1,19 @@
-import { gymStyles } from "@/assets/styles/gym.style";
+import { gymStyles, type GymStyles } from "@/assets/styles/gym.style";
+import {
+  ActionStatus,
+  type ActionFeedback,
+} from "@/components/base/action-status";
+import { AppButton } from "@/components/base/app-button";
+import { ModalHeader } from "@/components/base/modal-header";
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
+import { MealPrepDetailSheet } from "@/components/nutrition/meal-prep-detail-sheet";
 import { ThemeType } from "@/constants/colors";
 import { useAlert } from "@/context/AlertContext";
 import { useDiaryContext } from "@/context/DairyContext";
 import { useTheme } from "@/context/ThemeContext";
+import { FONT_FAMILIES } from "@/constants/typography";
+import { toApiError } from "@/utils/apiError";
+import { isOfflineQueuedResponse } from "@/utils/offline-response";
 import {
   useCreateMealPrep,
   useDeleteMealPrep,
@@ -14,12 +24,9 @@ import {
 import {
   MealType,
 } from "@/services/foodDiaryService";
-import {
-  MealPrepItemRequest,
-  MealPrepResponse,
-} from "@/services/mealPrepService";
+import { MealPrepResponse } from "@/services/mealPrepService";
 import { MaterialIcons } from "@expo/vector-icons";
-import { useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -29,8 +36,8 @@ import {
   View,
 } from "react-native";
 import { FoodSearchModal, SelectedFoodResult } from "./foodSearchModal";
-
-type DraftItem = MealPrepItemRequest & { key: string };
+import { DraftItemCard, type DraftItem } from "./draft-item-card";
+import { MacroPill } from "./macro-pill";
 
 const ACCENT_COLORS = [
   "#378ADD",
@@ -61,99 +68,42 @@ const formatDateForApi = (d: Date) =>
     String(d.getDate()).padStart(2, "0"),
   ].join("-");
 
-function MacroPill({
-  label,
-  value,
-  unit,
-  bg,
-  color,
-}: {
-  label: string;
-  value?: number;
-  unit: string;
-  bg: string;
-  color: string;
-}) {
-  return (
-    <View
-      style={{
-        backgroundColor: bg,
-        borderRadius: 20,
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-      }}
-    >
-      <Text style={{ fontSize: 11, fontWeight: "700", color }}>
-        {label}
-        {label ? " " : ""}
-        {value?.toFixed(0) ?? "0"}
-        {unit}
-      </Text>
-    </View>
-  );
-}
-
-function PrepRow({
-  prep,
-  index,
-  onPress,
-  theme,
-}: {
+type PrepRowProps = {
   prep: MealPrepResponse;
   index: number;
-  onPress: () => void;
+  onPress: (prep: MealPrepResponse, index: number) => void;
   theme: ThemeType;
-}) {
+  styles: GymStyles;
+};
+
+/**
+ * Memoized: the meal prep list re-renders whenever the section's own state
+ * changes (form open/closed, action feedback), and each row is otherwise
+ * static once its prep data is loaded.
+ */
+function PrepRowComponent({ prep, index, onPress, theme, styles }: PrepRowProps) {
   const accent = ACCENT_COLORS[index % ACCENT_COLORS.length];
   return (
     <TouchableOpacity
-      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Open meal prep ${prep.name}`}
+      onPress={() => onPress(prep, index)}
       activeOpacity={0.75}
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        paddingVertical: 12,
-        paddingHorizontal: 14,
-        gap: 12,
-        borderBottomWidth: 0.5,
-        borderBottomColor: theme.border ?? "#eee",
-      }}
+      style={styles.prepRow}
     >
-      <View
-        style={{
-          width: 4,
-          height: 36,
-          borderRadius: 3,
-          backgroundColor: accent,
-          flexShrink: 0,
-        }}
-      />
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text
-          style={{
-            fontSize: 14,
-            fontWeight: "600",
-            color: theme.textBlack,
-            marginBottom: 4,
-          }}
-          numberOfLines={1}
-        >
+      <View style={[styles.prepRowAccent, { backgroundColor: accent }]} />
+      <View style={styles.prepRowBody}>
+        <Text style={styles.prepRowName} numberOfLines={1}>
           {prep.name}
         </Text>
-        <View
-          style={{
-            flexDirection: "row",
-            gap: 5,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
+        <View style={styles.prepRowMacroRow}>
           <MacroPill
             label=""
             value={prep.total_calories}
             unit=" kcal"
             bg="#FAEEDA"
             color="#633806"
+            styles={styles}
           />
           <MacroPill
             label="P"
@@ -161,8 +111,9 @@ function PrepRow({
             unit="g"
             bg="#E6F1FB"
             color="#0C447C"
+            styles={styles}
           />
-          <Text style={{ fontSize: 11, color: theme.textLight }}>
+          <Text style={styles.prepRowFoodCount}>
             {prep.items.length} food{prep.items.length !== 1 ? "s" : ""}
           </Text>
         </View>
@@ -172,252 +123,13 @@ function PrepRow({
   );
 }
 
-function PrepDetailSheet({
-  prep,
-  index,
-  onClose,
-  onEdit,
-  onDelete,
-  onLog,
-  theme,
-  style,
-}: {
-  prep: MealPrepResponse;
-  index: number;
-  onClose: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-  onLog: () => void;
-  theme: ThemeType;
-  style: any;
-}) {
-  const accent = ACCENT_COLORS[index % ACCENT_COLORS.length];
-  const [showAllItems, setShowAllItems] = useState(false);
-  const PREVIEW_COUNT = 3;
-  const visibleItems = showAllItems
-    ? prep.items
-    : prep.items.slice(0, PREVIEW_COUNT);
-  const hasMore = prep.items.length > PREVIEW_COUNT;
-  return (
-    <View
-      style={[
-        style.modalCard,
-        { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 },
-      ]}
-    >
-      <View style={{ alignItems: "center", marginBottom: 12 }}>
-        <View
-          style={{
-            width: 36,
-            height: 4,
-            borderRadius: 2,
-            backgroundColor: theme.border ?? "#ddd",
-          }}
-        />
-      </View>
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "flex-start",
-          marginBottom: 12,
-        }}
-      >
-        <View
-          style={{
-            width: 4,
-            borderRadius: 2,
-            backgroundColor: accent,
-            alignSelf: "stretch",
-            marginRight: 10,
-          }}
-        />
-        <View style={{ flex: 1 }}>
-          <Text style={[style.exerciseName, { marginBottom: 2 }]}>
-            {prep.name}
-          </Text>
-          {!!prep.description && (
-            <Text style={style.listMeta}>{prep.description}</Text>
-          )}
-          <View
-            style={{
-              flexDirection: "row",
-              gap: 5,
-              marginTop: 6,
-              flexWrap: "wrap",
-            }}
-          >
-            <MacroPill
-              label=""
-              value={prep.total_calories}
-              unit=" kcal"
-              bg="#FAEEDA"
-              color="#633806"
-            />
-            <MacroPill
-              label="P"
-              value={prep.total_protein}
-              unit="g"
-              bg="#E6F1FB"
-              color="#0C447C"
-            />
-            <MacroPill
-              label="C"
-              value={prep.total_carbohydrate}
-              unit="g"
-              bg="#EAF3DE"
-              color="#27500A"
-            />
-            <MacroPill
-              label="F"
-              value={prep.total_fat}
-              unit="g"
-              bg="#FAECE7"
-              color="#712B13"
-            />
-          </View>
-        </View>
-        <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
-          <MaterialIcons name="close" size={20} color={theme.textLight} />
-        </TouchableOpacity>
-      </View>
-      <View
-        style={{
-          height: 0.5,
-          backgroundColor: theme.border ?? "#eee",
-          marginBottom: 12,
-        }}
-      />
-      <View>
-        {visibleItems.map((item, i) => (
-          <View
-            key={item.id}
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              paddingVertical: 8,
-              borderBottomWidth: i < visibleItems.length - 1 ? 0.5 : 0,
-              borderBottomColor: theme.border ?? "#eee",
-              gap: 10,
-            }}
-          >
-            <View
-              style={{
-                width: 4,
-                height: 32,
-                borderRadius: 2,
-                backgroundColor: ACCENT_COLORS[i % ACCENT_COLORS.length],
-                flexShrink: 0,
-              }}
-            />
-            <View style={{ flex: 1 }}>
-              <Text
-                style={{
-                  fontSize: 13,
-                  fontWeight: "600",
-                  color: theme.textBlack,
-                  marginBottom: 2,
-                }}
-                numberOfLines={1}
-              >
-                {item.food_name}
-              </Text>
-              <Text style={{ fontSize: 11, color: theme.textLight }}>
-                {item.gramation?.toFixed(0)}g · {item.calories?.toFixed(0)} kcal
-                · P {item.protein?.toFixed(1)}g · C{" "}
-                {item.carbohydrate?.toFixed(1)}g · F {item.fat?.toFixed(1)}g
-              </Text>
-            </View>
-          </View>
-        ))}
-        {hasMore && (
-          <TouchableOpacity
-            onPress={() => setShowAllItems(!showAllItems)}
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 4,
-              paddingVertical: 10,
-            }}
-          >
-            <MaterialIcons
-              name={showAllItems ? "expand-less" : "expand-more"}
-              size={16}
-              color={theme.primary}
-            />
-            <Text
-              style={{ fontSize: 12, color: theme.primary, fontWeight: "600" }}
-            >
-              {showAllItems
-                ? "Show less"
-                : `Show all ${prep.items.length} foods`}
-            </Text>
-          </TouchableOpacity>
-        )}
-      </View>
-      <View style={{ flexDirection: "row", gap: 8, marginTop: 16 }}>
-        <TouchableOpacity
-          onPress={onLog}
-          style={{
-            flex: 2,
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 6,
-            backgroundColor: theme.primary,
-            borderRadius: 12,
-            // paddingVertical: 4,
-          }}
-        >
-          <MaterialIcons name="fastfood" size={14} color={theme.textBlack} />
-          <Text
-            style={{ color: theme.textBlack, fontSize: 14, fontWeight: "700" }}
-          >
-            Eat
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={onEdit}
-          style={{
-            flex: 1,
-            alignItems: "center",
-            justifyContent: "center",
-            borderRadius: 12,
-            paddingVertical: 16,
-            borderWidth: 0.5,
-            backgroundColor: theme.background,
-            borderColor: theme.border ?? "#eee",
-          }}
-        >
-          <MaterialIcons name="edit" size={16} color={theme.primary} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={onDelete}
-          style={{
-            flex: 1,
-            alignItems: "center",
-            justifyContent: "center",
-            borderRadius: 12,
-            backgroundColor: theme.background,
-          }}
-        >
-          <MaterialIcons name="delete-outline" size={18} color="#A32D2D" />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
+const PrepRow = memo(PrepRowComponent);
 
 export function MealPrepSection() {
   const { theme } = useTheme();
-  const style = gymStyles(theme);
+  const style = useMemo(() => gymStyles(theme), [theme]);
   const { alert } = useAlert();
   const { selectedDate, setSelectedDate } = useDiaryContext();
-  const foodDiaryCardStyle = {
-    backgroundColor: theme.background,
-    borderColor: theme.primary + "20",
-    borderWidth: 1.5,
-  };
 
   const { data: mealPrepsPage, isLoading } = useMealPreps();
   const mealPreps = mealPrepsPage?.data ?? [];
@@ -440,8 +152,11 @@ export function MealPrepSection() {
   const [editingItemKey, setEditingItemKey] = useState<string | null>(null);
   const [showLogModal, setShowLogModal] = useState(false);
   const [logMealType, setLogMealType] = useState<MealType>("LUNCH");
+  const [actionFeedback, setActionFeedback] = useState<
+    (ActionFeedback & { surface: "section" | "form" | "detail" | "log" }) | null
+  >(null);
 
-  const updateGramation = (key: string, raw: string) => {
+  const updateGramation = useCallback((key: string, raw: string) => {
     const grams = Math.max(parseNumber(raw), 0);
     setDraftItems((prev) =>
       prev.map((item) => {
@@ -460,10 +175,23 @@ export function MealPrepSection() {
         };
       }),
     );
-  };
+  }, []);
 
-  const removeItem = (key: string) =>
-    setDraftItems((prev) => prev.filter((i) => i.key !== key));
+  const removeItem = useCallback(
+    (key: string) =>
+      setDraftItems((prev) => prev.filter((i) => i.key !== key)),
+    [],
+  );
+
+  const editItem = useCallback((key: string) => {
+    setEditingItemKey(key);
+    setShowFoodPicker(true);
+  }, []);
+
+  const handlePrepPress = useCallback((prep: MealPrepResponse, index: number) => {
+    setSelectedPrep(prep);
+    setSelectedIndex(index);
+  }, []);
 
   const draftTotals = useMemo(
     () => ({
@@ -479,6 +207,7 @@ export function MealPrepSection() {
   );
 
   const openCreate = () => {
+    setActionFeedback(null);
     setEditingPrep(null);
     setPrepName("");
     setPrepDesc("");
@@ -491,9 +220,11 @@ export function MealPrepSection() {
     setDraftItems([]);
     setPrepName("");
     setPrepDesc("");
+    setActionFeedback(null);
   };
 
   const openEdit = (prep: MealPrepResponse) => {
+    setActionFeedback(null);
     setSelectedPrep(null);
     setEditingPrep(prep);
     setPrepName(prep.name);
@@ -516,10 +247,24 @@ export function MealPrepSection() {
   };
 
   const savePrep = () => {
-    if (!prepName.trim())
-      return alert("Name required", "Give your meal prep a name.");
-    if (draftItems.length === 0)
-      return alert("Add foods", "Add at least one food item.");
+    if (!prepName.trim()) {
+      setActionFeedback({
+        surface: "form",
+        status: "error",
+        title: "Name required",
+        message: "Give your meal prep a name.",
+      });
+      return;
+    }
+    if (draftItems.length === 0) {
+      setActionFeedback({
+        surface: "form",
+        status: "error",
+        title: "Add foods",
+        message: "Add at least one food item.",
+      });
+      return;
+    }
 
     // Strip the client-side 'key' property to avoid backend Jackson deserialization errors
     const cleanedItems = draftItems.map(({ key, ...item }) => item);
@@ -529,18 +274,46 @@ export function MealPrepSection() {
       description: prepDesc.trim() || undefined,
       items: cleanedItems,
     };
+    setActionFeedback(null);
+    const operation = editingPrep ? "updated" : "created";
+    const handleSuccess = (result: unknown) => {
+      const queued = isOfflineQueuedResponse(result);
+      setFormOpen(false);
+      setEditingPrep(null);
+      setDraftItems([]);
+      setPrepName("");
+      setPrepDesc("");
+      setActionFeedback({
+        surface: "section",
+        status: queued ? "info" : "success",
+        title: queued ? "Meal prep saved locally" : `Meal prep ${operation}`,
+        message: queued
+          ? "The change is waiting in the device synchronization queue."
+          : `Your meal prep was ${operation} successfully.`,
+      });
+    };
+    const handleError = (error: unknown) =>
+      setActionFeedback({
+        surface: "form",
+        status: "error",
+        title: editingPrep
+          ? "Could not update meal prep"
+          : "Could not create meal prep",
+        message: toApiError(error).message,
+      });
+
     if (editingPrep)
       updateMutation.mutate(
         { id: editingPrep.id, dto },
         {
-          onSuccess: closeForm,
-          onError: (e: any) => alert("Update failed", e.message),
+          onSuccess: handleSuccess,
+          onError: handleError,
         },
       );
     else
       createMutation.mutate(dto, {
-        onSuccess: closeForm,
-        onError: (e: any) => alert("Create failed", e.message),
+        onSuccess: handleSuccess,
+        onError: handleError,
       });
   };
 
@@ -551,35 +324,73 @@ export function MealPrepSection() {
         text: "Delete",
         style: "destructive",
         onPress: () => {
-          deleteMutation.mutate(prep.id);
-          setSelectedPrep(null);
+          setActionFeedback(null);
+          deleteMutation.mutate(prep.id, {
+            onSuccess: (result) => {
+              const queued = isOfflineQueuedResponse(result);
+              setSelectedPrep(null);
+              setActionFeedback({
+                surface: "section",
+                status: queued ? "info" : "success",
+                title: queued ? "Deletion saved locally" : "Meal prep deleted",
+                message: queued
+                  ? "The meal prep will be removed after synchronization."
+                  : `"${prep.name}" was removed.`,
+              });
+            },
+            onError: (error) =>
+              setActionFeedback({
+                surface: "detail",
+                status: "error",
+                title: "Could not delete meal prep",
+                message: toApiError(error).message,
+              }),
+          });
         },
       },
     ]);
 
   const logPrep = () => {
     if (!selectedPrep) return;
+    setActionFeedback(null);
+    const prepName = selectedPrep.name;
     logMutation.mutate(
       {
         id: selectedPrep.id,
         dto: { date: selectedDate, meal_type: logMealType },
       },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
+          const queued = isOfflineQueuedResponse(result);
           setShowLogModal(false);
           setSelectedPrep(null);
-          alert("Logged ✓", `"${selectedPrep.name}" added to diary.`);
+          setActionFeedback({
+            surface: "section",
+            status: queued ? "info" : "success",
+            title: queued ? "Meal saved locally" : "Meal prep logged",
+            message: queued
+              ? `"${prepName}" is waiting to synchronize with the diary.`
+              : `"${prepName}" was added to the diary.`,
+          });
         },
-        onError: (e: any) => alert("Log failed", e.message),
+        onError: (error) =>
+          setActionFeedback({
+            surface: "log",
+            status: "error",
+            title: "Could not log meal prep",
+            message: toApiError(error).message,
+          }),
       },
     );
   };
 
   return (
     <>
-      <View style={[style.sectionHeader, { marginBottom: 8 }]}>
+      <View style={[style.sectionHeader, style.mealPrepSectionHeaderSpacing]}>
         <Text style={style.sectionTitle}>Meal Preps</Text>
         <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={formOpen ? "Close meal prep form" : "Create meal prep"}
           style={style.inlineAction}
           onPress={formOpen ? closeForm : openCreate}
         >
@@ -594,141 +405,65 @@ export function MealPrepSection() {
         </TouchableOpacity>
       </View>
 
+      {actionFeedback?.surface === "section" ? (
+        <ActionStatus
+          {...actionFeedback}
+          onDismiss={() => setActionFeedback(null)}
+        />
+      ) : null}
+
       {formOpen && (
-        <ShadowGlowCard style={foodDiaryCardStyle}>
+        <ShadowGlowCard style={style.foodDiaryCard}>
           <Text style={style.sectionTitle}>
             {editingPrep ? `Editing: ${editingPrep.name}` : "New Meal Prep"}
           </Text>
+          {actionFeedback?.surface === "form" ? (
+            <View style={style.inlineFeedbackSpacing}>
+              <ActionStatus
+                {...actionFeedback}
+                onDismiss={() => setActionFeedback(null)}
+              />
+            </View>
+          ) : null}
           <TextInput
-            style={[style.input, { marginTop: 8 }]}
+            style={[style.input, style.inputSpacingTop8]}
             placeholder="Prep name"
             placeholderTextColor={theme.textLight}
             value={prepName}
             onChangeText={setPrepName}
           />
           <TextInput
-            style={[style.input, { marginTop: 8 }]}
+            style={[style.input, style.inputSpacingTop8]}
             placeholder="Description (optional)"
             placeholderTextColor={theme.textLight}
             value={prepDesc}
             onChangeText={setPrepDesc}
           />
           {draftItems.length > 0 && (
-            <View style={{ gap: 8, marginTop: 8 }}>
+            <View style={style.draftItemsList}>
               {draftItems.map((item, index) => (
-                <View
+                <DraftItemCard
                   key={item.key}
-                  style={{
-                    backgroundColor: theme.background,
-                    borderRadius: 12,
-                    borderWidth: 0.5,
-                    borderColor: theme.border ?? "#eee",
-                    borderLeftWidth: 3.5,
-                    borderLeftColor:
-                      ACCENT_COLORS[index % ACCENT_COLORS.length],
-                    padding: 12,
-                  }}
-                >
-                  <View style={{ flexDirection: "row", alignItems: "center" }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={style.listTitle}>{item.food_name}</Text>
-                      <Text style={style.listMeta}>
-                        {item.serving_description}
-                      </Text>
-                    </View>
-                    <TouchableOpacity
-                      onPress={() => {
-                        setEditingItemKey(item.key);
-                        setShowFoodPicker(true);
-                      }}
-                    >
-                      <MaterialIcons
-                        name="edit"
-                        size={17}
-                        color={theme.primary}
-                      />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => removeItem(item.key)}
-                      style={{ marginLeft: 10 }}
-                    >
-                      <MaterialIcons
-                        name="delete-outline"
-                        size={17}
-                        color="#A32D2D"
-                      />
-                    </TouchableOpacity>
-                  </View>
-                  <TextInput
-                    style={[style.input, { marginTop: 8 }]}
-                    keyboardType="decimal-pad"
-                    placeholder="Gramation (g)"
-                    placeholderTextColor={theme.textLight}
-                    value={String(item.gramation)}
-                    onChangeText={(v) => updateGramation(item.key, v)}
-                  />
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      gap: 5,
-                      marginTop: 6,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <MacroPill
-                      label=""
-                      value={parseNumber(item.calories)}
-                      unit=" kcal"
-                      bg="#FAEEDA"
-                      color="#633806"
-                    />
-                    <MacroPill
-                      label="P"
-                      value={parseNumber(item.protein)}
-                      unit="g"
-                      bg="#E6F1FB"
-                      color="#0C447C"
-                    />
-                    <MacroPill
-                      label="C"
-                      value={parseNumber(item.carbohydrate)}
-                      unit="g"
-                      bg="#EAF3DE"
-                      color="#27500A"
-                    />
-                    <MacroPill
-                      label="F"
-                      value={parseNumber(item.fat)}
-                      unit="g"
-                      bg="#FAECE7"
-                      color="#712B13"
-                    />
-                  </View>
-                </View>
+                  item={item}
+                  accentColor={ACCENT_COLORS[index % ACCENT_COLORS.length]}
+                  theme={theme}
+                  styles={style}
+                  onEdit={editItem}
+                  onRemove={removeItem}
+                  onChangeGramation={updateGramation}
+                />
               ))}
             </View>
           )}
           {draftItems.length > 0 && (
-            <View
-              style={{
-                flexDirection: "row",
-                gap: 5,
-                justifyContent: "center",
-                flexWrap: "wrap",
-                marginTop: 10,
-                padding: 10,
-                backgroundColor: theme.card,
-                borderRadius: 10,
-                borderWidth: 0.5,
-                borderColor: theme.border ?? "#eee",
-              }}
-            >
+            <View style={style.draftTotalsRow}>
               <MacroPill
                 label=""
                 value={draftTotals.calories}
                 unit=" kcal"
                 bg="#FAEEDA"
                 color="#633806"
+                styles={style}
               />
               <MacroPill
                 label="P"
@@ -736,6 +471,7 @@ export function MealPrepSection() {
                 unit="g"
                 bg="#E6F1FB"
                 color="#0C447C"
+                styles={style}
               />
               <MacroPill
                 label="C"
@@ -743,6 +479,7 @@ export function MealPrepSection() {
                 unit="g"
                 bg="#EAF3DE"
                 color="#27500A"
+                styles={style}
               />
               <MacroPill
                 label="F"
@@ -750,11 +487,12 @@ export function MealPrepSection() {
                 unit="g"
                 bg="#FAECE7"
                 color="#712B13"
+                styles={style}
               />
             </View>
           )}
           <TouchableOpacity
-            style={[style.inlineAction, { marginTop: 10 }]}
+            style={[style.inlineAction, style.addFoodButtonSpacing]}
             onPress={() => {
               setEditingItemKey(null);
               setShowFoodPicker(true);
@@ -763,49 +501,37 @@ export function MealPrepSection() {
             <MaterialIcons name="search" size={16} color={theme.primary} />
             <Text style={style.inlineActionText}>Add Food</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[style.primaryButton, { marginTop: 12 }]}
+          <AppButton
+            label={editingPrep ? "Save Changes" : "Create Meal Prep"}
+            loading={createMutation.isPending || updateMutation.isPending}
             onPress={savePrep}
-            disabled={createMutation.isPending || updateMutation.isPending}
-          >
-            {createMutation.isPending || updateMutation.isPending ? (
-              <ActivityIndicator color={theme.white} />
-            ) : (
-              <Text style={style.primaryButtonText}>
-                {editingPrep ? "Save Changes" : "Create Meal Prep"}
-              </Text>
-            )}
-          </TouchableOpacity>
+            style={style.savePrepButtonSpacing}
+          />
         </ShadowGlowCard>
       )}
 
       {isLoading ? (
-        <ActivityIndicator color={theme.primary} style={{ marginTop: 16 }} />
+        <ActivityIndicator
+          color={theme.primary}
+          style={style.loadingIndicatorSpacing}
+        />
       ) : mealPreps.length === 0 && !formOpen ? (
-        <ShadowGlowCard style={foodDiaryCardStyle}>
+        <ShadowGlowCard style={style.foodDiaryCard}>
           <Text style={style.subEmptyText}>
             No meal preps yet. Create one to save your go-to meals.
           </Text>
         </ShadowGlowCard>
       ) : (
         !formOpen && (
-          <ShadowGlowCard
-            style={{
-              ...foodDiaryCardStyle,
-              padding: 0,
-              overflow: "hidden",
-            }}
-          >
+          <ShadowGlowCard style={style.foodDiaryCardFlush}>
             {mealPreps.map((prep, index) => (
               <PrepRow
                 key={prep.id}
                 prep={prep}
                 index={index}
                 theme={theme}
-                onPress={() => {
-                  setSelectedPrep(prep);
-                  setSelectedIndex(index);
-                }}
+                styles={style}
+                onPress={handlePrepPress}
               />
             ))}
           </ShadowGlowCard>
@@ -819,23 +545,30 @@ export function MealPrepSection() {
         onRequestClose={() => setSelectedPrep(null)}
       >
         <TouchableOpacity
-          style={[style.modalBackdrop, { justifyContent: "flex-end" }]}
+          style={[style.modalBackdrop, style.modalBackdropBottom]}
           activeOpacity={1}
           onPress={() => setSelectedPrep(null)}
         >
-          <View style={{ width: "100%" }}>
+          <View style={style.fullWidth}>
             {selectedPrep && (
-              <PrepDetailSheet
+              <MealPrepDetailSheet
                 prep={selectedPrep}
                 index={selectedIndex}
                 onClose={() => setSelectedPrep(null)}
                 onEdit={() => openEdit(selectedPrep)}
                 onDelete={() => confirmDelete(selectedPrep)}
                 onLog={() => {
+                  setActionFeedback(null);
                   setShowLogModal(true);
                   setLogMealType("LUNCH");
                   setSelectedDate(formatDateForApi(new Date()));
                 }}
+                feedback={
+                  actionFeedback?.surface === "detail"
+                    ? actionFeedback
+                    : undefined
+                }
+                onDismissFeedback={() => setActionFeedback(null)}
                 theme={theme}
                 style={style}
               />
@@ -848,50 +581,33 @@ export function MealPrepSection() {
         visible={showLogModal}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowLogModal(false)}
+        onRequestClose={() => {
+          setShowLogModal(false);
+          setActionFeedback(null);
+        }}
       >
         <View style={style.modalBackdrop}>
-          <View style={[style.modalCard, { paddingBottom: 24 }]}>
-            <View style={style.modalHeader}>
-              <Text
-                style={[
-                  style.modalTitle,
-                  { fontFamily: "PlusJakartaSans_800ExtraBold" },
-                ]}
-              >
-                Log to Diary
-              </Text>
-              <TouchableOpacity
-                onPress={() => setShowLogModal(false)}
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 16,
-                  backgroundColor: theme.background,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderWidth: 0.5,
-                  borderColor: theme.border ?? "#eee",
-                }}
-              >
-                <MaterialIcons name="close" size={18} color={theme.textBlack} />
-              </TouchableOpacity>
-            </View>
-            <Text
-              style={{
-                fontSize: 12,
-                fontWeight: "700",
-                color: theme.textLight,
-                textTransform: "uppercase",
-                letterSpacing: 0.8,
-                marginTop: 4,
-                marginBottom: 2,
-                fontFamily: "PlusJakartaSans_500Medium",
+          <View
+            accessibilityViewIsModal
+            style={[style.modalCard, style.logModalCardPadding]}
+          >
+            <ModalHeader
+              closeLabel="Close log meal prep"
+              onClose={() => {
+                setShowLogModal(false);
+                setActionFeedback(null);
               }}
-            >
-              Select Meal Type
-            </Text>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+              style={style.modalHeader}
+              title="Log to Diary"
+            />
+            {actionFeedback?.surface === "log" ? (
+              <ActionStatus
+                {...actionFeedback}
+                onDismiss={() => setActionFeedback(null)}
+              />
+            ) : null}
+            <Text style={style.mealTypeLabel}>Select Meal Type</Text>
+            <View style={style.mealTypeOptionsRow}>
               {MEAL_OPTIONS.map((m) => {
                 const active = logMealType === m.value;
                 const mealColor =
@@ -905,31 +621,32 @@ export function MealPrepSection() {
                 return (
                   <TouchableOpacity
                     key={m.value}
-                    style={{
-                      flex: 1,
-                      backgroundColor: active
-                        ? mealColor + "15"
-                        : theme.background,
-                      borderRadius: 12,
-                      borderWidth: 1.5,
-                      borderColor: active
-                        ? mealColor
-                        : (theme.border ?? "#eee"),
-                      paddingVertical: 16,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
+                    accessibilityRole="radio"
+                    accessibilityLabel={m.label}
+                    accessibilityState={{ selected: active }}
+                    style={[
+                      style.mealTypeOption,
+                      {
+                        backgroundColor: active
+                          ? mealColor + "15"
+                          : theme.background,
+                        borderColor: active
+                          ? mealColor
+                          : (theme.border ?? "#eee"),
+                      },
+                    ]}
                     onPress={() => setLogMealType(m.value)}
                   >
                     <Text
-                      style={{
-                        fontSize: 13,
-                        fontWeight: "700",
-                        color: active ? mealColor : theme.textBlack,
-                        fontFamily: active
-                          ? "PlusJakartaSans_700Bold"
-                          : "PlusJakartaSans_500Medium",
-                      }}
+                      style={[
+                        style.mealTypeOptionText,
+                        {
+                          color: active ? mealColor : theme.textBlack,
+                          fontFamily: active
+                            ? FONT_FAMILIES.bold
+                            : FONT_FAMILIES.medium,
+                        },
+                      ]}
                     >
                       {m.label}
                     </Text>
@@ -937,59 +654,25 @@ export function MealPrepSection() {
                 );
               })}
             </View>
-            <View style={{ flexDirection: "row", gap: 10, marginTop: 18 }}>
+            <View style={style.logModalActionsRow}>
               <TouchableOpacity
-                style={{
-                  flex: 1,
-                  backgroundColor: theme.background,
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor: theme.border ?? "#eee",
-                  paddingVertical: 13,
-                  alignItems: "center",
-                  justifyContent: "center",
+                style={style.logModalCancelButton}
+                onPress={() => {
+                  setShowLogModal(false);
+                  setActionFeedback(null);
                 }}
-                onPress={() => setShowLogModal(false)}
               >
-                <Text
-                  style={{
-                    color: theme.textLight,
-                    fontSize: 13,
-                    fontWeight: "700",
-                    fontFamily: "PlusJakartaSans_500Medium",
-                  }}
-                >
-                  Cancel
-                </Text>
+                <Text style={style.logModalCancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={{
-                  flex: 2,
-                  backgroundColor: theme.primary,
-                  borderRadius: 12,
-                  paddingVertical: 13,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  shadowColor: theme.primary,
-                  shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.2,
-                  shadowRadius: 8,
-                  elevation: 3,
-                }}
+                style={style.logModalConfirmButton}
                 onPress={logPrep}
                 disabled={logMutation.isPending}
               >
                 {logMutation.isPending ? (
                   <ActivityIndicator color={theme.white} />
                 ) : (
-                  <Text
-                    style={{
-                      color: theme.white ?? "#fff",
-                      fontSize: 13,
-                      fontWeight: "800",
-                      fontFamily: "PlusJakartaSans_800ExtraBold",
-                    }}
-                  >
+                  <Text style={style.logModalConfirmButtonText}>
                     Log to Diary ✓
                   </Text>
                 )}

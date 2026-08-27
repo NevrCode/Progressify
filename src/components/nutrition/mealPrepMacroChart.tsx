@@ -1,3 +1,6 @@
+import type { GymStyles } from "@/assets/styles/gym.style";
+import { ThemeType } from "@/constants/colors";
+import { getNutritionAccents } from "@/constants/semantic-colors";
 import { Text, View } from "react-native";
 
 interface MealPrepMacroDonutProps {
@@ -5,32 +8,27 @@ interface MealPrepMacroDonutProps {
   protein: number;
   carbohydrate: number;
   fat: number;
-  theme: any;
-  style: any;
+  theme: ThemeType;
+  style: GymStyles;
   size?: "sm" | "md";
 }
-
-const COLORS = {
-  protein: "#3498db",
-  carbohydrate: "#2ecc71",
-  fat: "#e74c3c",
-  empty: "#646464",
-};
 
 function MacroSegmentedBar({
   protein,
   carbohydrate,
   fat,
   height = 28,
+  theme,
   style,
 }: {
   protein: number;
   carbohydrate: number;
   fat: number;
   height?: number;
-  theme: any;
-  style: any;
+  theme: ThemeType;
+  style: GymStyles;
 }) {
+  const colors = getNutritionAccents(theme.background);
   const total = protein + carbohydrate + fat;
 
   const proteinPct = total > 0 ? (protein / total) * 100 : 0;
@@ -47,8 +45,7 @@ function MacroSegmentedBar({
         style={{
           height,
           borderRadius,
-          backgroundColor: COLORS.empty,
-          opacity: 0.1,
+          backgroundColor: theme.border,
         }}
       />
     );
@@ -64,7 +61,7 @@ function MacroSegmentedBar({
         <Text
           style={[
             style.listMeta,
-            { color: "#fff", fontSize: 10, fontWeight: "600", lineHeight: 13 },
+            { color: "#fff", fontSize: 11, fontWeight: "600", lineHeight: 14 },
           ]}
           numberOfLines={1}
         >
@@ -95,7 +92,7 @@ function MacroSegmentedBar({
       <View
         style={{
           flex: proteinPct,
-          backgroundColor: COLORS.protein,
+          backgroundColor: colors.protein,
           marginRight: GAP / 2,
           borderTopLeftRadius: borderRadius,
           borderBottomLeftRadius: borderRadius,
@@ -110,7 +107,7 @@ function MacroSegmentedBar({
       <View
         style={{
           flex: carbPct,
-          backgroundColor: COLORS.carbohydrate,
+          backgroundColor: colors.carbohydrate,
           marginHorizontal: GAP / 2,
           justifyContent: "center",
           alignItems: "center",
@@ -123,7 +120,7 @@ function MacroSegmentedBar({
       <View
         style={{
           flex: fatPct,
-          backgroundColor: COLORS.fat,
+          backgroundColor: colors.fat,
           marginLeft: GAP / 2,
           borderTopRightRadius: borderRadius,
           borderBottomRightRadius: borderRadius,

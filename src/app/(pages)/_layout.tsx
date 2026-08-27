@@ -11,6 +11,7 @@ export default function PagesLayout() {
       <Stack.Screen name="manageWorkoutSession" />
       <Stack.Screen name="workoutSession" />
       <Stack.Screen name="activeWorkoutSession" />
+      <Stack.Screen name="programs" />
     </Stack>
   );
 }

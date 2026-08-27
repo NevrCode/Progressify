@@ -1,5 +1,6 @@
 // reuse your existing axios instance
 import { api } from "@/utils/api";
+import type { OfflineQueuedResponse } from "@/utils/offline-response";
 import { MealType } from "./foodDiaryService";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -76,24 +77,30 @@ export const getMealPrepById = async (
 
 export const createMealPrep = async (
   dto: MealPrepCreateRequest,
-): Promise<void> => {
-  await api.post("/v1/meal-prep", dto);
+): Promise<void | OfflineQueuedResponse> => {
+  const res = await api.post("/v1/meal-prep", dto);
+  return res.data;
 };
 
 export const updateMealPrep = async (
   id: number,
   dto: MealPrepCreateRequest,
-): Promise<void> => {
-  await api.put(`/v1/meal-prep/${id}`, dto);
+): Promise<void | OfflineQueuedResponse> => {
+  const res = await api.put(`/v1/meal-prep/${id}`, dto);
+  return res.data;
 };
 
-export const deleteMealPrep = async (id: number): Promise<void> => {
-  await api.delete(`/v1/meal-prep/${id}`);
+export const deleteMealPrep = async (
+  id: number,
+): Promise<void | OfflineQueuedResponse> => {
+  const res = await api.delete(`/v1/meal-prep/${id}`);
+  return res.data;
 };
 
 export const logMealPrepToDiary = async (
   id: number,
   dto: MealPrepLogRequest,
-): Promise<void> => {
-  await api.post(`/v1/meal-prep/${id}/log`, dto);
+): Promise<void | OfflineQueuedResponse> => {
+  const res = await api.post(`/v1/meal-prep/${id}/log`, dto);
+  return res.data;
 };

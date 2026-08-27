@@ -1,31 +1,19 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  parseActiveSessionDraft,
+  type ActiveSessionDraft,
+  type DraftSet,
+  type ExerciseDraft,
+} from "@/features/workout-session/drafts";
 import { getUserScopedKey } from "@/services/userScopedStorage";
 import { logger } from "@/utils/logger";
 
 const ACTIVE_SESSION_NAMESPACE = "@progressify_active_session";
 const LEGACY_ACTIVE_SESSION_KEY = "@progressify_active_session";
 
-export type StoredDraftSet = {
-  localId: string;
-  set_number: number;
-  weight: string;
-  reps: string;
-  rir: string;
-};
-
-export type StoredExerciseDraft = {
-  exerciseId: number;
-  startedAt: string;
-  sets: StoredDraftSet[];
-};
-
-export type ActiveSessionData = {
-  split: string;
-  exerciseIds: number[];
-  startedAt: string;
-  drafts: Record<number, StoredExerciseDraft>;
-  completedIds: number[];
-};
+export type StoredDraftSet = DraftSet;
+export type StoredExerciseDraft = ExerciseDraft;
+export type ActiveSessionData = ActiveSessionDraft;
 
 export const saveActiveSession = async (data: ActiveSessionData) => {
   try {
@@ -48,7 +36,7 @@ export const loadActiveSession =
       await AsyncStorage.multiRemove([LEGACY_ACTIVE_SESSION_KEY]);
       const raw = await AsyncStorage.getItem(key);
       if (!raw) return null;
-      return JSON.parse(raw) as ActiveSessionData;
+      return parseActiveSessionDraft(JSON.parse(raw));
     } catch (error) {
       logger.warn("active_session_load_failed", {
         error_type: error instanceof Error ? error.name : "unknown",

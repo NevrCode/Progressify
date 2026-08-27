@@ -3,17 +3,26 @@ import { useTheme } from "@/context/ThemeContext";
 import { MaterialIcons } from "@expo/vector-icons";
 import { Text, TouchableOpacity, View } from "react-native";
 
+export type ProfileMenuItem = {
+  label: string;
+  description: string;
+  icon: React.ComponentProps<typeof MaterialIcons>["name"];
+};
+
 export const MenuButton = ({
   item,
   onPress,
 }: {
-  item: any;
+  item: ProfileMenuItem;
   onPress: () => void;
 }) => {
   const { theme } = useTheme();
   const style = profileStyles(theme);
   return (
     <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityLabel={item.label}
+      accessibilityHint={item.description}
       style={style.menuRow}
       activeOpacity={0.82}
       onPress={onPress}

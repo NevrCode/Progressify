@@ -3,6 +3,8 @@
   "main": "expo-router/entry",
   "version": "1.0.2",
   "dependencies": {
+    "@expo-google-fonts/barlow": "^0.4.1",
+    "@expo-google-fonts/barlow-condensed": "^0.4.1",
     "@expo-google-fonts/plus-jakarta-sans": "^0.4.2",
     "@expo/ui": "~56.0.22",
     "@expo/vector-icons": "^15.0.3",
@@ -71,6 +73,8 @@
     "test": "npm run test:unit && npm run test:components",
     "test:unit": "node --test --experimental-strip-types tests/*.test.mjs",
     "test:components": "jest --runInBand",
+    "catalog:build": "node ./scripts/build-exercise-catalog.mjs",
+    "catalog:check": "node ./scripts/build-exercise-catalog.mjs --check",
     "doctor": "expo-doctor"
   },
   "jest": {
@@ -79,6 +83,7 @@
       "<rootDir>/tests/components/**/*.test.tsx"
     ],
     "moduleNameMapper": {
+      "^@/assets/(.*)$": "<rootDir>/assets/$1",
       "^@/(.*)$": "<rootDir>/src/$1"
     }
   },

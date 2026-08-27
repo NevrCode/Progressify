@@ -1,39 +1,67 @@
-import { gymStyles } from "@/assets/styles/gym.style";
 import { FadeSlideIn } from "@/components/animations/fade-slide-in";
+import { AppButton } from "@/components/base/app-button";
+import { PageHeader } from "@/components/base/page-header";
 import { SectionLabel } from "@/components/base/SectionLabel";
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
-import { SyncStatusBadge } from "@/components/base/SyncStatusBadge";
-import { SplitSummaryCard } from "@/components/gym/SplitSummaryCard";
+import { ShimmerSkeleton } from "@/components/base/shimmer-skeleton";
+import { StatePanel } from "@/components/base/state-panel";
+import { TabScreenScrollView } from "@/components/base/tab-screen-scroll-view";
+import { HomeTodaySummary } from "@/components/home/home-today-summary";
+import { InsightCard } from "@/components/home/insight-card";
+import { OnboardingChecklist } from "@/components/home/onboarding-checklist";
+import { WeeklyReviewCard } from "@/components/home/weekly-review-card";
 import { WeekStreak } from "@/components/gym/WeekStreak";
-import { MacroDonutChart } from "@/components/nutrition/macroDonutChart";
-import { WaterTracker } from "@/components/nutrition/WaterTracker";
 import { useTheme } from "@/context/ThemeContext";
+import { useUnitPreference } from "@/context/UnitPreferenceContext";
+import { homeScreenStyles as styles } from "@/assets/styles/home-screen.style";
 import { useActiveSession } from "@/hooks/useActiveSession";
+import { FOOD_DIARY_QUERY_KEY } from "@/hooks/useFoodDiary";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
+import { useOnboardingPreference } from "@/hooks/useOnboardingPreference";
 import {
-  useNutritionGoals,
-  useNutritionProfile,
+  NUTRITION_PROFILE_KEY,
   useTodayDiarySummary,
 } from "@/hooks/useNutrition";
 import { useProfile } from "@/hooks/useProfile";
-import {
+import type {
   ExerciseProgressionDTO,
   ExerciseSessionDTO,
 } from "@/services/gymService";
-import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
+import { isWorkingSet } from "@/types/workout-set";
+import { getFoodEntries } from "@/services/foodDiaryService";
+import { getUserProfile } from "@/services/nutritionService";
+import { getWaterIntake, logWaterIntake } from "@/services/waterService";
+import {
+  getWorkoutPrograms,
+  type WorkoutProgramDTO,
+} from "@/services/workoutProgramService";
+import {
+  buildNutritionInsights,
+  buildTrainingInsights,
+} from "@/utils/home-insights";
+import {
+  buildWeeklyReview,
+  hasCompleteWeeklyFoodHistory,
+} from "@/utils/weekly-review";
+import {
+  buildOnboardingSteps,
+  getOnboardingProgress,
+  type OnboardingStep,
+} from "@/utils/onboarding";
+import { toApiError } from "@/utils/apiError";
+import { formatMass } from "@/utils/measurement-units";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   RefreshControl,
-  ScrollView,
+  StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 const formatDateForApi = (date: Date) =>
   [
@@ -42,1174 +70,665 @@ const formatDateForApi = (date: Date) =>
     String(date.getDate()).padStart(2, "0"),
   ].join("-");
 
-const todayStr = formatDateForApi(new Date());
+const today = new Date();
+const todayKey = formatDateForApi(today);
+const HOME_FOOD_HISTORY_LIMIT = 100;
 
-const statusColor = (status?: string, theme?: any) => {
-  if (status === "ON_TRACK") return theme?.income ?? "#2ecc71";
-  if (status === "OVER") return theme?.expense ?? "#e74c3c";
-  return theme?.textLight ?? "#aaa";
+const getSessionTime = (session: ExerciseSessionDTO) => {
+  const value = session.session_date
+    ? new Date(session.session_date).getTime()
+    : 0;
+  return Number.isFinite(value) ? value : 0;
 };
 
-const statusLabel = (status?: string) => {
-  if (status === "ON_TRACK") return "On track ✓";
-  if (status === "OVER") return "Over goal ↑";
-  return "Under goal ↓";
-};
-
-const getExerciseSessions = (
-  exercise: ExerciseProgressionDTO,
-): ExerciseSessionDTO[] => exercise.exercise_sessions ?? [];
-
-const getSessionDate = (session: ExerciseSessionDTO) =>
-  session.session_date ?? "";
-
-const toDateSortValue = (value?: string) => {
-  if (!value) return 0;
-  const parsed = new Date(value).getTime();
-  return Number.isNaN(parsed) ? 0 : parsed;
-};
-
-const formatShortDate = (value?: string) => {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value.slice(0, 10);
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-};
-
-const normalizeSplit = (split?: string): "PUSH" | "PULL" | "LEGS" => {
-  const n = split?.toUpperCase();
-  if (n === "PULL" || n === "LEGS") return n;
-  return "PUSH";
-};
-
-const displaySplit = (split?: string) => {
-  const n = normalizeSplit(split);
-  return n.charAt(0) + n.slice(1).toLowerCase();
-};
+const getLatestSession = (exercise: ExerciseProgressionDTO) =>
+  [...(exercise.exercise_sessions ?? [])].sort(
+    (left, right) => getSessionTime(right) - getSessionTime(left),
+  )[0];
 
 const estimate1RM = (weight: number, reps: number) => weight * (1 + reps / 30);
 
-const getLatest1RM = (exercise: ExerciseProgressionDTO): number => {
-  const sessions = getExerciseSessions(exercise);
-  if (!sessions.length) return 0;
-  const latest = [...sessions].sort(
-    (a, b) =>
-      toDateSortValue(getSessionDate(b)) - toDateSortValue(getSessionDate(a)),
-  )[0];
-  const sets = latest?.sets ?? [];
-  if (!sets.length) return 0;
-  return Math.max(...sets.map((s) => estimate1RM(s.weight, s.reps)));
+const getLatestEstimated1RM = (exercise: ExerciseProgressionDTO) => {
+  const sets = (getLatestSession(exercise)?.sets ?? []).filter(isWorkingSet);
+  return sets.length
+    ? Math.max(...sets.map((set) => estimate1RM(set.weight, set.reps)))
+    : 0;
 };
-
-const getLastSessionDate = (exercise: ExerciseProgressionDTO): string => {
-  const sessions = getExerciseSessions(exercise);
-  if (!sessions.length) return "";
-  return (
-    [...sessions].sort(
-      (a, b) =>
-        toDateSortValue(getSessionDate(b)) - toDateSortValue(getSessionDate(a)),
-    )[0]?.session_date ?? ""
-  );
-};
-
-const get1RMTrend = (
-  exercise: ExerciseProgressionDTO,
-): { value: string; isPositive: boolean } | null => {
-  const sessions = exercise.exercise_sessions ?? [];
-  if (sessions.length < 2) return null;
-
-  const sorted = [...sessions].sort(
-    (a, b) =>
-      toDateSortValue(getSessionDate(a)) - toDateSortValue(getSessionDate(b)),
-  );
-
-  const latestSession = sorted[sorted.length - 1];
-  const previousSession = sorted[sorted.length - 2];
-
-  const latestSets = latestSession?.sets ?? [];
-  const previousSets = previousSession?.sets ?? [];
-
-  if (!latestSets.length || !previousSets.length) return null;
-
-  const latestMax1RM = Math.max(
-    ...latestSets.map((s) => s.weight * (1 + s.reps / 30)),
-  );
-  const previousMax1RM = Math.max(
-    ...previousSets.map((s) => s.weight * (1 + s.reps / 30)),
-  );
-
-  if (previousMax1RM <= 0) return null;
-
-  const diff = latestMax1RM - previousMax1RM;
-  const pct = (diff / previousMax1RM) * 100;
-
-  if (Math.abs(diff) < 0.1) return null;
-
-  return {
-    value: `${diff > 0 ? "+" : ""}${diff.toFixed(1)}kg (${diff > 0 ? "+" : ""}${pct.toFixed(0)}%)`,
-    isPositive: diff > 0,
-  };
-};
-
-// ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
   const { theme } = useTheme();
-  const styles = gymStyles(theme);
+  const { measurementSystem } = useUnitPreference();
   const router = useRouter();
-  const homeCardStyle = {
-    backgroundColor: theme.background,
-    borderColor: theme.primary + "20",
-    borderWidth: 1.5,
-  };
-
-  const {
-    data: profile,
-    isLoading: profileLoading,
-    refetch: refetchProfile,
-  } = useNutritionProfile();
-
-  const { isLoading: goalsLoading, refetch: refetchGoals } =
-    useNutritionGoals();
-
-  const {
-    data: summary,
-    isLoading: summaryLoading,
-    refetch: refetchSummary,
-  } = useTodayDiarySummary(todayStr);
-
-  const {
-    data: dashboard,
-    isLoading: gymLoading,
-    isFetching: gymFetching,
-    refetch: refetchGym,
-  } = useGymDashboard();
-  const {
-    data: profileData,
-    isLoading: userProfileLoading,
-    refetch: refetchUserProfile,
-  } = useProfile();
-
+  const queryClient = useQueryClient();
+  const [primaryInsightExplanationVisible, setPrimaryInsightExplanationVisible] =
+    useState(false);
+  const [onboardingPreference, setOnboardingPreference] =
+    useOnboardingPreference();
+  const onboardingEnabled = onboardingPreference !== "dismissed";
+  const profileQuery = useProfile();
+  const nutritionQuery = useTodayDiarySummary(todayKey);
+  const gymQuery = useGymDashboard();
+  const programsQuery = useQuery({
+    queryKey: ["gym", "programs"],
+    queryFn: getWorkoutPrograms,
+  });
+  const waterQuery = useQuery({
+    queryKey: ["water-intake", todayKey],
+    queryFn: () => getWaterIntake(todayKey),
+  });
+  const nutritionProfileSetupQuery = useQuery({
+    queryKey: NUTRITION_PROFILE_KEY,
+    queryFn: getUserProfile,
+    retry: false,
+    enabled: onboardingEnabled,
+    staleTime: 24 * 60 * 60 * 1000,
+  });
+  const foodHistoryQuery = useQuery({
+    queryKey: [
+      ...FOOD_DIARY_QUERY_KEY,
+      "home-history",
+      HOME_FOOD_HISTORY_LIMIT,
+    ],
+    queryFn: () =>
+      getFoodEntries({
+        limit: HOME_FOOD_HISTORY_LIMIT,
+        sortBy: "date",
+        direction: "desc",
+      }),
+    staleTime: 24 * 60 * 60 * 1000,
+  });
+  const waterMutation = useMutation({
+    mutationFn: (increment: number) => logWaterIntake(todayKey, increment),
+    onSuccess: (amount) => {
+      queryClient.setQueryData(["water-intake", todayKey], amount);
+    },
+  });
   const {
     storedSession,
     hasActiveSession,
-    checking,
+    checking: activeSessionLoading,
     refresh: refreshActiveSession,
-    discard,
   } = useActiveSession();
 
-  const [activeTab, setActiveTab] = useState<"NUTRITION" | "TRAINING">(
-    "NUTRITION",
+  const activeProgram = useMemo(
+    () =>
+      (programsQuery.data ?? []).find(
+        (program: WorkoutProgramDTO) => program.status === "ACTIVE",
+      ),
+    [programsQuery.data],
   );
-
-  const isRefreshing =
-    profileLoading ||
-    goalsLoading ||
-    summaryLoading ||
-    gymLoading ||
-    gymFetching ||
-    checking ||
-    userProfileLoading;
-
-  const refresh = () => {
-    refetchProfile();
-    refetchGoals();
-    refetchSummary();
-    refetchGym();
-    refreshActiveSession();
-    refetchUserProfile();
+  const exercises = useMemo(
+    () => gymQuery.data?.exercise_progressions ?? [],
+    [gymQuery.data],
+  );
+  const onboardingSteps = useMemo(
+    () =>
+      buildOnboardingSteps({
+        hasNutritionProfile: !!nutritionProfileSetupQuery.data,
+        hasActiveProgram: !!activeProgram,
+        hasExercise: exercises.length > 0,
+        hasCompletedWorkout: exercises.some(
+          (exercise) => (exercise.exercise_sessions?.length ?? 0) > 0,
+        ),
+        hasFoodEntry:
+          (foodHistoryQuery.data?.total_elements ??
+            foodHistoryQuery.data?.totalElements ??
+            foodHistoryQuery.data?.content?.length ??
+            foodHistoryQuery.data?.data?.length ??
+            0) > 0,
+      }),
+    [
+      activeProgram,
+      exercises,
+      foodHistoryQuery.data,
+      nutritionProfileSetupQuery.data,
+    ],
+  );
+  const onboardingProgress = useMemo(
+    () => getOnboardingProgress(onboardingSteps),
+    [onboardingSteps],
+  );
+  const reviewingOnboarding = onboardingPreference === "review";
+  const showOnboarding =
+    onboardingPreference !== "dismissed" &&
+    (reviewingOnboarding || !onboardingProgress.allComplete);
+  const onboardingLoading =
+    nutritionProfileSetupQuery.isLoading ||
+    foodHistoryQuery.isLoading ||
+    gymQuery.isLoading ||
+    programsQuery.isLoading;
+  const onboardingUnavailable =
+    (nutritionProfileSetupQuery.isError &&
+      toApiError(nutritionProfileSetupQuery.error).status !== 404) ||
+    foodHistoryQuery.isError ||
+    gymQuery.isError ||
+    programsQuery.isError;
+  const retryOnboarding = () => {
+    nutritionProfileSetupQuery.refetch();
+    foodHistoryQuery.refetch();
+    gymQuery.refetch();
+    programsQuery.refetch();
   };
 
-  // Derive data
-  const prog = summary?.progress;
-  const calProg = prog?.calories;
-  const calorieColor = calProg
-    ? calProg.percentage > 110
-      ? (theme.expense ?? "#e74c3c")
-      : calProg.percentage >= 85
-        ? (theme.income ?? "#2ecc71")
-        : (theme.textLight ?? "#999")
-    : (theme.primary ?? "#2ecc71");
+  const sessionDatesThisWeek = useMemo(() => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - 6);
+    const dates = new Set<string>();
 
-  const exercises = useMemo(
-    () => dashboard?.exercise_progressions ?? [],
-    [dashboard],
-  );
+    for (const exercise of exercises) {
+      for (const session of exercise.exercise_sessions ?? []) {
+        if (!session.session_date) continue;
+        const time = new Date(session.session_date).getTime();
+        if (
+          Number.isFinite(time) &&
+          time >= start.getTime() &&
+          time <= today.getTime()
+        ) {
+          dates.add(session.session_date.slice(0, 10));
+        }
+      }
+    }
+    return dates;
+  }, [exercises]);
 
-  // 3 most recently trained exercises
-  const recentExercises = useMemo(
+  // All-time trained dates (not just the rolling 7-day window above), used
+  // to power the streak callout and the calendar-week pips below. A
+  // consecutive-day streak has to look back past this week's boundary, so it
+  // needs the full session history, not sessionDatesThisWeek.
+  const allTrainedDates = useMemo(() => {
+    const dates = new Set<string>();
+    for (const exercise of exercises) {
+      for (const session of exercise.exercise_sessions ?? []) {
+        if (session.session_date) dates.add(session.session_date.slice(0, 10));
+      }
+    }
+    return dates;
+  }, [exercises]);
+
+  const currentStreak = useMemo(() => {
+    let count = 0;
+    const cursor = new Date(today);
+    if (!allTrainedDates.has(formatDateForApi(cursor))) {
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    while (allTrainedDates.has(formatDateForApi(cursor))) {
+      count += 1;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return count;
+  }, [allTrainedDates]);
+
+  const weekStreakDays = useMemo(() => {
+    const day = today.getDay();
+    const mondayOffset = day === 0 ? 6 : day - 1;
+    const monday = new Date(today);
+    monday.setHours(0, 0, 0, 0);
+    monday.setDate(monday.getDate() - mondayOffset);
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(monday);
+      date.setDate(monday.getDate() + index);
+      return allTrainedDates.has(formatDateForApi(date));
+    });
+  }, [allTrainedDates]);
+
+  const recentTraining = useMemo(
     () =>
-      [...exercises]
-        .filter((e) => getLastSessionDate(e))
+      exercises
+        .map((exercise) => ({
+          exercise,
+          session: getLatestSession(exercise),
+        }))
+        .filter((item) => item.session)
         .sort(
-          (a, b) =>
-            toDateSortValue(getLastSessionDate(b)) -
-            toDateSortValue(getLastSessionDate(a)),
+          (left, right) =>
+            getSessionTime(right.session!) - getSessionTime(left.session!),
         )
-        .slice(0, 3),
+        .slice(0, 2),
     [exercises],
   );
 
-  // Derive a simple 7-day workout streak (days that have any session ending today)
-  const streakDays = useMemo(() => {
-    const filledDays = Array(7).fill(false);
-    const today = new Date();
-    // Monday = index 0
-    const dayOfWeek = (today.getDay() + 6) % 7; // 0=Mon, 6=Sun
-    const sessionDates = new Set<string>();
-    for (const ex of exercises) {
-      for (const session of getExerciseSessions(ex)) {
-        const d = getSessionDate(session);
-        if (d) sessionDates.add(d.slice(0, 10));
-      }
-    }
-    for (let i = 0; i <= dayOfWeek; i++) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - (dayOfWeek - i));
-      filledDays[i] = sessionDates.has(formatDateForApi(d));
-    }
-    return filledDays;
-  }, [exercises]);
+  const nutrition = nutritionQuery.data?.progress;
+  const foodEntries = useMemo(
+    () =>
+      foodHistoryQuery.data?.content ?? foodHistoryQuery.data?.data ?? [],
+    [foodHistoryQuery.data],
+  );
+  const trainingInsights = useMemo(
+    () => buildTrainingInsights(exercises, today),
+    [exercises],
+  );
+  const nutritionInsights = useMemo(
+    () => buildNutritionInsights(nutrition, foodEntries, today),
+    [foodEntries, nutrition],
+  );
+  const foodHistoryTotal =
+    foodHistoryQuery.data?.total_elements ??
+    foodHistoryQuery.data?.totalElements ??
+    foodEntries.length;
+  const foodHistoryComplete = useMemo(
+    () =>
+      hasCompleteWeeklyFoodHistory(
+        foodEntries,
+        foodHistoryTotal,
+        today,
+      ),
+    [foodEntries, foodHistoryTotal],
+  );
+  const weeklyReview = useMemo(
+    () =>
+      buildWeeklyReview(exercises, foodEntries, {
+        referenceDate: today,
+        foodHistoryComplete,
+      }),
+    [exercises, foodEntries, foodHistoryComplete],
+  );
+  const primaryTrainingInsight = trainingInsights[0];
+  const additionalInsights = useMemo(
+    () =>
+      [
+        ...trainingInsights.slice(1, 3),
+        ...nutritionInsights.slice(0, 1),
+      ].slice(0, 3),
+    [nutritionInsights, trainingInsights],
+  );
+  const waterAmount = waterQuery.data ?? 0;
+  const isSummaryLoading =
+    nutritionQuery.isLoading || gymQuery.isLoading || waterQuery.isLoading;
+  const isRefreshing =
+    nutritionQuery.isFetching ||
+    gymQuery.isFetching ||
+    programsQuery.isFetching ||
+    foodHistoryQuery.isFetching ||
+    profileQuery.isFetching ||
+    waterQuery.isFetching ||
+    activeSessionLoading;
 
-  const workoutDaysThisWeek = streakDays.filter(Boolean).length;
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    const period =
+      hour < 12
+        ? "Good morning"
+        : hour < 17
+          ? "Good afternoon"
+          : "Good evening";
+    return profileQuery.data?.name
+      ? `${period}, ${profileQuery.data.name}`
+      : period;
+  }, [profileQuery.data?.name]);
 
-  const getGreeting = () => {
-    const hours = new Date().getHours();
-    const name = profileData?.name ? `, ${profileData.name}` : "";
-    if (hours < 12) return `Good morning${name}`;
-    if (hours < 17) return `Good afternoon${name}`;
-    return `Good evening${name}`;
+  const dateLabel = today.toLocaleDateString(undefined, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+
+  const refresh = () => {
+    nutritionQuery.refetch();
+    gymQuery.refetch();
+    programsQuery.refetch();
+    foodHistoryQuery.refetch();
+    profileQuery.refetch();
+    waterQuery.refetch();
+    refreshActiveSession();
+  };
+
+  const openWorkout = () => {
+    if (hasActiveSession && storedSession) {
+      router.push("/activeWorkoutSession");
+      return;
+    }
+    if (activeProgram) {
+      router.push("/programs");
+      return;
+    }
+    router.push("/workoutSession");
+  };
+  const openOnboardingStep = (step: OnboardingStep) => {
+    if (step.key === "nutrition-profile" || step.key === "first-food") {
+      router.push("/foodDiary");
+      return;
+    }
+    if (step.key === "first-exercise") {
+      router.push("/gymProgression");
+      return;
+    }
+    router.push("/programs");
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView
+    <SafeAreaView
+      style={[styles.safeArea, { backgroundColor: theme.background }]}
+    >
+      <TabScreenScrollView
         contentContainerStyle={styles.container}
         refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={refresh} />
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={refresh}
+            tintColor={theme.primary}
+          />
         }
       >
-        {/* ── Header ── */}
-        <FadeSlideIn
-          style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 8,
-          }}
-        >
-          <View>
-            <Text
-              style={{
-                color: theme.textLight,
-                fontSize: 12,
-                fontWeight: "800",
-                fontFamily: "PlusJakartaSans_800ExtraBold",
-                textTransform: "uppercase",
-                letterSpacing: 1.5,
-                marginBottom: 2,
-              }}
-            >
-              {getGreeting()}
-            </Text>
-            <Text
-              style={{
-                color: theme.textBlack,
-                fontSize: 28,
-                fontWeight: "900",
-                fontFamily: "PlusJakartaSans_800ExtraBold",
-                letterSpacing: -0.8,
-              }}
-            >
-              Progressify
-            </Text>
-          </View>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-            <SyncStatusBadge />
-            <TouchableOpacity
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 14,
-                backgroundColor: theme.primary + "15",
-                borderWidth: 1.5,
-                borderColor: theme.primary + "30",
-                justifyContent: "center",
-                alignItems: "center",
-              }}
-              onPress={() => router.push("/profile")}
-            >
+        <FadeSlideIn>
+          <PageHeader
+            eyebrow={greeting}
+            title={dateLabel}
+            icon={
               <MaterialCommunityIcons
                 name="account"
                 size={24}
                 color={theme.primary}
               />
-            </TouchableOpacity>
-          </View>
+            }
+            iconAccessibilityLabel="Open profile"
+            onIconPress={() => router.push("/profile")}
+          />
         </FadeSlideIn>
 
-        {/* ── Quick actions ── */}
-        <SectionLabel>Quick actions</SectionLabel>
-        <FadeSlideIn
-          delay={40}
-          style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            paddingHorizontal: 8,
-            marginVertical: 12,
-          }}
-        >
-          {/* Action 1 */}
-          <TouchableOpacity
-            onPress={() => router.push("/foodDiary")}
-            activeOpacity={0.75}
-            style={{ alignItems: "center", flex: 1 }}
-          >
-            <View
-              style={{
-                width: 52,
-                height: 52,
-                borderRadius: 26,
-                backgroundColor: theme.primary + "15",
-                justifyContent: "center",
-                alignItems: "center",
-                marginBottom: 6,
-                borderWidth: 1.5,
-                borderColor: theme.primary + "30",
-              }}
-            >
-              <MaterialCommunityIcons
-                name="plus"
-                size={24}
-                color={theme.primary}
-              />
-            </View>
-            <Text
-              style={{
-                fontSize: 11,
-                fontWeight: "700",
-                fontFamily: "PlusJakartaSans_700Bold",
-                color: theme.textLight,
-              }}
-            >
-              Log Food
-            </Text>
-          </TouchableOpacity>
-
-          {/* Action 2 */}
-          <TouchableOpacity
-            onPress={() => router.push("/(pages)/workoutSession")}
-            activeOpacity={0.75}
-            style={{ alignItems: "center", flex: 1 }}
-          >
-            <View
-              style={{
-                width: 52,
-                height: 52,
-                borderRadius: 26,
-                backgroundColor: "#3498db15",
-                justifyContent: "center",
-                alignItems: "center",
-                marginBottom: 6,
-                borderWidth: 1.5,
-                borderColor: "#3498db30",
-              }}
-            >
-              <MaterialCommunityIcons
-                name="dumbbell"
-                size={22}
-                color="#3498db"
-              />
-            </View>
-            <Text
-              style={{
-                fontSize: 11,
-                fontWeight: "700",
-                fontFamily: "PlusJakartaSans_700Bold",
-                color: theme.textLight,
-              }}
-            >
-              Workout
-            </Text>
-          </TouchableOpacity>
-
-          {/* Action 3 */}
-          <TouchableOpacity
-            onPress={() => router.push("/nutritionProfile")}
-            activeOpacity={0.75}
-            style={{ alignItems: "center", flex: 1 }}
-          >
-            <View
-              style={{
-                width: 52,
-                height: 52,
-                borderRadius: 26,
-                backgroundColor: "#2ecc7115",
-                justifyContent: "center",
-                alignItems: "center",
-                marginBottom: 6,
-                borderWidth: 1.5,
-                borderColor: "#2ecc7130",
-              }}
-            >
-              <MaterialCommunityIcons name="target" size={22} color="#2ecc71" />
-            </View>
-            <Text
-              style={{
-                fontSize: 11,
-                fontWeight: "700",
-                fontFamily: "PlusJakartaSans_700Bold",
-                color: theme.textLight,
-              }}
-            >
-              Goals
-            </Text>
-          </TouchableOpacity>
-
-          {/* Action 4 */}
-          <TouchableOpacity
-            onPress={() => router.push("/(tabs)/gymProgression")}
-            activeOpacity={0.75}
-            style={{ alignItems: "center", flex: 1 }}
-          >
-            <View
-              style={{
-                width: 52,
-                height: 52,
-                borderRadius: 26,
-                backgroundColor: "#e74c3c15",
-                justifyContent: "center",
-                alignItems: "center",
-                marginBottom: 6,
-                borderWidth: 1.5,
-                borderColor: "#e74c3c30",
-              }}
-            >
-              <MaterialCommunityIcons
-                name="trending-up"
-                size={22}
-                color="#e74c3c"
-              />
-            </View>
-            <Text
-              style={{
-                fontSize: 11,
-                fontWeight: "700",
-                fontFamily: "PlusJakartaSans_700Bold",
-                color: theme.textLight,
-              }}
-            >
-              Progress
-            </Text>
-          </TouchableOpacity>
-        </FadeSlideIn>
-
-        {!checking && hasActiveSession && storedSession && (
-          <TouchableOpacity
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              backgroundColor: theme.primary + "15",
-              borderRadius: 16,
-              paddingVertical: 12,
-              paddingHorizontal: 16,
-              gap: 10,
-              borderWidth: 1.5,
-              borderColor: theme.primary + "40",
-              shadowColor: theme.primary,
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.1,
-              shadowRadius: 6,
-              elevation: 3,
-              marginBottom: 8,
-            }}
-            onPress={() => router.push("/(pages)/activeWorkoutSession")}
-            activeOpacity={0.75}
-          >
-            <View
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: theme.primary,
-                marginRight: 2,
-              }}
+        {showOnboarding ? (
+          <FadeSlideIn delay={20}>
+            <OnboardingChecklist
+              steps={onboardingSteps}
+              loading={onboardingLoading}
+              collapsed={onboardingPreference === "collapsed"}
+              reviewMode={reviewingOnboarding}
+              unavailable={onboardingUnavailable}
+              onStepPress={openOnboardingStep}
+              onRetry={retryOnboarding}
+              onCollapse={() => setOnboardingPreference("collapsed")}
+              onExpand={() => setOnboardingPreference("auto")}
+              onDismiss={() => setOnboardingPreference("dismissed")}
             />
-            <Text
-              style={{
-                flex: 1,
-                color: theme.primary,
-                fontSize: 14,
-                fontWeight: "800",
-                fontFamily: "PlusJakartaSans_800ExtraBold",
-              }}
-            >
-              Active {displaySplit(storedSession.split)} Session
-            </Text>
-            <Text
-              style={{
-                color: theme.primary,
-                fontSize: 13,
-                fontWeight: "900",
-                fontFamily: "PlusJakartaSans_800ExtraBold",
-                marginRight: 6,
-              }}
-            >
-              Resume →
-            </Text>
-            <TouchableOpacity
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              onPress={(e) => {
-                e.stopPropagation();
-                discard();
-              }}
-            >
-              <MaterialIcons name="close" size={18} color={theme.primary} />
-            </TouchableOpacity>
-          </TouchableOpacity>
-        )}
+          </FadeSlideIn>
+        ) : null}
 
-        {/* ── Segmented Control Tabs ── */}
-        <View
-          style={{
-            flexDirection: "row",
-            gap: 12,
-            marginVertical: 12,
-          }}
-        >
-          <TouchableOpacity
-            style={{
-              flex: 1,
-              flexDirection: "row",
-              justifyContent: "center",
-              alignItems: "center",
-              paddingVertical: 10,
-              borderRadius: 20,
-              backgroundColor:
-                activeTab === "NUTRITION"
-                  ? theme.primary + "15"
-                  : "transparent",
-              borderWidth: 1.5,
-              borderColor:
-                activeTab === "NUTRITION"
-                  ? theme.primary + "30"
-                  : "transparent",
-            }}
-            activeOpacity={0.8}
-            onPress={() => setActiveTab("NUTRITION")}
+        <FadeSlideIn delay={40}>
+          <ShadowGlowCard
+            glowColor={hasActiveSession ? theme.primary : undefined}
+            style={styles.heroCard}
           >
-            <MaterialCommunityIcons
-              name="food-apple"
-              size={18}
-              color={
-                activeTab === "NUTRITION" ? theme.primary : theme.textLight
+            <View style={styles.heroHeading}>
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={[styles.eyebrow, { color: theme.primary }]}>
+                  {hasActiveSession
+                    ? "Workout in progress"
+                    : activeProgram
+                      ? "Active program"
+                      : "Ready when you are"}
+                </Text>
+                <Text style={[styles.heroTitle, { color: theme.text }]}>
+                  {hasActiveSession && storedSession
+                    ? (storedSession.routineName ?? "Manual Workout")
+                    : (activeProgram?.name ?? "Start today’s workout")}
+                </Text>
+                <Text style={[styles.heroMeta, { color: theme.textLight }]}>
+                  {hasActiveSession && storedSession
+                    ? `${storedSession.exerciseIds.length} exercises selected`
+                    : activeProgram
+                      ? `${activeProgram.routines.length} routines · choose the one you are training today`
+                      : "Start manually or create a reusable workout program"}
+                </Text>
+              </View>
+              {hasActiveSession && (
+                <MaterialCommunityIcons
+                  name={"progress-clock"}
+                  size={28}
+                  color={theme.primary}
+                />
+              )}
+            </View>
+            <AppButton
+              label={
+                hasActiveSession
+                  ? "Resume workout"
+                  : activeProgram
+                    ? "Choose routine"
+                    : "Start workout"
               }
-              style={{ marginRight: 6 }}
+              onPress={openWorkout}
             />
-            <Text
-              style={{
-                fontSize: 13,
-                fontWeight: "800",
-                fontFamily: "PlusJakartaSans_800ExtraBold",
-                color:
-                  activeTab === "NUTRITION" ? theme.primary : theme.textLight,
-              }}
-            >
-              Nutrition
-            </Text>
-          </TouchableOpacity>
+          </ShadowGlowCard>
+        </FadeSlideIn>
 
+        <HomeTodaySummary
+          nutrition={nutrition}
+          isLoading={isSummaryLoading}
+          waterAmount={waterAmount}
+          waterUpdating={waterMutation.isPending}
+          hasActiveSession={hasActiveSession}
+          activeProgramName={activeProgram?.name}
+          trainingDaysThisWeek={sessionDatesThisWeek.size}
+          onWaterChange={(increment) => waterMutation.mutate(increment)}
+          onLogFood={() => router.push("/foodDiary")}
+          onOpenNutritionGoals={() => router.push("/nutritionProfile")}
+        />
+
+        <SectionLabel>This week</SectionLabel>
+        <FadeSlideIn delay={120}>
+          <ShadowGlowCard>
+            {currentStreak > 0 ? (
+              <View style={styles.streakRow}>
+                <MaterialCommunityIcons
+                  name="fire"
+                  size={18}
+                  color={theme.primary}
+                />
+                <Text style={[styles.streakText, { color: theme.text }]}>
+                  {currentStreak} day{currentStreak === 1 ? "" : "s"} in a row
+                  {currentStreak >= 3 ? " — keep it going" : ""}
+                </Text>
+              </View>
+            ) : null}
+            <WeekStreak filledDays={weekStreakDays} />
+            <View style={styles.weekRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.weekValue, { color: theme.text }]}>
+                  {sessionDatesThisWeek.size}
+                </Text>
+                <Text style={[styles.weekLabel, { color: theme.textLight }]}>
+                  training days
+                </Text>
+              </View>
+              <View
+                style={[styles.weekDivider, { backgroundColor: theme.border }]}
+              />
+              <View style={{ flex: 2 }}>
+                <Text style={[styles.insightLabel, { color: theme.textLight }]}>
+                  Current insight
+                </Text>
+                <Text
+                  selectable
+                  style={[styles.insightText, { color: theme.text }]}
+                >
+                  {primaryTrainingInsight
+                    ? primaryTrainingInsight.message
+                    : sessionDatesThisWeek.size > 0
+                      ? "Training is recorded this week. Another completed session will make trends more useful."
+                      : "No completed training has been recorded in the last seven days."}
+                </Text>
+                {primaryTrainingInsight ? (
+                  <>
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={`${
+                        primaryInsightExplanationVisible ? "Hide" : "Show"
+                      } current insight explanation`}
+                      accessibilityState={{
+                        expanded: primaryInsightExplanationVisible,
+                      }}
+                      hitSlop={8}
+                      onPress={() =>
+                        setPrimaryInsightExplanationVisible(
+                          (visible) => !visible,
+                        )
+                      }
+                      style={styles.currentInsightExplanationButton}
+                    >
+                      <Text
+                        style={[
+                          styles.currentInsightExplanationLabel,
+                          { color: theme.primary },
+                        ]}
+                      >
+                        {primaryInsightExplanationVisible
+                          ? "Hide explanation"
+                          : "Why am I seeing this?"}
+                      </Text>
+                      <MaterialCommunityIcons
+                        name={
+                          primaryInsightExplanationVisible
+                            ? "chevron-up"
+                            : "chevron-down"
+                        }
+                        size={17}
+                        color={theme.primary}
+                      />
+                    </TouchableOpacity>
+                    {primaryInsightExplanationVisible ? (
+                      <Text
+                        selectable
+                        accessibilityLiveRegion="polite"
+                        style={[
+                          styles.currentInsightReason,
+                          {
+                            color: theme.textLight,
+                            borderTopColor: theme.border,
+                          },
+                        ]}
+                      >
+                        {primaryTrainingInsight.reason}
+                      </Text>
+                    ) : null}
+                  </>
+                ) : null}
+              </View>
+            </View>
+          </ShadowGlowCard>
+        </FadeSlideIn>
+
+        {additionalInsights.length > 0 ? (
+          <>
+            <SectionLabel>More insights</SectionLabel>
+            <View style={styles.insightList}>
+              {additionalInsights.map((insight, index) => (
+                <FadeSlideIn key={insight.id} delay={140 + index * 20}>
+                  <InsightCard
+                    insight={insight}
+                    onPress={() =>
+                      router.push(
+                        insight.destination === "gym"
+                          ? "/gymProgression"
+                          : "/foodDiary",
+                      )
+                    }
+                  />
+                </FadeSlideIn>
+              ))}
+            </View>
+          </>
+        ) : null}
+
+        <SectionLabel>Review</SectionLabel>
+        <FadeSlideIn delay={200}>
+          <WeeklyReviewCard
+            review={weeklyReview}
+            nutritionHistoryLoading={foodHistoryQuery.isLoading}
+          />
+        </FadeSlideIn>
+
+        <View style={styles.sectionHeading}>
+          <SectionLabel>Recent activity</SectionLabel>
           <TouchableOpacity
-            style={{
-              flex: 1,
-              flexDirection: "row",
-              justifyContent: "center",
-              alignItems: "center",
-              paddingVertical: 10,
-              borderRadius: 20,
-              backgroundColor:
-                activeTab === "TRAINING" ? theme.primary + "15" : "transparent",
-              borderWidth: 1.5,
-              borderColor:
-                activeTab === "TRAINING" ? theme.primary + "30" : "transparent",
-            }}
-            activeOpacity={0.8}
-            onPress={() => setActiveTab("TRAINING")}
+            accessibilityRole="button"
+            accessibilityLabel="View all recent training activity"
+            hitSlop={8}
+            onPress={() => router.push("/gymProgression")}
           >
-            <MaterialCommunityIcons
-              name="dumbbell"
-              size={18}
-              color={activeTab === "TRAINING" ? theme.primary : theme.textLight}
-              style={{ marginRight: 6 }}
-            />
-            <Text
-              style={{
-                fontSize: 13,
-                fontWeight: "800",
-                fontFamily: "PlusJakartaSans_800ExtraBold",
-                color:
-                  activeTab === "TRAINING" ? theme.primary : theme.textLight,
-              }}
-            >
-              Training
+            <Text style={[styles.inlineAction, { color: theme.primary }]}>
+              View all
             </Text>
           </TouchableOpacity>
         </View>
-
-        {activeTab === "NUTRITION" && (
-          <>
-            <SectionLabel>Today&apos;s Fuel</SectionLabel>
-
-            <FadeSlideIn delay={80}>
-              <ShadowGlowCard style={homeCardStyle}>
-                <View style={[styles.sectionHeader, { marginBottom: 12 }]}>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 6,
-                    }}
-                  >
-                    <MaterialCommunityIcons
-                      name="fire"
-                      size={20}
-                      color={calorieColor}
-                    />
-                    <Text style={styles.sectionTitle}>Daily Progress</Text>
+        <FadeSlideIn delay={160}>
+          <ShadowGlowCard>
+            {gymQuery.isLoading ? (
+              <View style={{ gap: 16 }}>
+                {[0, 1].map((item) => (
+                  <View key={item} style={styles.activityRow}>
+                    <ShimmerSkeleton width={38} height={38} borderRadius={12} />
+                    <View style={{ flex: 1, gap: 6 }}>
+                      <ShimmerSkeleton width="65%" height={12} />
+                      <ShimmerSkeleton width="45%" height={9} />
+                    </View>
                   </View>
-                  {summary && (
-                    <View
-                      style={{
-                        backgroundColor:
-                          statusColor(summary.status, theme) + "15",
-                        borderRadius: 8,
-                        paddingHorizontal: 8,
-                        paddingVertical: 4,
-                        borderWidth: 1,
-                        borderColor: statusColor(summary.status, theme) + "30",
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 11,
-                          fontWeight: "800",
-                          color: statusColor(summary.status, theme),
-                        }}
-                      >
-                        {statusLabel(summary.status)}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
-                {summaryLoading ? (
-                  <ActivityIndicator color={theme.primary} />
-                ) : prog ? (
-                  <>
-                    <MacroDonutChart
-                      progress={prog}
-                      theme={theme}
-                      style={styles}
-                    />
-                    <TouchableOpacity
-                      style={{
-                        alignSelf: "center",
-                        marginTop: 16,
-                        backgroundColor: theme.primary + "10",
-                        paddingHorizontal: 16,
-                        paddingVertical: 8,
-                        borderRadius: 10,
-                        borderWidth: 1,
-                        borderColor: theme.primary + "20",
-                      }}
-                      onPress={() => router.push("/foodDiary")}
-                    >
-                      <Text
-                        style={{
-                          color: theme.primary,
-                          fontSize: 12,
-                          fontWeight: "800",
-                        }}
-                      >
-                        Open food diary →
-                      </Text>
-                    </TouchableOpacity>
-                  </>
-                ) : (
-                  <View style={{ alignItems: "center", paddingVertical: 20 }}>
-                    <Text
-                      style={[
-                        styles.subEmptyText,
-                        { textAlign: "center", marginBottom: 16 },
-                      ]}
-                    >
-                      No food logged today. Start track your calories and
-                      macros!
-                    </Text>
-                    <TouchableOpacity
-                      style={styles.primaryButton}
-                      onPress={() => router.push("/foodDiary")}
-                    >
-                      <Text style={styles.primaryButtonText}>
-                        Log your first meal
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </ShadowGlowCard>
-            </FadeSlideIn>
-            <FadeSlideIn delay={120}>
-              <WaterTracker />
-            </FadeSlideIn>
-
-            {profile && (
-              <FadeSlideIn delay={100}>
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  onPress={() => router.push("/nutritionProfile")}
-                >
-                  <ShadowGlowCard style={homeCardStyle}>
-                    <View style={[styles.sectionHeader, { marginBottom: 14 }]}>
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "center",
-                          gap: 6,
-                        }}
-                      >
-                        <MaterialIcons
-                          name="person-outline"
-                          size={18}
-                          color={theme.primary}
-                        />
-                        <Text style={styles.sectionTitle}>Body Profile</Text>
-                      </View>
-                      <View
-                        style={{
-                          backgroundColor: theme.primary + "15",
-                          borderRadius: 8,
-                          paddingHorizontal: 8,
-                          paddingVertical: 4,
-                          borderWidth: 1,
-                          borderColor: theme.primary + "30",
-                        }}
-                      >
-                        <Text
-                          style={{
-                            fontSize: 10,
-                            fontWeight: "800",
-                            color: theme.primary,
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          {profile.goal_type}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        justifyContent: "space-between",
-                        backgroundColor: theme.primary + "06",
-                        borderRadius: 14,
-                        padding: 14,
-                        borderWidth: 1.5,
-                        borderColor: theme.primary + "20",
-                      }}
-                    >
-                      <View style={{ flex: 1, alignItems: "center" }}>
-                        <Text
-                          style={{
-                            fontSize: 10,
-                            fontWeight: "700",
-                            color: theme.textLight,
-                            textTransform: "uppercase",
-                            marginBottom: 4,
-                          }}
-                        >
-                          Weight
-                        </Text>
-                        <Text
-                          style={{
-                            fontSize: 16,
-                            fontWeight: "900",
-                            color: theme.textBlack,
-                          }}
-                        >
-                          {profile.weight_kg} kg
-                        </Text>
-                      </View>
-                      <View
-                        style={{
-                          width: 1,
-                          backgroundColor: theme.border + "50",
-                        }}
-                      />
-                      <View style={{ flex: 1, alignItems: "center" }}>
-                        <Text
-                          style={{
-                            fontSize: 10,
-                            fontWeight: "700",
-                            color: theme.textLight,
-                            textTransform: "uppercase",
-                            marginBottom: 4,
-                          }}
-                        >
-                          Height
-                        </Text>
-                        <Text
-                          style={{
-                            fontSize: 16,
-                            fontWeight: "900",
-                            color: theme.textBlack,
-                          }}
-                        >
-                          {profile.height_cm} cm
-                        </Text>
-                      </View>
-                      <View
-                        style={{
-                          width: 1,
-                          backgroundColor: theme.border + "50",
-                        }}
-                      />
-                      <View style={{ flex: 1, alignItems: "center" }}>
-                        <Text
-                          style={{
-                            fontSize: 10,
-                            fontWeight: "700",
-                            color: theme.textLight,
-                            textTransform: "uppercase",
-                            marginBottom: 4,
-                          }}
-                        >
-                          TDEE
-                        </Text>
-                        <Text
-                          style={{
-                            fontSize: 16,
-                            fontWeight: "900",
-                            color: theme.textBlack,
-                          }}
-                        >
-                          {profile.calculated_tdee?.toFixed(0)}
-                        </Text>
-                      </View>
-                    </View>
-                  </ShadowGlowCard>
-                </TouchableOpacity>
-              </FadeSlideIn>
-            )}
-          </>
-        )}
-
-        {activeTab === "TRAINING" && (
-          <>
-            <SectionLabel>Workout</SectionLabel>
-            <FadeSlideIn delay={180}>
-              <TouchableOpacity
-                onPress={() => router.push("/(pages)/workoutSession")}
-                activeOpacity={0.8}
-                style={{ marginBottom: 12 }}
-              >
+                ))}
+              </View>
+            ) : recentTraining.length > 0 ? (
+              recentTraining.map(({ exercise, session }, index) => (
                 <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    backgroundColor: theme.primary + "06",
-                    borderRadius: 16,
-                    padding: 16,
-                    borderWidth: 1.5,
-                    borderColor: theme.primary + "20",
-                    shadowColor: theme.shadow,
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: 0.03,
-                    shadowRadius: 8,
-                    elevation: 2,
-                  }}
+                  key={`${exercise.id}-${session!.id}`}
+                  style={[
+                    styles.activityRow,
+                    index > 0 && {
+                      borderTopColor: theme.border,
+                      borderTopWidth: StyleSheet.hairlineWidth,
+                      paddingTop: 14,
+                    },
+                  ]}
                 >
-                  <View
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 10,
-                      backgroundColor: theme.primary + "12",
-                      justifyContent: "center",
-                      alignItems: "center",
-                      marginRight: 12,
-                    }}
-                  >
-                    <MaterialCommunityIcons
-                      name="dumbbell"
-                      size={20}
-                      color={theme.primary}
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      style={{
-                        color: theme.textBlack,
-                        fontSize: 15,
-                        fontWeight: "800",
-                      }}
-                    >
-                      Start a Workout
+                  <View style={{ flex: 1, gap: 3 }}>
+                    <Text style={[styles.activityTitle, { color: theme.text }]}>
+                      {exercise.name ?? "Exercise"}
                     </Text>
                     <Text
-                      style={{
-                        color: theme.textLight,
-                        fontSize: 12,
-                        fontWeight: "600",
-                        marginTop: 2,
-                      }}
+                      style={[styles.activityMeta, { color: theme.textLight }]}
                     >
-                      Pick exercises and begin your session
+                      {session!.sets?.length ?? 0} sets ·{" "}
+                      {session!.session_date?.slice(0, 10) ?? "Unknown date"}
                     </Text>
                   </View>
-                  <MaterialIcons
-                    name="arrow-forward"
-                    size={20}
-                    color={theme.primary}
-                  />
+                  {getLatestEstimated1RM(exercise) > 0 ? (
+                    <Text
+                      style={[styles.activityValue, { color: theme.primary }]}
+                    >
+                      {formatMass(getLatestEstimated1RM(exercise), measurementSystem, 0)}
+                    </Text>
+                  ) : null}
                 </View>
-              </TouchableOpacity>
-            </FadeSlideIn>
-
-            <FadeSlideIn delay={120}>
-              <ShadowGlowCard style={homeCardStyle}>
-                <View style={[styles.sectionHeader, { marginBottom: 12 }]}>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 6,
-                    }}
-                  >
-                    <MaterialIcons
-                      name="calendar-today"
-                      size={18}
-                      color={theme.primary}
-                    />
-                    <Text style={styles.sectionTitle}>Weekly Streak</Text>
-                  </View>
-                  <View
-                    style={{
-                      backgroundColor:
-                        (workoutDaysThisWeek >= 4
-                          ? theme.income
-                          : theme.primary) + "15",
-                      borderRadius: 8,
-                      paddingHorizontal: 8,
-                      paddingVertical: 4,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 11,
-                        fontWeight: "800",
-                        color:
-                          workoutDaysThisWeek >= 4
-                            ? theme.income
-                            : theme.primary,
-                      }}
-                    >
-                      {workoutDaysThisWeek} workout
-                      {workoutDaysThisWeek !== 1 ? "s" : ""}
-                    </Text>
-                  </View>
-                </View>
-                <WeekStreak filledDays={streakDays} />
-              </ShadowGlowCard>
-            </FadeSlideIn>
-
-            <FadeSlideIn delay={140}>
-              <ShadowGlowCard style={homeCardStyle}>
-                <View style={[styles.sectionHeader, { marginBottom: 14 }]}>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 6,
-                    }}
-                  >
-                    <MaterialCommunityIcons
-                      name="dumbbell"
-                      size={18}
-                      color={theme.primary}
-                    />
-                    <Text style={styles.sectionTitle}>Recent Progress</Text>
-                  </View>
-                  <View
-                    style={{
-                      backgroundColor: theme.primary + "15",
-                      borderRadius: 8,
-                      paddingHorizontal: 8,
-                      paddingVertical: 4,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 11,
-                        fontWeight: "800",
-                        color: theme.primary,
-                      }}
-                    >
-                      {exercises.length} Tracked
-                    </Text>
-                  </View>
-                </View>
-
-                {gymLoading ? (
-                  <ActivityIndicator color={theme.primary} />
-                ) : recentExercises.length ? (
-                  <>
-                    {recentExercises.map((exercise, idx) => {
-                      const rm = getLatest1RM(exercise);
-                      const lastDate = getLastSessionDate(exercise);
-                      const trend = get1RMTrend(exercise);
-                      return (
-                        <View
-                          key={exercise.id}
-                          style={{
-                            flexDirection: "row",
-                            alignItems: "center",
-                            paddingVertical: 12,
-                            borderTopWidth: idx === 0 ? 0 : 1,
-                            borderTopColor: theme.border + "30",
-                            gap: 12,
-                          }}
-                        >
-                          <View
-                            style={{
-                              width: 36,
-                              height: 36,
-                              borderRadius: 10,
-                              backgroundColor: theme.primary + "10",
-                              justifyContent: "center",
-                              alignItems: "center",
-                            }}
-                          >
-                            <MaterialCommunityIcons
-                              name="arm-flex"
-                              size={18}
-                              color={theme.primary}
-                            />
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <View
-                              style={{
-                                flexDirection: "row",
-                                alignItems: "center",
-                                gap: 6,
-                                flexWrap: "wrap",
-                              }}
-                            >
-                              <Text
-                                style={{
-                                  fontSize: 14,
-                                  fontWeight: "800",
-                                  color: theme.textBlack,
-                                  textTransform: "capitalize",
-                                }}
-                              >
-                                {exercise.name}
-                              </Text>
-                              {trend && (
-                                <View
-                                  style={{
-                                    backgroundColor: trend.isPositive
-                                      ? theme.income + "18"
-                                      : theme.expense + "18",
-                                    borderRadius: 6,
-                                    paddingHorizontal: 6,
-                                    paddingVertical: 2,
-                                  }}
-                                >
-                                  <Text
-                                    style={{
-                                      fontSize: 9,
-                                      fontWeight: "800",
-                                      color: trend.isPositive
-                                        ? theme.income
-                                        : theme.expense,
-                                    }}
-                                  >
-                                    {trend.isPositive ? "▲" : "▼"} {trend.value}
-                                  </Text>
-                                </View>
-                              )}
-                            </View>
-                            <Text style={styles.listMeta}>
-                              {displaySplit(exercise.split)} ·{" "}
-                              {exercise.muscle_group ?? "-"} ·{" "}
-                              {formatShortDate(lastDate)}
-                            </Text>
-                          </View>
-                          {rm > 0 && (
-                            <View style={{ alignItems: "flex-end" }}>
-                              <Text
-                                style={{
-                                  fontSize: 15,
-                                  fontWeight: "900",
-                                  color: theme.primary,
-                                }}
-                              >
-                                {rm.toFixed(0)} kg
-                              </Text>
-                              <Text
-                                style={{
-                                  fontSize: 9,
-                                  fontWeight: "600",
-                                  color: theme.textLight,
-                                }}
-                              >
-                                est. 1RM
-                              </Text>
-                            </View>
-                          )}
-                        </View>
-                      );
-                    })}
-                    <TouchableOpacity
-                      style={{ alignSelf: "flex-end", marginTop: 8 }}
-                      onPress={() => router.push("/(tabs)/gymProgression")}
-                    >
-                      <Text style={styles.inlineActionText}>View all →</Text>
-                    </TouchableOpacity>
-                  </>
-                ) : (
-                  <View style={{ alignItems: "center", paddingVertical: 16 }}>
-                    <Text
-                      style={[
-                        styles.subEmptyText,
-                        { textAlign: "center", marginBottom: 12 },
-                      ]}
-                    >
-                      No exercises tracked yet. Start recording your lifts!
-                    </Text>
-                    <TouchableOpacity
-                      style={styles.primaryButton}
-                      onPress={() => router.push("/(tabs)/gymProgression")}
-                    >
-                      <Text style={styles.primaryButtonText}>
-                        Add first exercise
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </ShadowGlowCard>
-            </FadeSlideIn>
-
-            {/* Split overview */}
-            {exercises.length > 0 && (
-              <FadeSlideIn delay={160}>
-                <SplitSummaryCard exercises={exercises} styles={styles} />
-              </FadeSlideIn>
+              ))
+            ) : (
+              <StatePanel
+                variant="empty"
+                compact
+                embedded
+                title="No training activity yet"
+                message="Completed exercise sessions will appear here."
+                primaryAction={{
+                  label: "Start workout",
+                  onPress: openWorkout,
+                }}
+              />
             )}
-          </>
+          </ShadowGlowCard>
+        </FadeSlideIn>
+
+        {(nutritionQuery.isError ||
+          gymQuery.isError ||
+          programsQuery.isError) && (
+          <StatePanel
+            variant="error"
+            compact
+            title="Dashboard refresh incomplete"
+            message="Some information could not be refreshed. Cached data is still shown where available."
+            primaryAction={{
+              label: "Retry",
+              onPress: refresh,
+              accessibilityHint: "Retries loading all dashboard information",
+            }}
+          />
         )}
-      </ScrollView>
+      </TabScreenScrollView>
     </SafeAreaView>
   );
 }

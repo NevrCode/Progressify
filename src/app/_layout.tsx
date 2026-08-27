@@ -1,13 +1,20 @@
 import { PatchNotesPopup } from "@/components/patchNotesPopUp";
+import { ShimmerSkeleton } from "@/components/base/shimmer-skeleton";
 import { AlertProvider, useAlert } from "@/context/AlertContext";
 import { AuthProvider, useAuthState } from "@/context/AuthContext";
 import { DiaryProvider } from "@/context/DairyContext";
-import { ThemeProvider } from "@/context/ThemeContext";
+import { ThemeProvider, useTheme } from "@/context/ThemeContext";
+import { UnitPreferenceProvider } from "@/context/UnitPreferenceContext";
 import { usePatchNotes } from "@/hooks/usePatchNote";
-import { startOfflineSyncLifecycle } from "@/services/syncQueueService";
+import {
+  bindSyncQueueQueryClient,
+  startOfflineSyncLifecycle,
+} from "@/services/syncQueueService";
 import { shouldRetryApiError } from "@/utils/apiError";
+import { relativeLuminance } from "@/utils/color-contrast";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, usePathname, useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import {
   useFonts,
   PlusJakartaSans_400Regular,
@@ -16,8 +23,15 @@ import {
   PlusJakartaSans_700Bold,
   PlusJakartaSans_800ExtraBold,
 } from "@expo-google-fonts/plus-jakarta-sans";
+import {
+  BarlowCondensed_600SemiBold,
+  BarlowCondensed_700Bold,
+  BarlowCondensed_800ExtraBold,
+  BarlowCondensed_900Black,
+} from "@expo-google-fonts/barlow-condensed";
 import { useEffect, useMemo, useRef } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 export default function RootLayout() {
@@ -27,12 +41,19 @@ export default function RootLayout() {
     PlusJakartaSans_600SemiBold,
     PlusJakartaSans_700Bold,
     PlusJakartaSans_800ExtraBold,
+    BarlowCondensed_600SemiBold,
+    BarlowCondensed_700Bold,
+    BarlowCondensed_800ExtraBold,
+    BarlowCondensed_900Black,
   });
   const queryClient = useMemo(
     () => new QueryClient({
       defaultOptions: {
         queries: {
           retry: shouldRetryApiError,
+          staleTime: 5 * 60 * 1000,
+          gcTime: 24 * 60 * 60 * 1000,
+          refetchOnWindowFocus: false,
         },
         mutations: {
           retry: false,
@@ -42,24 +63,30 @@ export default function RootLayout() {
     [],
   );
   useEffect(() => startOfflineSyncLifecycle(), []);
+  useEffect(() => bindSyncQueueQueryClient(queryClient), [queryClient]);
   return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        <AlertProvider>
-          <DiaryProvider>
-            <QueryClientProvider client={queryClient}>
-              <AuthProvider>
-                <AppNavigator fontsLoaded={fontsLoaded} />
-              </AuthProvider>
-            </QueryClientProvider>
-          </DiaryProvider>
-        </AlertProvider>
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <AlertProvider>
+            <DiaryProvider>
+              <QueryClientProvider client={queryClient}>
+                <AuthProvider>
+                  <AppNavigator fontsLoaded={fontsLoaded} />
+                </AuthProvider>
+              </QueryClientProvider>
+            </DiaryProvider>
+          </AlertProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
 function AppNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
+  const { theme } = useTheme();
+  const statusBarStyle =
+    relativeLuminance(theme.background) < 0.35 ? "light" : "dark";
   const authState = useAuthState();
   const pathname = usePathname();
   const router = useRouter();
@@ -101,27 +128,33 @@ function AppNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
 
   if (authState === "initializing" || !fontsLoaded) {
     return (
-      <View
-        style={{
-          flex: 1,
-          justifyContent: "center",
-          alignItems: "center",
-          backgroundColor: "#FFFFFF",
-        }}
-      >
-        <ActivityIndicator size="large" color="#4CAF50" />
-      </View>
+      <>
+        <StatusBar style={statusBarStyle} />
+        <View
+          style={{
+            flex: 1,
+            justifyContent: "center",
+            alignItems: "center",
+            backgroundColor: theme.background,
+            gap: 12,
+          }}
+        >
+          <ShimmerSkeleton width={52} height={52} borderRadius={16} />
+          <ShimmerSkeleton width={136} height={22} borderRadius={7} />
+        </View>
+      </>
     );
   }
 
   return (
-    <>
+    <UnitPreferenceProvider enabled={authState === "authenticated"}>
+      <StatusBar style={statusBarStyle} />
       <Stack screenOptions={{ headerShown: false }} />
       <PatchNotesPopup
         visible={showPopup}
         patch={latestPatch}
         onDismiss={markAsSeen}
       />
-    </>
+    </UnitPreferenceProvider>
   );
 }

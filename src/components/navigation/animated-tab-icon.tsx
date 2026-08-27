@@ -1,4 +1,8 @@
-import { FontAwesome, MaterialIcons } from "@expo/vector-icons";
+import {
+  FontAwesome,
+  MaterialCommunityIcons,
+  MaterialIcons,
+} from "@expo/vector-icons";
 import { ComponentProps, useEffect } from "react";
 import Animated, {
   ReduceMotion,
@@ -9,6 +13,9 @@ import Animated, {
 
 type FontAwesomeName = ComponentProps<typeof FontAwesome>["name"];
 type MaterialIconsName = ComponentProps<typeof MaterialIcons>["name"];
+type MaterialCommunityIconsName = ComponentProps<
+  typeof MaterialCommunityIcons
+>["name"];
 
 type AnimatedTabIconProps =
   | {
@@ -22,6 +29,14 @@ type AnimatedTabIconProps =
   | {
       family: "material";
       name: MaterialIconsName;
+      label: string;
+      focused: boolean;
+      activeColor: string;
+      inactiveColor: string;
+    }
+  | {
+      family: "material-community";
+      name: MaterialCommunityIconsName;
       label: string;
       focused: boolean;
       activeColor: string;
@@ -93,6 +108,8 @@ export function AnimatedTabIcon({
       <Animated.View style={iconAnimatedStyle}>
         {family === "font-awesome" ? (
           <FontAwesome name={name} size={19} color={color} />
+        ) : family === "material-community" ? (
+          <MaterialCommunityIcons name={name} size={21} color={color} />
         ) : (
           <MaterialIcons name={name} size={21} color={color} />
         )}

@@ -1,26 +1,52 @@
 import { gymStyles } from "@/assets/styles/gym.style";
+import { AppButton } from "@/components/base/app-button";
+import {
+  DurableUndoSnackbar,
+  type DurableUndoSnackbarState,
+} from "@/components/base/durable-undo-snackbar";
+import { DateOnlyField } from "@/components/base/date-only-field";
+import {
+  ActionStatus,
+  type ActionFeedback,
+} from "@/components/base/action-status";
+import { ModalHeader } from "@/components/base/modal-header";
+import { ScreenError, ScreenLoading } from "@/components/base/screen-state";
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
+import { ProgressionChartFrame } from "@/components/gym/progression-chart-frame";
+import { EditableSetRow } from "@/components/gym/editable-set-row";
+import { SessionHistoryCard } from "@/components/gym/session-history-card";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useUnitPreference } from "@/context/UnitPreferenceContext";
 import { useGymDashboard } from "@/hooks/useGymDashboard";
+import { buildProgressionChartSummary } from "@/utils/progression-chart-summary";
+import { buildCanonicalWorkoutSetRequest } from "@/features/workout-session/canonical-set-request";
 import {
-  calculateEstimatedOneRepMax,
-  calculateWorkoutVolume,
-} from "@/utils/workoutMetrics";
+  type EditableSet,
+  buildSessionPoints,
+  createEditableSet,
+  formatDateForDisplay,
+  getExerciseName,
+  getSessionDate,
+  getSessionSets,
+  toDateSortValue,
+} from "@/features/gym/session-editor";
+import { displayMass, formatMass, massUnitLabel } from "@/utils/measurement-units";
+import { toApiError } from "@/utils/apiError";
+import { isOfflineQueuedResponse } from "@/utils/offline-response";
 import {
   deleteSessionProgression,
-  ExerciseProgressionDTO,
   ExerciseSessionDTO,
   GymExerciseSessionRequestDTO,
+  restoreSessionProgression,
   updateExerciseSession,
-  WorkoutSetDTO,
 } from "@/services/gymService";
+import { syncQueue } from "@/services/syncQueueService";
 import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Modal,
   RefreshControl,
   ScrollView,
@@ -30,107 +56,20 @@ import {
   View
 } from "react-native";
 import { LineChart } from "react-native-gifted-charts";
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-type EditableSet = {
-  localId: string;
-  id?: number;
-  set_number: string;
-  weight: string;
-  reps: string;
-  rir: string;
+type SessionDeleteUndo = DurableUndoSnackbarState & {
+  pendingId?: string;
+  sessionId?: number;
 };
-
-type SessionPoint = {
-  sessionDate: string;
-  estimated1RM: number;
-  topWeight: number;
-  bestReps: number;
-  totalSets: number;
-  totalVolume: number;
-};
-
-const getExerciseName = (exercise?: ExerciseProgressionDTO) =>
-  exercise?.name ?? "Exercise";
-
-const getSessionSets = (session: ExerciseSessionDTO) => session.sets ?? [];
-
-const getSessionDate = (session: ExerciseSessionDTO) =>
-  session.session_date ?? "";
-
-const formatDateForDisplay = (value?: string) => {
-  if (!value) return "-";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-};
-
-const toDateSortValue = (value?: string) => {
-  if (!value) return Number.MAX_SAFE_INTEGER;
-
-  const parsed = new Date(value).getTime();
-  return Number.isNaN(parsed) ? Number.MAX_SAFE_INTEGER : parsed;
-};
-
-const buildSessionPoints = (sessions: ExerciseSessionDTO[]): SessionPoint[] =>
-  sessions
-    .map((session) => {
-      const sessionDate = getSessionDate(session);
-      const sets = getSessionSets(session);
-
-      if (!sessionDate || !sets.length) return null;
-
-      const topSet = sets.reduce((best, current) => {
-        if (current.weight > best.weight) return current;
-        if (current.weight === best.weight && current.reps > best.reps) {
-          return current;
-        }
-        return best;
-      }, sets[0]);
-      const totalVolume = sets.reduce(
-        (total, set) => total + calculateWorkoutVolume(set.weight, set.reps),
-        0,
-      );
-
-      return {
-        sessionDate,
-        estimated1RM: calculateEstimatedOneRepMax(
-          topSet.weight,
-          topSet.reps,
-        ),
-        topWeight: topSet.weight,
-        bestReps: topSet.reps,
-        totalSets: sets.length,
-        totalVolume,
-      };
-    })
-    .filter((point): point is SessionPoint => point !== null)
-    .sort(
-      (first, second) =>
-        toDateSortValue(first.sessionDate) -
-        toDateSortValue(second.sessionDate),
-    );
-
-const createEditableSet = (set: WorkoutSetDTO, index: number): EditableSet => ({
-  localId: `${set.id ?? "new"}-${index}-${Date.now()}`,
-  id: set.id,
-  set_number: String(set.set_number ?? index + 1),
-  weight: String(set.weight ?? ""),
-  reps: String(set.reps ?? ""),
-  rir: String(set.rir ?? 0),
-});
 
 export default function ManageWorkoutSession() {
   const { theme } = useTheme();
-  const styles = gymStyles(theme);
+  const { measurementSystem } = useUnitPreference();
+  const styles = useMemo(() => gymStyles(theme), [theme]);
   const router = useRouter();
   const queryClient = useQueryClient();
+  const goBack = useCallback(() => router.back(), [router]);
   const { exerciseId } = useLocalSearchParams<{ exerciseId?: string }>();
   const selectedExerciseId = Number(exerciseId);
   const { alert } = useAlert();
@@ -139,6 +78,9 @@ export default function ManageWorkoutSession() {
   const [sessionDate, setSessionDate] = useState("");
   const [notes, setNotes] = useState("");
   const [editableSets, setEditableSets] = useState<EditableSet[]>([]);
+  const [actionFeedback, setActionFeedback] =
+    useState<ActionFeedback | null>(null);
+  const [deleteUndo, setDeleteUndo] = useState<SessionDeleteUndo | null>(null);
 
   const {
     data: dashboard,
@@ -165,6 +107,15 @@ export default function ManageWorkoutSession() {
     [exercise],
   );
   const sessionPoints = useMemo(() => buildSessionPoints(sessions), [sessions]);
+  const chartSummary = useMemo(
+    () =>
+      buildProgressionChartSummary(
+        getExerciseName(exercise),
+        sessionPoints,
+        { formatValue: (kilograms) => formatMass(kilograms, measurementSystem) },
+      ),
+    [exercise, measurementSystem, sessionPoints],
+  );
 
   const updateSessionMutation = useMutation({
     mutationFn: async ({
@@ -185,31 +136,36 @@ export default function ManageWorkoutSession() {
     },
   });
 
-  const openEditModal = (session: ExerciseSessionDTO) => {
+  const openEditModal = useCallback((session: ExerciseSessionDTO) => {
+    setActionFeedback(null);
     setEditingSession(session);
     setSessionDate(getSessionDate(session));
     setNotes(session.notes ?? "");
     setEditableSets(getSessionSets(session).map(createEditableSet));
-  };
+  }, []);
 
   const closeEditModal = () => {
     setEditingSession(null);
     setSessionDate("");
     setNotes("");
     setEditableSets([]);
+    setActionFeedback(null);
   };
 
-  const updateSetField = (
-    localId: string,
-    field: keyof Omit<EditableSet, "localId" | "id">,
-    value: string,
-  ) => {
-    setEditableSets((current) =>
-      current.map((set) =>
-        set.localId === localId ? { ...set, [field]: value } : set,
-      ),
-    );
-  };
+  const updateSetField = useCallback(
+    (
+      localId: string,
+      field: keyof Omit<EditableSet, "localId" | "id">,
+      value: string,
+    ) => {
+      setEditableSets((current) =>
+        current.map((set) =>
+          set.localId === localId ? { ...set, [field]: value } : set,
+        ),
+      );
+    },
+    [],
+  );
 
   const addEditableSet = () => {
     setEditableSets((current) => [
@@ -220,11 +176,25 @@ export default function ManageWorkoutSession() {
         weight: "",
         reps: "",
         rir: "0",
+        set_type: "WORKING",
       },
     ]);
   };
 
-  const removeEditableSet = (localId: string) => {
+  const toggleEditableSetType = useCallback((localId: string) => {
+    setEditableSets((current) =>
+      current.map((set) =>
+        set.localId === localId
+          ? {
+              ...set,
+              set_type: set.set_type === "WARMUP" ? "WORKING" : "WARMUP",
+            }
+          : set,
+      ),
+    );
+  }, []);
+
+  const removeEditableSet = useCallback((localId: string) => {
     setEditableSets((current) =>
       current
         .filter((set) => set.localId !== localId)
@@ -233,7 +203,7 @@ export default function ManageWorkoutSession() {
           set_number: String(index + 1),
         })),
     );
-  };
+  }, []);
 
   const buildPayload = () => {
     if (!sessionDate.trim()) {
@@ -243,12 +213,13 @@ export default function ManageWorkoutSession() {
       return "Keep at least one set in the session.";
     }
 
-    const sets = editableSets.map((set, index) => ({
+    const sets = editableSets.map((set, index) => buildCanonicalWorkoutSetRequest({
       id: set.id,
-      set_number: index + 1,
-      weight: Number(set.weight),
-      reps: Number(set.reps),
-      rir: Number(set.rir || 0),
+      setNumber: index + 1,
+      weightKg: set.weight,
+      reps: set.reps,
+      rir: set.rir,
+      setType: set.set_type,
     }));
     const invalidSet = sets.find(
       (set) =>
@@ -275,80 +246,140 @@ export default function ManageWorkoutSession() {
 
     const payload = buildPayload();
     if (typeof payload === "string") {
-      alert("Session not ready", payload);
+      setActionFeedback({
+        status: "error",
+        title: "Session not ready",
+        message: payload,
+      });
       return;
     }
 
+    setActionFeedback(null);
     try {
-      await updateSessionMutation.mutateAsync({
+      const result = await updateSessionMutation.mutateAsync({
         id: editingSession.id,
         payload,
       });
       closeEditModal();
-    } catch (saveError: any) {
-      alert(
-        "Update failed",
-        saveError?.message || "The session could not be updated.",
-      );
+      setActionFeedback({
+        status: isOfflineQueuedResponse(result) ? "info" : "success",
+        title: isOfflineQueuedResponse(result)
+          ? "Session saved locally"
+          : "Session updated",
+        message: isOfflineQueuedResponse(result)
+          ? "This update is pending synchronization and remains available in the device queue."
+          : "The workout session and its sets were saved.",
+      });
+    } catch (saveError) {
+      setActionFeedback({
+        status: "error",
+        title: "Update failed",
+        message:
+          toApiError(saveError).message ||
+          "The session could not be updated.",
+      });
     }
   };
 
-  const confirmDeleteSession = (session: ExerciseSessionDTO) => {
-    alert(
-      "Delete session",
-      "This will remove the session and its sets from the progression history.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await deleteSessionMutation.mutateAsync(session.id);
-            } catch (deleteError: any) {
-              alert(
-                "Delete failed",
-                deleteError?.message || "The session could not be deleted.",
-              );
-            }
+  const confirmDeleteSession = useCallback(
+    (session: ExerciseSessionDTO) => {
+      alert(
+        "Delete session",
+        "This will remove the session and its sets from the progression history.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: async () => {
+              setActionFeedback(null);
+              try {
+                const result =
+                  await deleteSessionMutation.mutateAsync(session.id);
+                setDeleteUndo({
+                  phase: "countdown",
+                  label: `session from ${session.session_date}`,
+                  expiresAt: Date.now() + 5000,
+                  sessionId: session.id,
+                  ...(isOfflineQueuedResponse(result) ? { pendingId: result.pending_id } : {}),
+                });
+                setActionFeedback({
+                  status: isOfflineQueuedResponse(result) ? "info" : "success",
+                  title: isOfflineQueuedResponse(result)
+                    ? "Deletion saved locally"
+                    : "Session deleted",
+                  message: isOfflineQueuedResponse(result)
+                    ? "The deletion is pending synchronization in the device queue."
+                    : "The session was removed from progression history.",
+                });
+              } catch (deleteError) {
+                setActionFeedback({
+                  status: "error",
+                  title: "Delete failed",
+                  message:
+                    toApiError(deleteError).message ||
+                    "The session could not be deleted.",
+                });
+              }
+            },
           },
-        },
-      ],
-    );
+        ],
+      );
+    },
+    // `alert` and `deleteSessionMutation` are not guaranteed stable across
+    // renders; this callback's identity is only meant to change when the
+    // mutation itself does, so it stays in the dependency array while
+    // `alert` is read fresh via closure each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [deleteSessionMutation],
+  );
+  const undoSessionDeletion = async () => {
+    const undo = deleteUndo;
+    if (!undo || undo.phase !== "countdown" || !undo.sessionId) return;
+    setDeleteUndo({ phase: "undoing", label: undo.label });
+    try {
+      if (undo.pendingId) {
+        const cancellation = await syncQueue.cancelPendingDelete(undo.pendingId);
+        if (cancellation.status !== "cancelled") {
+          setDeleteUndo({ phase: "unavailable", label: undo.label, message: "Undo is unavailable because deletion has already started syncing." });
+          return;
+        }
+      } else {
+        const restored = await restoreSessionProgression(undo.sessionId);
+        await queryClient.invalidateQueries({ queryKey: ["gym"] });
+        await refetch();
+        setDeleteUndo({
+          phase: "restored",
+          label: undo.label,
+          ...(isOfflineQueuedResponse(restored)
+            ? { message: "Restoration saved locally and will sync in order." }
+            : {}),
+        });
+        return;
+      }
+      await queryClient.invalidateQueries({ queryKey: ["gym"] });
+      await refetch();
+      setDeleteUndo({ phase: "restored", label: undo.label });
+    } catch (error) {
+      setDeleteUndo({ phase: "error", label: undo.label, message: toApiError(error).message });
+    }
   };
 
   if (isLoading) {
     return (
-      <SafeAreaProvider>
-        <SafeAreaView style={styles.safeArea}>
-          <View style={styles.loadingState}>
-            <ActivityIndicator size="large" color={theme.primary} />
-            <Text style={styles.loadingText}>Loading workout sessions...</Text>
-          </View>
-        </SafeAreaView>
-      </SafeAreaProvider>
+      <ScreenLoading message="Loading workout sessions..." theme={theme} />
     );
   }
 
   if (error || !exercise) {
     return (
-      <SafeAreaProvider>
-        <SafeAreaView style={styles.safeArea}>
-          <View style={styles.errorState}>
-            <Text style={styles.errorTitle}>Session data unavailable</Text>
-            <Text style={styles.errorText}>
-              Open this page from an exercise progression so the app knows which
-              sessions to manage.
-            </Text>
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => router.back()}
-            >
-              <Text style={styles.primaryButtonText}>Go back</Text>
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </SafeAreaProvider>
+      <ScreenError
+        title="Session data unavailable"
+        message="Open this page from an exercise progression so the app knows which sessions to manage."
+        actionLabel="Go back"
+        onAction={goBack}
+        theme={theme}
+      />
     );
   }
 
@@ -365,10 +396,22 @@ export default function ManageWorkoutSession() {
             <Text style={styles.eyebrow}>Workout Sessions</Text>
             <Text style={styles.title}>{getExerciseName(exercise)}</Text>
           </View>
-          <TouchableOpacity style={styles.headerBadge} onPress={router.back}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            style={styles.headerBadge}
+            onPress={router.back}
+          >
             <MaterialIcons name="arrow-back" size={22} color={theme.white} />
           </TouchableOpacity>
         </View>
+
+        {actionFeedback && !editingSession ? (
+          <ActionStatus
+            {...actionFeedback}
+            onDismiss={() => setActionFeedback(null)}
+          />
+        ) : null}
 
         <View style={styles.heroCard}>
           <View style={styles.heroTopRow}>
@@ -393,7 +436,7 @@ export default function ManageWorkoutSession() {
               <Text style={styles.heroStatLabel}>Best est. 1RM</Text>
               <Text style={styles.heroStatValue}>
                 {sessionPoints.length
-                  ? `${Math.max(...sessionPoints.map((point) => point.estimated1RM)).toFixed(1)}kg`
+                  ? formatMass(Math.max(...sessionPoints.map((point) => point.estimated1RM)), measurementSystem)
                   : "-"}
               </Text>
             </View>
@@ -402,7 +445,7 @@ export default function ManageWorkoutSession() {
               <Text style={styles.heroStatLabel}>Top set</Text>
               <Text style={styles.heroStatValue}>
                 {sessionPoints.length
-                  ? `${sessionPoints[0].topWeight}kg x ${sessionPoints[0].bestReps}`
+                  ? `${formatMass(sessionPoints[0].topWeight, measurementSystem)} x ${sessionPoints[0].bestReps}`
                   : "-"}
               </Text>
             </View>
@@ -412,20 +455,23 @@ export default function ManageWorkoutSession() {
         <View style={styles.sectionHeader}>
           <View>
             <Text style={styles.sectionTitle}>Progress graph</Text>
-            <Text style={styles.sectionMeta}>Estimated 1RM by session</Text>
+            <Text style={styles.sectionMeta}>Estimated 1RM ({massUnitLabel(measurementSystem)}) by session</Text>
           </View>
         </View>
 
         {sessionPoints.length ? (
-          <View style={styles.exerciseCard}>
+          <ProgressionChartFrame
+            summary={chartSummary}
+            style={styles.exerciseCard}
+          >
             <LineChart
               areaChart
               curved
               isAnimated
               data={sessionPoints.map((point) => ({
-                value: Number(point.estimated1RM.toFixed(1)),
+                value: displayMass(point.estimated1RM, measurementSystem),
                 label: formatDateForDisplay(point.sessionDate),
-                dataPointText: point.estimated1RM.toFixed(1),
+                dataPointText: String(displayMass(point.estimated1RM, measurementSystem)),
               }))}
               height={220}
               spacing={56}
@@ -441,18 +487,11 @@ export default function ManageWorkoutSession() {
               rulesType="dashed"
               yAxisColor="transparent"
               xAxisColor={`${theme.border}88`}
-              yAxisTextStyle={{
-                color: theme.textLight,
-                fontSize: 11,
-              }}
-              xAxisLabelTextStyle={{
-                color: theme.textLight,
-                fontSize: 10,
-                marginTop: 6,
-              }}
+              yAxisTextStyle={styles.chartAxisLabel}
+              xAxisLabelTextStyle={styles.chartXAxisLabel}
               noOfSections={4}
               maxValue={
-                Math.max(...sessionPoints.map((point) => point.estimated1RM)) +
+                Math.max(...sessionPoints.map((point) => displayMass(point.estimated1RM, measurementSystem))) +
                 5
               }
               dataPointsColor={theme.primary}
@@ -462,7 +501,7 @@ export default function ManageWorkoutSession() {
               textShiftY={-14}
               textShiftX={-10}
             />
-          </View>
+          </ProgressionChartFrame>
         ) : (
           <View style={styles.emptyCard}>
             <Text style={styles.emptyTitle}>No graph yet</Text>
@@ -478,70 +517,17 @@ export default function ManageWorkoutSession() {
         </View>
 
         {sessions.length ? (
-          sessions.map((session) => {
-            const sessionDateValue = getSessionDate(session);
-            const sets = getSessionSets(session);
-            const totalVolume = sets.reduce(
-              (total, set) =>
-                total + calculateWorkoutVolume(set.weight, set.reps),
-              0,
-            );
-
-            return (
-              <View key={session.id} style={styles.exerciseCard}>
-                <View style={styles.exerciseHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.exerciseName}>
-                      {formatDateForDisplay(sessionDateValue)}
-                    </Text>
-                    <Text style={styles.exerciseMeta}>
-                      {sets.length} sets | {totalVolume} total volume
-                    </Text>
-                    {!!session.notes && (
-                      <Text style={styles.exerciseSubMeta}>
-                        {session.notes}
-                      </Text>
-                    )}
-                  </View>
-                  <View style={styles.cardActionIcons}>
-                    <TouchableOpacity onPress={() => openEditModal(session)}>
-                      <MaterialIcons
-                        name="edit"
-                        size={18}
-                        color={theme.primary}
-                      />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => confirmDeleteSession(session)}
-                    >
-                      <MaterialIcons
-                        name="delete-outline"
-                        size={18}
-                        color={theme.expense}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                <View style={styles.setTable}>
-                  <View style={styles.setTableHeader}>
-                    <Text style={styles.setHeaderText}>Set</Text>
-                    <Text style={styles.setHeaderText}>Weight</Text>
-                    <Text style={styles.setHeaderText}>Reps</Text>
-                    <Text style={styles.setHeaderText}>RIR</Text>
-                  </View>
-                  {sets.map((set, index) => (
-                    <View key={set.id ?? index} style={styles.setRow}>
-                      <Text style={styles.setValue}>#{set.set_number}</Text>
-                      <Text style={styles.setValue}>{set.weight}kg</Text>
-                      <Text style={styles.setValue}>{set.reps}</Text>
-                      <Text style={styles.setValue}>{set.rir ?? 0}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            );
-          })
+          sessions.map((session) => (
+            <SessionHistoryCard
+              key={session.id}
+              session={session}
+              measurementSystem={measurementSystem}
+              styles={styles}
+              theme={theme}
+              onEdit={openEditModal}
+              onDelete={confirmDeleteSession}
+            />
+          ))
         ) : (
           <View style={styles.emptyCard}>
             <Text style={styles.emptyTitle}>No sessions recorded</Text>
@@ -559,141 +545,38 @@ export default function ManageWorkoutSession() {
         onRequestClose={closeEditModal}
       >
         <View style={styles.modalBackdrop}>
-          <ShadowGlowCard
-            style={{
-              width: "92%",
-              maxHeight: "82%",
-              padding: 16,
-              borderRadius: 24,
-              backgroundColor: theme.card,
-            }}
-          >
+          <ShadowGlowCard style={styles.sessionModalCard}>
             {/* Header */}
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 14,
-              }}
-            >
-              <View>
-                <Text
-                  style={{
-                    fontSize: 20,
-                    fontWeight: "900",
-                    fontFamily: "PlusJakartaSans_800ExtraBold",
-                    color: theme.textBlack,
-                    letterSpacing: -0.5,
-                  }}
-                >
-                  Edit Session
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 12,
-                    fontWeight: "700",
-                    fontFamily: "PlusJakartaSans_700Bold",
-                    color: theme.textLight,
-                    marginTop: 2,
-                  }}
-                >
-                  Adjust stats and details below
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={closeEditModal}
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 16,
-                  backgroundColor: theme.primary + "12",
-                  justifyContent: "center",
-                  alignItems: "center",
-                }}
-              >
-                <MaterialIcons name="close" size={18} color={theme.primary} />
-              </TouchableOpacity>
-            </View>
+            <ModalHeader
+              closeLabel="Close edit session"
+              onClose={closeEditModal}
+              style={styles.sessionModalHeaderSpacing}
+              supportingText="Adjust stats and details below"
+              title="Edit Session"
+            />
 
-            <ScrollView contentContainerStyle={{ gap: 12 }} showsVerticalScrollIndicator={false}>
-              {/* Date Input */}
-              <View>
-                <Text
-                  style={{
-                    fontSize: 11,
-                    fontWeight: "800",
-                    fontFamily: "PlusJakartaSans_800ExtraBold",
-                    color: theme.textLight,
-                    textTransform: "uppercase",
-                    letterSpacing: 1,
-                    marginBottom: 6,
-                  }}
-                >
-                  Session Date
-                </Text>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    backgroundColor: theme.background,
-                    borderRadius: 14,
-                    borderWidth: 1.5,
-                    borderColor: theme.border,
-                    paddingHorizontal: 12,
-                  }}
-                >
-                  <MaterialCommunityIcons
-                    name="calendar-month"
-                    size={18}
-                    color={theme.primary}
-                    style={{ marginRight: 8 }}
-                  />
-                  <TextInput
-                    style={{
-                      flex: 1,
-                      color: theme.textBlack,
-                      fontSize: 14,
-                      paddingVertical: 10,
-                      fontWeight: "600",
-                    }}
-                    placeholder="YYYY-MM-DD"
-                    value={sessionDate}
-                    onChangeText={setSessionDate}
-                  />
-                </View>
-              </View>
+            {actionFeedback ? (
+              <ActionStatus
+                {...actionFeedback}
+                onDismiss={() => setActionFeedback(null)}
+              />
+            ) : null}
+
+            <ScrollView
+              contentContainerStyle={styles.sessionModalScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              <DateOnlyField
+                label="Session date"
+                value={sessionDate}
+                onChange={setSessionDate}
+              />
 
               {/* Notes Input */}
               <View>
-                <Text
-                  style={{
-                    fontSize: 11,
-                    fontWeight: "800",
-                    fontFamily: "PlusJakartaSans_800ExtraBold",
-                    color: theme.textLight,
-                    textTransform: "uppercase",
-                    letterSpacing: 1,
-                    marginBottom: 6,
-                  }}
-                >
-                  Notes
-                </Text>
+                <Text style={styles.notesLabel}>Notes</Text>
                 <TextInput
-                  style={[
-                    styles.input,
-                    styles.textarea,
-                    {
-                      backgroundColor: theme.background,
-                      borderRadius: 14,
-                      borderWidth: 1.5,
-                      borderColor: theme.border,
-                      padding: 12,
-                      color: theme.textBlack,
-                      minHeight: 60,
-                      textAlignVertical: "top",
-                    },
-                  ]}
+                  style={[styles.input, styles.textarea, styles.notesInputExtra]}
                   placeholder="How did it feel?"
                   placeholderTextColor={theme.textLight}
                   multiline
@@ -703,304 +586,75 @@ export default function ManageWorkoutSession() {
               </View>
 
               {/* Sub-Header for Sets */}
-              <View
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginTop: 8,
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 14,
-                    fontWeight: "800",
-                    fontFamily: "PlusJakartaSans_800ExtraBold",
-                    color: theme.textBlack,
-                  }}
-                >
-                  Logged Sets
-                </Text>
+              <View style={styles.setsSubHeaderRow}>
+                <Text style={styles.setsSubHeaderTitle}>Logged Sets</Text>
                 <TouchableOpacity
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 4,
-                    paddingHorizontal: 10,
-                    paddingVertical: 6,
-                    borderRadius: 10,
-                    backgroundColor: theme.primary + "12",
-                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add set"
+                  style={styles.addSetButton}
                   onPress={addEditableSet}
                 >
                   <MaterialIcons name="add" size={14} color={theme.primary} />
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      fontWeight: "800",
-                      fontFamily: "PlusJakartaSans_800ExtraBold",
-                      color: theme.primary,
-                    }}
-                  >
-                    Add Set
-                  </Text>
+                  <Text style={styles.addSetButtonText}>Add Set</Text>
                 </TouchableOpacity>
               </View>
 
               {/* Spreadsheet-like Table Grid */}
-              <View
-                style={{
-                  borderWidth: 1.5,
-                  borderColor: theme.border,
-                  borderRadius: 16,
-                  backgroundColor: theme.background,
-                  overflow: "hidden",
-                }}
-              >
+              <View style={styles.setGrid}>
                 {/* Table Header Row */}
-                <View
-                  style={{
-                    flexDirection: "row",
-                    backgroundColor: theme.card,
-                    borderBottomWidth: 1.5,
-                    borderBottomColor: theme.border,
-                    paddingVertical: 8,
-                    paddingHorizontal: 8,
-                  }}
-                >
-                  <Text
-                    style={{
-                      flex: 1,
-                      fontSize: 10,
-                      fontWeight: "800",
-                      fontFamily: "PlusJakartaSans_800ExtraBold",
-                      color: theme.textLight,
-                      textAlign: "center",
-                    }}
-                  >
-                    SET
+                <View style={styles.setGridHeaderRow}>
+                  <Text style={styles.setGridHeaderCellSet}>SET</Text>
+                  <Text style={styles.setGridHeaderCellWeight}>
+                    WEIGHT ({massUnitLabel(measurementSystem)})
                   </Text>
-                  <Text
-                    style={{
-                      flex: 2.2,
-                      fontSize: 10,
-                      fontWeight: "800",
-                      fontFamily: "PlusJakartaSans_800ExtraBold",
-                      color: theme.textLight,
-                      textAlign: "center",
-                    }}
-                  >
-                    WEIGHT
-                  </Text>
-                  <Text
-                    style={{
-                      flex: 1.8,
-                      fontSize: 10,
-                      fontWeight: "800",
-                      fontFamily: "PlusJakartaSans_800ExtraBold",
-                      color: theme.textLight,
-                      textAlign: "center",
-                    }}
-                  >
-                    REPS
-                  </Text>
-                  <Text
-                    style={{
-                      flex: 1.8,
-                      fontSize: 10,
-                      fontWeight: "800",
-                      fontFamily: "PlusJakartaSans_800ExtraBold",
-                      color: theme.textLight,
-                      textAlign: "center",
-                    }}
-                  >
-                    RIR
-                  </Text>
-                  <View style={{ flex: 1 }} />
+                  <Text style={styles.setGridHeaderCellNarrow}>REPS</Text>
+                  <Text style={styles.setGridHeaderCellNarrow}>RIR</Text>
+                  <View style={styles.setGridHeaderSpacer} />
                 </View>
 
                 {/* Table Rows */}
                 {editableSets.map((set, idx) => (
-                  <View
+                  <EditableSetRow
                     key={set.localId}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      borderBottomWidth: idx === editableSets.length - 1 ? 0 : 1,
-                      borderBottomColor: theme.border + "50",
-                      paddingVertical: 6,
-                      paddingHorizontal: 8,
-                    }}
-                  >
-                    {/* Set Number */}
-                    <Text
-                      style={{
-                        flex: 1,
-                        fontSize: 13,
-                        fontWeight: "900",
-                        fontFamily: "PlusJakartaSans_800ExtraBold",
-                        color: theme.textBlack,
-                        textAlign: "center",
-                      }}
-                    >
-                      {idx + 1}
-                    </Text>
-
-                    {/* Weight Input */}
-                    <View style={{ flex: 2.2, paddingHorizontal: 4 }}>
-                      <TextInput
-                        style={{
-                          backgroundColor: theme.card,
-                          borderRadius: 8,
-                          borderWidth: 1,
-                          borderColor: theme.border,
-                          color: theme.textBlack,
-                          fontSize: 13,
-                          fontWeight: "600",
-                          paddingVertical: 6,
-                          textAlign: "center",
-                        }}
-                        keyboardType="decimal-pad"
-                        placeholder="kg"
-                        placeholderTextColor={theme.textLight}
-                        value={set.weight}
-                        onChangeText={(value) =>
-                          updateSetField(set.localId, "weight", value)
-                        }
-                      />
-                    </View>
-
-                    {/* Reps Input */}
-                    <View style={{ flex: 1.8, paddingHorizontal: 4 }}>
-                      <TextInput
-                        style={{
-                          backgroundColor: theme.card,
-                          borderRadius: 8,
-                          borderWidth: 1,
-                          borderColor: theme.border,
-                          color: theme.textBlack,
-                          fontSize: 13,
-                          fontWeight: "600",
-                          paddingVertical: 6,
-                          textAlign: "center",
-                        }}
-                        keyboardType="number-pad"
-                        placeholder="reps"
-                        placeholderTextColor={theme.textLight}
-                        value={set.reps}
-                        onChangeText={(value) =>
-                          updateSetField(set.localId, "reps", value)
-                        }
-                      />
-                    </View>
-
-                    {/* RIR Input */}
-                    <View style={{ flex: 1.8, paddingHorizontal: 4 }}>
-                      <TextInput
-                        style={{
-                          backgroundColor: theme.card,
-                          borderRadius: 8,
-                          borderWidth: 1,
-                          borderColor: theme.border,
-                          color: theme.textBlack,
-                          fontSize: 13,
-                          fontWeight: "600",
-                          paddingVertical: 6,
-                          textAlign: "center",
-                        }}
-                        keyboardType="number-pad"
-                        placeholder="RIR"
-                        placeholderTextColor={theme.textLight}
-                        value={set.rir}
-                        onChangeText={(value) =>
-                          updateSetField(set.localId, "rir", value)
-                        }
-                      />
-                    </View>
-
-                    {/* Delete Action */}
-                    <TouchableOpacity
-                      onPress={() => removeEditableSet(set.localId)}
-                      style={{
-                        flex: 1,
-                        justifyContent: "center",
-                        alignItems: "center",
-                      }}
-                    >
-                      <MaterialIcons
-                        name="remove-circle-outline"
-                        size={18}
-                        color={theme.expense}
-                      />
-                    </TouchableOpacity>
-                  </View>
+                    set={set}
+                    index={idx}
+                    isLast={idx === editableSets.length - 1}
+                    measurementSystem={measurementSystem}
+                    styles={styles}
+                    theme={theme}
+                    onToggleType={toggleEditableSetType}
+                    onChangeField={updateSetField}
+                    onRemove={removeEditableSet}
+                  />
                 ))}
               </View>
             </ScrollView>
 
             {/* Actions */}
-            <View
-              style={{
-                flexDirection: "row",
-                gap: 8,
-                marginTop: 14,
-              }}
-            >
-              <TouchableOpacity
-                style={{
-                  flex: 1,
-                  paddingVertical: 12,
-                  borderRadius: 14,
-                  borderWidth: 1.5,
-                  borderColor: theme.border,
-                  justifyContent: "center",
-                  alignItems: "center",
-                }}
+            <View style={styles.sessionModalActionsRow}>
+              <AppButton
+                label="Cancel"
                 onPress={closeEditModal}
-              >
-                <Text
-                  style={{
-                    fontSize: 14,
-                    fontWeight: "800",
-                    fontFamily: "PlusJakartaSans_800ExtraBold",
-                    color: theme.textLight,
-                  }}
-                >
-                  Cancel
-                </Text>
-              </TouchableOpacity>
+                style={styles.sessionModalActionButton}
+                variant="secondary"
+              />
 
-              <TouchableOpacity
-                style={{
-                  flex: 1,
-                  backgroundColor: theme.primary,
-                  paddingVertical: 12,
-                  borderRadius: 14,
-                  justifyContent: "center",
-                  alignItems: "center",
-                }}
+              <AppButton
+                label="Save Changes"
+                loading={updateSessionMutation.isPending}
                 onPress={saveSession}
-                disabled={updateSessionMutation.isPending}
-              >
-                {updateSessionMutation.isPending ? (
-                  <ActivityIndicator color={theme.white} />
-                ) : (
-                  <Text
-                    style={{
-                      fontSize: 14,
-                      fontWeight: "800",
-                      fontFamily: "PlusJakartaSans_800ExtraBold",
-                      color: theme.white,
-                    }}
-                  >
-                    Save Changes
-                  </Text>
-                )}
-              </TouchableOpacity>
+                style={styles.sessionModalActionButton}
+              />
             </View>
           </ShadowGlowCard>
         </View>
       </Modal>
+      <DurableUndoSnackbar
+        onExpired={() => setDeleteUndo((current) => current?.phase === "countdown" ? { phase: "unavailable", label: current.label, message: "Undo period expired." } : current)}
+        onUndo={() => void undoSessionDeletion()}
+        state={deleteUndo}
+        theme={theme}
+      />
     </SafeAreaView>
   );
 }

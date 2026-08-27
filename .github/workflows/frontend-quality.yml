@@ -3,7 +3,7 @@ name: Frontend quality
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [master]
 
 jobs:
   quality:

@@ -1,12 +1,39 @@
+import type { GymStyles } from "@/assets/styles/gym.style";
 import { gymStyles } from "@/assets/styles/gym.style";
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
-import { SyncStatusBadge } from "@/components/base/SyncStatusBadge";
-import { BarcodeScannerModal } from "@/components/nutrition/BarcodeScannerModal";
+import {
+  ActionStatus,
+  type ActionFeedback,
+} from "@/components/base/action-status";
+import { AppButton } from "@/components/base/app-button";
+import {
+  DurableUndoSnackbar,
+  type DurableUndoSnackbarState,
+} from "@/components/base/durable-undo-snackbar";
+import { FormField } from "@/components/base/form-field";
+import { IconButton } from "@/components/base/icon-button";
+import { SegmentedControl } from "@/components/base/segmented-control";
+import { SelectionCard } from "@/components/base/selection-card";
+import { StatePanel } from "@/components/base/state-panel";
+import { TabScreenScrollView } from "@/components/base/tab-screen-scroll-view";
+import { FoodDiaryEntriesSection } from "@/components/nutrition/food-diary-entries-section";
+import { FoodLoggingFlow } from "@/components/nutrition/food-logging-flow";
+import { FoodDiaryPageHeader } from "@/components/nutrition/food-diary-page-header";
+import {
+  FoodDiaryInitialSkeleton,
+  IntakeSummarySkeleton,
+} from "@/components/nutrition/food-diary-skeletons";
 import { MealPrepSection } from "@/components/nutrition/mealPrepSection";
+import { NutritionProfileOverview } from "@/components/nutrition/nutrition-profile-overview";
 import { ThemeType } from "@/constants/colors";
+import {
+  getNutritionAccents,
+  getThemeSemantics,
+} from "@/constants/semantic-colors";
 import { useAlert } from "@/context/AlertContext";
 import { useDiaryContext } from "@/context/DairyContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useUnitPreference } from "@/context/UnitPreferenceContext";
 import {
   FOOD_DIARY_QUERY_KEY,
   useFoodDiarySummary,
@@ -20,49 +47,53 @@ import {
   useTodayDiarySummary,
 } from "@/hooks/useNutrition";
 import {
-  createCustomFood,
-  CustomFoodResponse,
-  deleteCustomFood,
-  searchCustomFoods,
-} from "@/services/customFoodService";
-import {
-  createFoodEntry,
   deleteFoodEntry,
-  FatSecretFoodDetail,
-  findFoodByBarcode,
   FoodEntryDetailResponseDTO,
-  MealType,
+  restoreFoodEntry,
 } from "@/services/foodDiaryService";
+import { syncQueue } from "@/services/syncQueueService";
 import {
   ActivityLevel,
   Gender,
   GoalType,
   MacroProgress,
 } from "@/services/nutritionService";
-import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { toApiError } from "@/utils/apiError";
+import { isOfflineQueuedResponse } from "@/utils/offline-response";
 import {
-  ActivityIndicator,
-  Animated,
+  centimetresToFeetAndInches,
+  formatMassInput,
+  massUnitLabel,
+  parseHeightInput,
+  parseMassInput,
+} from "@/utils/measurement-units";
+import { MaterialIcons } from "@expo/vector-icons";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { memo, useMemo, useState } from "react";
+import {
   KeyboardAvoidingView,
-  Modal,
   Platform,
   RefreshControl,
-  ScrollView,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const mealOptions: { value: MealType; label: string }[] = [
-  { value: "BREAKFAST", label: "Breakfast" },
-  { value: "LUNCH", label: "Lunch" },
-  { value: "DINNER", label: "Dinner" },
-  { value: "SNACK", label: "Snack" },
-];
+type FoodFeedbackSurface =
+  | "page"
+  | "profile"
+  | "override"
+  | "single"
+  | "custom";
+
+type ScopedFoodActionFeedback = ActionFeedback & {
+  surface: FoodFeedbackSurface;
+};
+type FoodDeleteUndo = DurableUndoSnackbarState & {
+  entryId?: number;
+  pendingId?: string;
+};
 
 const genderOptions: { value: Gender; label: string }[] = [
   { value: "MALE", label: "Male" },
@@ -100,35 +131,6 @@ const goalOptions: {
   },
 ];
 
-const formatDateForApi = (date: Date) =>
-  [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
-  ].join("-");
-
-const addDays = (value: string, days: number) => {
-  const date = new Date(`${value}T00:00:00`);
-  date.setDate(date.getDate() + days);
-  return formatDateForApi(date);
-};
-
-const formatDateLabel = (value: string) => {
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-};
-
-const parseNumber = (value?: string | number) => {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  const parsed = Number(value ?? 0);
-  return Number.isFinite(parsed) ? parsed : 0;
-};
-
 const getEntryValue = (
   entry: FoodEntryDetailResponseDTO,
   snakeKey: string,
@@ -141,14 +143,34 @@ const getEntryValue = (
 const getEntryFoodName = (entry: FoodEntryDetailResponseDTO) =>
   String(getEntryValue(entry, "food_name", "foodName") ?? "Food");
 
-const statusColor = (status?: string, theme?: any) => {
-  if (status === "ON_TRACK") return theme?.income ?? "#2ecc71";
-  if (status === "OVER") return theme?.expense ?? "#e74c3c";
-  return theme?.textLight ?? "#aaa";
+const statusColor = (status: string | undefined, theme: ThemeType) => {
+  const semantics = getThemeSemantics(theme);
+  if (status === "ON_TRACK") return semantics.success;
+  if (status === "OVER") return semantics.danger;
+  return theme.textLight;
 };
 
-// ── MacroBar component ────────────────────────────────────────────────────────
-export function MacroBar({
+// A short, specific line under the calorie stats — driven by the real
+// progress numbers, not a generic placeholder. Mirrors the streak callout
+// added to the Home screen: encouraging, but grounded in what actually
+// happened today.
+const calorieEncouragement = (
+  consumed: number,
+  remaining: number,
+  goal: number,
+  status: string | undefined,
+) => {
+  if (consumed <= 0) return "Nothing logged yet — add your first meal.";
+  if (status === "OVER" || remaining < 0) {
+    return "A little over today — tomorrow's a clean slate.";
+  }
+  if (goal > 0 && remaining / goal <= 0.15) {
+    return "Almost there for the day, nice pacing.";
+  }
+  return "On track, with plenty of room left today.";
+};
+
+function MacroBarComponent({
   label,
   unit,
   progress,
@@ -160,20 +182,16 @@ export function MacroBar({
   unit: string;
   progress: MacroProgress;
   color: string;
-  theme: any;
-  style: any;
+  theme: ThemeType;
+  style: GymStyles;
 }) {
-  const pct = Math.min(progress.percentage, 100);
+  const percentage = Math.min(progress.percentage, 100);
   return (
-    <View style={{ marginBottom: 12 }}>
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          marginBottom: 4,
-        }}
-      >
-        <Text style={style.listMeta}>{label}</Text>
+    <View style={style.macroBarWrap}>
+      <View style={style.macroBarLabelRow}>
+        <Text style={[style.listMeta, { color, fontWeight: "700" }]}>
+          {label}
+        </Text>
         <Text style={style.listMeta}>
           {progress.consumed.toFixed(1)}
           {unit} / {progress.goal.toFixed(0)}
@@ -182,28 +200,15 @@ export function MacroBar({
           <Text style={{ color }}>{progress.percentage.toFixed(0)}%</Text>
         </Text>
       </View>
-      <View
-        style={{
-          height: 6,
-          borderRadius: 3,
-          backgroundColor: theme.border ?? "#eee",
-        }}
-      >
+      <View style={style.macroBarTrack}>
         <View
-          style={{
-            height: 6,
-            borderRadius: 3,
-            width: `${pct}%`,
-            backgroundColor: color,
-          }}
+          style={[
+            style.macroBarFillBase,
+            { width: `${percentage}%`, backgroundColor: color },
+          ]}
         />
       </View>
-      <Text
-        style={[
-          style.listMeta,
-          { textAlign: "right", marginTop: 2, fontSize: 11 },
-        ]}
-      >
+      <Text style={[style.listMeta, style.macroBarRemainingText]}>
         {progress.remaining.toFixed(1)}
         {unit} remaining
       </Text>
@@ -211,250 +216,19 @@ export function MacroBar({
   );
 }
 
-const MEAL_META: Record<string, { color: string }> = {
-  BREAKFAST: { color: "#f69f1d" }, // amber
-  LUNCH: { color: "#0090FF" }, // blue
-  DINNER: { color: "#2514df" }, // purple
-  SNACK: { color: "#1D9E75" }, // teal
-};
+/**
+ * Memoized: the intake summary renders up to eight of these per render, and
+ * they only change when their own theme/progress/color inputs change.
+ */
+export const MacroBar = memo(MacroBarComponent);
 
-function MacroPill({
-  label,
-  value,
-  unit,
-  bg,
-  color,
-}: {
-  label: string;
-  value?: number;
-  unit: string;
-  bg: string;
-  color: string;
-}) {
-  return (
-    <View
-      style={{
-        backgroundColor: bg,
-        borderRadius: 20,
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-      }}
-    >
-      <Text style={{ fontSize: 11, fontWeight: "700", color }}>
-        {label}
-        {label ? " " : ""}
-        {value !== undefined
-          ? unit.includes("kcal")
-            ? value.toFixed(0)
-            : value.toFixed(1)
-          : "0"}
-        {unit}
-      </Text>
-    </View>
-  );
-}
-
-function FoodEntryCard({
-  entry,
-  onDelete,
-  theme,
-  style,
-}: {
-  entry: FoodEntryDetailResponseDTO;
-  onDelete: (entry: FoodEntryDetailResponseDTO) => void;
-  theme: ThemeType;
-  style: any;
-}) {
-  const mealColor = MEAL_META[entry.meal_type]?.color ?? theme.primary;
-
-  return (
-    <View
-      style={{
-        backgroundColor: theme.card ?? "#ffffff",
-        borderRadius: 12,
-        borderWidth: 0.5,
-        borderColor: theme.border ?? "#eee",
-        borderLeftWidth: 3.5,
-        borderLeftColor: mealColor,
-        padding: 12,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 12,
-        marginBottom: 8,
-      }}
-    >
-      <View style={{ flex: 1, gap: 5 }}>
-        <Text
-          style={[
-            style.listTitle,
-            {
-              marginBottom: 0,
-              fontWeight: "600",
-              fontSize: 13.5,
-              fontFamily: "PlusJakartaSans_500Medium",
-            },
-          ]}
-        >
-          {entry.food_name}
-        </Text>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 5 }}>
-          <MacroPill
-            label=""
-            value={entry.calories}
-            unit=" kcal"
-            bg="#FAEEDA"
-            color="#633806"
-          />
-          <MacroPill
-            label="P"
-            value={entry.protein}
-            unit="g"
-            bg="#E6F1FB"
-            color="#0C447C"
-          />
-          <MacroPill
-            label="C"
-            value={entry.carbohydrate}
-            unit="g"
-            bg="#EAF3DE"
-            color="#27500A"
-          />
-          <MacroPill
-            label="F"
-            value={entry.fat}
-            unit="g"
-            bg="#FAECE7"
-            color="#712B13"
-          />
-          <Text
-            style={[
-              style.listMeta,
-              { alignSelf: "center", fontSize: 11, fontWeight: "500" },
-            ]}
-          >
-            · {entry.quantity}g
-          </Text>
-        </View>
-      </View>
-
-      <TouchableOpacity
-        onPress={() => onDelete(entry)}
-        style={{
-          width: 32,
-          height: 32,
-          borderRadius: 8,
-          backgroundColor: (theme.expense ?? "#A32D2D") + "15",
-          justifyContent: "center",
-          alignItems: "center",
-        }}
-      >
-        <MaterialIcons
-          name="delete-outline"
-          size={17}
-          color={theme.expense ?? "#A32D2D"}
-        />
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-function FoodEntriesByMeal({
-  entries,
-  onDelete,
-  theme,
-  style,
-}: {
-  entries: FoodEntryDetailResponseDTO[];
-  onDelete: (entry: FoodEntryDetailResponseDTO) => void;
-  theme: any;
-  style: any;
-}) {
-  const grouped = entries.reduce<Record<string, FoodEntryDetailResponseDTO[]>>(
-    (acc, entry) => {
-      const meal = entry.meal_type ?? "OTHER";
-      acc[meal] = [...(acc[meal] ?? []), entry];
-      return acc;
-    },
-    {},
-  );
-
-  const mealOrder = ["BREAKFAST", "LUNCH", "DINNER", "SNACK"];
-  const sortedMeals = Object.keys(grouped).sort(
-    (a, b) => mealOrder.indexOf(a) - mealOrder.indexOf(b),
-  );
-
-  return (
-    <>
-      {sortedMeals.map((meal) => {
-        const mealEntries = grouped[meal];
-        const totalCal = mealEntries.reduce((s, e) => s + (e.calories ?? 0), 0);
-
-        return (
-          <View key={meal} style={{ marginBottom: 14 }}>
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 8,
-                marginBottom: 8,
-              }}
-            >
-              <Text
-                style={[
-                  style.listTitle,
-                  {
-                    marginBottom: 0,
-                    fontWeight: "700",
-                    fontSize: 14,
-                    fontFamily: "PlusJakartaSans_700Bold",
-                  },
-                ]}
-              >
-                {meal.charAt(0) + meal.slice(1).toLowerCase()}
-              </Text>
-              <View
-                style={{
-                  backgroundColor: theme.background,
-                  borderRadius: 20,
-                  paddingHorizontal: 8,
-                  paddingVertical: 2,
-                  borderWidth: 0.5,
-                  borderColor: theme.border ?? "#eee",
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 10.5,
-                    fontWeight: "600",
-                    color: theme.textLight,
-                    fontFamily: "PlusJakartaSans_500Medium",
-                  }}
-                >
-                  {mealEntries.length} item{mealEntries.length !== 1 ? "s" : ""}{" "}
-                  · {totalCal.toFixed(0)} kcal
-                </Text>
-              </View>
-            </View>
-
-            {mealEntries.map((entry) => (
-              <FoodEntryCard
-                key={entry.id}
-                entry={entry}
-                onDelete={onDelete}
-                theme={theme}
-                style={style}
-              />
-            ))}
-          </View>
-        );
-      })}
-    </>
-  );
-}
-
+// ── MacroBar component ────────────────────────────────────────────────────────
 export default function FoodDiary() {
   const { theme } = useTheme();
-  const styles = gymStyles(theme);
+  const { measurementSystem } = useUnitPreference();
+  const nutritionAccents = getNutritionAccents(theme.background);
+  const semantics = getThemeSemantics(theme);
+  const styles = useMemo(() => gymStyles(theme), [theme]);
   const { alert } = useAlert();
   const { selectedDate, setSelectedDate } = useDiaryContext();
   const [activeTab, setActiveTab] = useState<"SINGLE" | "PREP">("SINGLE");
@@ -474,8 +248,12 @@ export default function FoodDiary() {
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [step, setStep] = useState(0); // 0=body, 1=activity, 2=goal
 
-  const [weight, setWeight] = useState(profile?.weight_kg?.toString() ?? "");
+  const [weight, setWeight] = useState(
+    formatMassInput(profile?.weight_kg, measurementSystem),
+  );
   const [height, setHeight] = useState(profile?.height_cm?.toString() ?? "");
+  const [heightFeet, setHeightFeet] = useState("");
+  const [heightInches, setHeightInches] = useState("");
   const [age, setAge] = useState(profile?.age?.toString() ?? "");
   const [gender, setGender] = useState<Gender>(profile?.gender ?? "MALE");
   const [activity, setActivity] = useState<ActivityLevel>(
@@ -501,21 +279,21 @@ export default function FoodDiary() {
   const [oPotassium, setOPotassium] = useState(
     goals?.potassium_goal?.toString() ?? "",
   );
-  const [tabTranslateX] = useState(() => new Animated.Value(0));
-  const [containerWidth, setContainerWidth] = useState(0);
-
   const hasProfile = !!profile;
-  useEffect(() => {
-    Animated.timing(tabTranslateX, {
-      toValue: activeTab === "SINGLE" ? 0 : 1,
-      duration: 220,
-      useNativeDriver: true,
-    }).start();
-  }, [activeTab, tabTranslateX]);
 
   const openForm = () => {
-    setWeight(profile?.weight_kg?.toString() ?? "");
-    setHeight(profile?.height_cm?.toString() ?? "");
+    setFoodActionFeedback(null);
+    setWeight(formatMassInput(profile?.weight_kg, measurementSystem));
+    if (measurementSystem === "IMPERIAL" && profile?.height_cm != null) {
+      const imperialHeight = centimetresToFeetAndInches(profile.height_cm);
+      setHeightFeet(String(imperialHeight.feet));
+      setHeightInches(String(imperialHeight.inches));
+      setHeight("");
+    } else {
+      setHeight(profile?.height_cm?.toString() ?? "");
+      setHeightFeet("");
+      setHeightInches("");
+    }
     setAge(profile?.age?.toString() ?? "");
     setGender(profile?.gender ?? "MALE");
     setActivity(profile?.activity_level ?? "MODERATELY_ACTIVE");
@@ -525,6 +303,7 @@ export default function FoodDiary() {
   };
 
   const openOverride = () => {
+    setFoodActionFeedback(null);
     setOCalories(goals?.calories_goal?.toString() ?? "");
     setOProtein(goals?.protein_goal?.toString() ?? "");
     setOCarbs(goals?.carbs_goal?.toString() ?? "");
@@ -538,11 +317,24 @@ export default function FoodDiary() {
   };
 
   const saveProfile = () => {
-    const w = parseFloat(weight),
-      h = parseFloat(height),
-      a = parseInt(age);
-    if (!w || !h || !a)
-      return alert("Missing info", "Fill in weight, height, and age.");
+    const w = parseMassInput(weight, measurementSystem);
+    const h = parseHeightInput(
+      height,
+      measurementSystem,
+      heightFeet,
+      heightInches,
+    );
+    const a = parseInt(age);
+    if (!w || !h || !a) {
+      setFoodActionFeedback({
+        surface: "profile",
+        status: "error",
+        title: "Missing information",
+        message: "Fill in weight, height, and age.",
+      });
+      return;
+    }
+    setFoodActionFeedback(null);
     saveMutation.mutate(
       {
         weight_kg: w,
@@ -554,13 +346,31 @@ export default function FoodDiary() {
       },
       {
         onSuccess: (res) => {
+          if (isOfflineQueuedResponse(res)) {
+            setFoodActionFeedback({
+              surface: "profile",
+              status: "info",
+              title: "Profile saved locally",
+              message:
+                "Keep this form available while the profile waits to synchronize.",
+            });
+            return;
+          }
           setFormOpen(false);
-          alert(
-            "Profile saved!",
-            `Your daily goal: ${res.calculated_calories.toFixed(0)} kcal\nTDEE: ${res.calculated_tdee.toFixed(0)} kcal`,
-          );
+          setFoodActionFeedback({
+            surface: "page",
+            status: "success",
+            title: "Nutrition profile saved",
+            message: `Daily goal ${res.calculated_calories.toFixed(0)} kcal · TDEE ${res.calculated_tdee.toFixed(0)} kcal.`,
+          });
         },
-        onError: (e: any) => alert("Save failed", e.message),
+        onError: (error) =>
+          setFoodActionFeedback({
+            surface: "profile",
+            status: "error",
+            title: "Could not save profile",
+            message: toApiError(error).message,
+          }),
       },
     );
   };
@@ -570,11 +380,16 @@ export default function FoodDiary() {
       p = parseFloat(oProtein),
       cb = parseFloat(oCarbs),
       f = parseFloat(oFat);
-    if (!c || !p || !cb || !f)
-      return alert(
-        "Required",
-        "Calories, protein, carbs and fat are required.",
-      );
+    if (!c || !p || !cb || !f) {
+      setFoodActionFeedback({
+        surface: "override",
+        status: "error",
+        title: "Goals required",
+        message: "Calories, protein, carbs and fat are required.",
+      });
+      return;
+    }
+    setFoodActionFeedback(null);
     overrideMutation.mutate(
       {
         calories_goal: c,
@@ -588,23 +403,41 @@ export default function FoodDiary() {
         potassium_goal: oPotassium ? parseFloat(oPotassium) : undefined,
       },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
+          if (isOfflineQueuedResponse(result)) {
+            setFoodActionFeedback({
+              surface: "override",
+              status: "info",
+              title: "Goals saved locally",
+              message:
+                "Keep this form available while the goal changes wait to synchronize.",
+            });
+            return;
+          }
           setOverrideOpen(false);
-          alert("Goals updated!");
+          setFoodActionFeedback({
+            surface: "page",
+            status: "success",
+            title: "Nutrition goals updated",
+            message: "Your daily calorie and macro targets are now active.",
+          });
         },
-        onError: (e: any) => alert("Update failed", e.message),
+        onError: (error) =>
+          setFoodActionFeedback({
+            surface: "override",
+            status: "error",
+            title: "Could not update goals",
+            message: toApiError(error).message,
+          }),
       },
     );
   };
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState("");
   const [openMoreMacros, setOpenMoreMacros] = useState(false);
-  const [selectedMeal, setSelectedMeal] = useState<MealType>("BREAKFAST");
-  const [selectedFood, setSelectedFood] = useState<FatSecretFoodDetail | null>(
-    null,
-  );
-  const [quantity, setQuantity] = useState("1");
-  const [showFoodPicker, setShowFoodPicker] = useState(false);
+  const [foodLoggingOpenRequest, setFoodLoggingOpenRequest] = useState(0);
+  const [foodActionFeedback, setFoodActionFeedback] =
+    useState<ScopedFoodActionFeedback | null>(null);
+  const [deleteUndo, setDeleteUndo] = useState<FoodDeleteUndo | null>(null);
   const {
     isLoading: summaryLoading,
     isFetching: summaryFetching,
@@ -616,135 +449,9 @@ export default function FoodDiary() {
     refetch: refetchEntries,
   } = useFoodEntries();
 
-  const foodSearchQuery = useQuery({
-    queryKey: [...FOOD_DIARY_QUERY_KEY, "custom", search.trim()],
-    queryFn: () => searchCustomFoods(search.trim()),
-  });
-
-  const handleSelectCustomFood = (food: CustomFoodResponse) => {
-    setSelectedFood({
-      food_id: `custom-${food.id}`,
-      food_name: food.food_name,
-      food_type: "Custom Food",
-      brand_name: "My Food",
-      serving: {
-        serving_id: String(food.id),
-        serving_description: food.serving_description || "1 serving",
-        metric_serving_amount: String(food.metric_serving_amount ?? 100),
-        metric_serving_unit: "g",
-        calories: String(food.calories),
-        protein: String(food.protein),
-        carbohydrate: String(food.carbohydrate),
-        fat: String(food.fat),
-      },
-    });
-    setShowFoodPicker(false);
-    setQuantity("1");
-  };
-
-  const [showManual, setShowManual] = useState(false);
-  const [customName, setCustomName] = useState("");
-  const [customServingDesc, setCustomServingDesc] = useState("100g");
-  const [customGramation, setCustomGramation] = useState("100");
-  const [customCalories, setCustomCalories] = useState("");
-  const [customProtein, setCustomProtein] = useState("");
-  const [customCarbs, setCustomCarbs] = useState("");
-  const [customFat, setCustomFat] = useState("");
-  const [customFiber, setCustomFiber] = useState("");
-  const [customSodium, setCustomSodium] = useState("");
-  const [showOptionalFields, setShowOptionalFields] = useState(false);
-
-  const createCustomFoodMutation = useMutation({
-    mutationFn: createCustomFood,
-    onSuccess: (saved) => {
-      handleSelectCustomFood(saved);
-      queryClient.invalidateQueries({
-        queryKey: [...FOOD_DIARY_QUERY_KEY, "custom"],
-      });
-      setCustomName("");
-      setCustomServingDesc("100g");
-      setCustomGramation("100");
-      setCustomCalories("");
-      setCustomProtein("");
-      setCustomCarbs("");
-      setCustomFat("");
-      setCustomFiber("");
-      setCustomSodium("");
-      setShowManual(false);
-    },
-    onError: (error: any) => {
-      alert("Create custom food failed", error.message || "Please try again.");
-    },
-  });
-
-  const deleteCustomFoodMutation = useMutation({
-    mutationFn: deleteCustomFood,
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: [...FOOD_DIARY_QUERY_KEY, "custom"],
-      });
-    },
-    onError: (error: any) => {
-      alert("Delete failed", error.message || "Please try again.");
-    },
-  });
-
-  const handleDeleteCustomFood = (e: any, id: number) => {
-    e.stopPropagation();
-    alert(
-      "Delete Custom Food",
-      "Are you sure you want to delete this custom food?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => deleteCustomFoodMutation.mutate(id),
-        },
-      ],
-    );
-  };
-
-  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
-
-  const barcodeScanMutation = useMutation({
-    mutationFn: findFoodByBarcode,
-    onSuccess: (food) => {
-      setSelectedFood(food);
-      setShowBarcodeScanner(false);
-      setShowFoodPicker(false);
-      setQuantity("1");
-    },
-    onError: (error: any) => {
-      alert("Barcode lookup failed", error.message || "Please try again.");
-      setShowBarcodeScanner(false);
-    },
-  });
-
-  const createEntryMutation = useMutation({
-    mutationFn: createFoodEntry,
-    onSuccess: async () => {
-      setSelectedFood(null);
-      setSearch("");
-      setQuantity("1");
-      await queryClient.invalidateQueries({
-        queryKey: [...FOOD_DIARY_QUERY_KEY, "summary", selectedDate],
-      });
-      await queryClient.invalidateQueries({
-        queryKey: [...FOOD_DIARY_QUERY_KEY, "entries"],
-      });
-      await queryClient.invalidateQueries({
-        queryKey: ["diary-summary", selectedDate],
-      });
-    },
-    onError: (error: any) => {
-      alert("Could not save food", error.message || "Please try again.");
-    },
-  });
-
   const deleteEntryMutation = useMutation({
     mutationFn: deleteFoodEntry,
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       await queryClient.invalidateQueries({
         queryKey: [...FOOD_DIARY_QUERY_KEY, "summary", selectedDate],
       });
@@ -754,57 +461,33 @@ export default function FoodDiary() {
       await queryClient.invalidateQueries({
         queryKey: ["diary-summary", selectedDate],
       });
+      const queued = isOfflineQueuedResponse(result);
+      setFoodActionFeedback({
+        surface: "page",
+        status: queued ? "info" : "success",
+        title: queued ? "Deletion saved locally" : "Food entry deleted",
+        message: queued
+          ? "The diary entry will be removed after synchronization."
+          : "The food entry was removed from the diary.",
+      });
     },
-    onError: (error: any) => {
-      alert("Delete failed", error.message || "Please try again.");
+    onError: (error) => {
+      setFoodActionFeedback({
+        surface: "page",
+        status: "error",
+        title: "Could not delete food",
+        message: toApiError(error).message,
+      });
     },
   });
 
-  const serving = selectedFood?.serving;
-  const quantityNumber = Math.max(parseNumber(quantity), 0);
-  const selectedMacros = useMemo(
-    () => ({
-      calories: parseNumber(serving?.calories) * quantityNumber,
-      protein: parseNumber(serving?.protein) * quantityNumber,
-      carbohydrate: parseNumber(serving?.carbohydrate) * quantityNumber,
-      fat: parseNumber(serving?.fat) * quantityNumber,
-    }),
-    [serving, quantityNumber],
-  );
-
   const isRefreshing =
-    summaryLoading || entriesLoading || summaryFetching || entriesFetching;
+    !summaryLoading && !entriesLoading && (summaryFetching || entriesFetching);
 
   const refreshDiary = () => {
     refetchSummary();
     refetchEntries();
     refetchTodayDiarySummary();
-  };
-
-  const saveSelectedFood = () => {
-    if (!selectedFood || !serving) {
-      alert("Pick a food first", "Search FatSecret and select a food.");
-      return;
-    }
-
-    if (quantityNumber <= 0) {
-      alert("Quantity needed", "Quantity must be greater than 0.");
-      return;
-    }
-
-    createEntryMutation.mutate({
-      food_id: selectedFood.food_id,
-      food_name: selectedFood.food_name,
-      serving_id: serving.serving_id,
-      serving_description: serving.serving_description,
-      quantity: quantityNumber,
-      calories: Number(selectedMacros.calories.toFixed(1)),
-      protein: Number(selectedMacros.protein.toFixed(1)),
-      fat: Number(selectedMacros.fat.toFixed(1)),
-      carbohydrate: Number(selectedMacros.carbohydrate.toFixed(1)),
-      date: selectedDate,
-      meal_type: selectedMeal,
-    });
   };
 
   const confirmDeleteEntry = (entry: FoodEntryDetailResponseDTO) => {
@@ -816,27 +499,67 @@ export default function FoodDiary() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => deleteEntryMutation.mutate(entry.id),
+          onPress: async () => {
+            setFoodActionFeedback(null);
+            try {
+              const result = await deleteEntryMutation.mutateAsync(entry.id);
+              setDeleteUndo({
+                phase: "countdown",
+                label: getEntryFoodName(entry),
+                expiresAt: Date.now() + 5000,
+                ...(isOfflineQueuedResponse(result) ? { pendingId: result.pending_id } : {}),
+                entryId: entry.id,
+              });
+            } catch {
+              // The mutation's onError has already shown the actionable feedback.
+            }
+          },
         },
       ],
     );
   };
+  const undoFoodDeletion = async () => {
+    const undo = deleteUndo;
+    if (!undo || undo.phase !== "countdown" || !undo.entryId) return;
+    setDeleteUndo({ phase: "undoing", label: undo.label });
+    try {
+      if (undo.pendingId) {
+        const cancellation = await syncQueue.cancelPendingDelete(undo.pendingId);
+        if (cancellation.status !== "cancelled") {
+          setDeleteUndo({
+            phase: "unavailable",
+            label: undo.label,
+            message: "Undo is unavailable because deletion has already started syncing.",
+          });
+          return;
+        }
+      } else {
+        const restored = await restoreFoodEntry(undo.entryId);
+        await refreshDiary();
+        setDeleteUndo({
+          phase: "restored",
+          label: undo.label,
+          ...(isOfflineQueuedResponse(restored)
+            ? { message: "Restoration saved locally and will sync in order." }
+            : {}),
+        });
+        return;
+      }
+      await refreshDiary();
+      setDeleteUndo({ phase: "restored", label: undo.label });
+    } catch (error) {
+      setDeleteUndo({ phase: "error", label: undo.label, message: toApiError(error).message });
+    }
+  };
   const prog = todayDairySummary?.progress;
-  const calColor = prog
-    ? prog.calories.percentage > 110
-      ? (theme.expense ?? "#e74c3c")
-      : prog.calories.percentage >= 85
-        ? (theme.income ?? "#2ecc71")
-        : (theme.textLight ?? "#999")
-    : theme.primary;
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
+        style={styles.flexOne}
       >
-        <ScrollView
+        <TabScreenScrollView
           contentContainerStyle={styles.container}
           refreshControl={
             <RefreshControl
@@ -845,276 +568,27 @@ export default function FoodDiary() {
             />
           }
         >
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 8,
-            }}
-          >
-            <View>
-              <Text
-                style={{
-                  color: theme.textLight,
-                  fontSize: 12,
-                  fontWeight: "800",
-                  fontFamily: "PlusJakartaSans_800ExtraBold",
-                  textTransform: "uppercase",
-                  letterSpacing: 1.5,
-                  marginBottom: 2,
-                }}
-              >
-                Nutrition
-              </Text>
-              <Text
-                style={{
-                  color: theme.textBlack,
-                  fontSize: 28,
-                  fontWeight: "900",
-                  fontFamily: "PlusJakartaSans_800ExtraBold",
-                  letterSpacing: -0.8,
-                }}
-              >
-                Food Diary
-              </Text>
-            </View>
-            <View
-              style={{ flexDirection: "row", alignItems: "center", gap: 12 }}
-            >
-              <SyncStatusBadge />
-              <View
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 14,
-                  backgroundColor: theme.primary + "15",
-                  borderWidth: 1.5,
-                  borderColor: theme.primary + "30",
-                  justifyContent: "center",
-                  alignItems: "center",
-                }}
-              >
-                <MaterialIcons
-                  name="restaurant"
-                  size={22}
-                  color={theme.primary}
-                />
-              </View>
-            </View>
-          </View>
+          <FoodDiaryPageHeader
+            feedback={
+              foodActionFeedback?.surface === "page"
+                ? foodActionFeedback
+                : undefined
+            }
+            onDateChange={setSelectedDate}
+            onDismissFeedback={() => setFoodActionFeedback(null)}
+            selectedDate={selectedDate}
+          />
 
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              backgroundColor: theme.background,
-              borderRadius: 16,
-              padding: 12,
-              borderWidth: 1.5,
-              borderColor: theme.primary + "20",
-              marginBottom: 8,
-            }}
-          >
-            <TouchableOpacity
-              onPress={() => setSelectedDate(addDays(selectedDate, -1))}
-              activeOpacity={0.7}
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                backgroundColor: theme.primary + "12",
-                justifyContent: "center",
-                alignItems: "center",
-              }}
-            >
-              <MaterialIcons
-                name="chevron-left"
-                size={20}
-                color={theme.primary}
-              />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => setSelectedDate(formatDateForApi(new Date()))}
-              activeOpacity={0.7}
-              style={{
-                flex: 1,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: 16,
-                  fontWeight: "900",
-                  fontFamily: "PlusJakartaSans_800ExtraBold",
-                  color: theme.textBlack,
-                }}
-              >
-                {selectedDate === formatDateForApi(new Date())
-                  ? "Today"
-                  : formatDateLabel(selectedDate)}
-              </Text>
-              <Text
-                style={{
-                  fontSize: 10,
-                  fontWeight: "700",
-                  fontFamily: "PlusJakartaSans_700Bold",
-                  color: theme.textLight,
-                  textTransform: "uppercase",
-                  marginTop: 2,
-                }}
-              >
-                Tap to reset date
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => setSelectedDate(addDays(selectedDate, 1))}
-              activeOpacity={0.7}
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                backgroundColor: theme.primary + "12",
-                justifyContent: "center",
-                alignItems: "center",
-              }}
-            >
-              <MaterialIcons
-                name="chevron-right"
-                size={20}
-                color={theme.primary}
-              />
-            </TouchableOpacity>
-          </View>
+          {profileLoading && <FoodDiaryInitialSkeleton />}
 
           {hasProfile && (
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                backgroundColor: theme.background,
-                borderRadius: 14,
-                padding: 12,
-                borderWidth: 1.5,
-                borderColor: theme.primary + "20",
-                marginBottom: 8,
-              }}
-            >
-              <View style={{ flex: 1, alignItems: "center" }}>
-                <Text
-                  style={{
-                    fontSize: 10,
-                    fontWeight: "700",
-                    fontFamily: "PlusJakartaSans_700Bold",
-                    color: theme.textLight,
-                    textTransform: "uppercase",
-                    marginBottom: 4,
-                  }}
-                >
-                  Weight
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 14,
-                    fontWeight: "900",
-                    fontFamily: "PlusJakartaSans_800ExtraBold",
-                    color: theme.textBlack,
-                  }}
-                >
-                  {profile.weight_kg}kg
-                </Text>
-              </View>
-              <View
-                style={{ width: 1, backgroundColor: theme.border + "50" }}
-              />
-              <View style={{ flex: 1, alignItems: "center" }}>
-                <Text
-                  style={{
-                    fontSize: 10,
-                    fontWeight: "700",
-                    fontFamily: "PlusJakartaSans_700Bold",
-                    color: theme.textLight,
-                    textTransform: "uppercase",
-                    marginBottom: 4,
-                  }}
-                >
-                  Height
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 14,
-                    fontWeight: "900",
-                    fontFamily: "PlusJakartaSans_800ExtraBold",
-                    color: theme.textBlack,
-                  }}
-                >
-                  {profile.height_cm}cm
-                </Text>
-              </View>
-              <View
-                style={{ width: 1, backgroundColor: theme.border + "50" }}
-              />
-              <View style={{ flex: 1, alignItems: "center" }}>
-                <Text
-                  style={{
-                    fontSize: 10,
-                    fontWeight: "700",
-                    fontFamily: "PlusJakartaSans_700Bold",
-                    color: theme.textLight,
-                    textTransform: "uppercase",
-                    marginBottom: 4,
-                  }}
-                >
-                  TDEE
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 14,
-                    fontWeight: "900",
-                    fontFamily: "PlusJakartaSans_800ExtraBold",
-                    color: theme.textBlack,
-                  }}
-                >
-                  {profile.calculated_tdee?.toFixed(0)}
-                </Text>
-              </View>
-              <View
-                style={{ width: 1, backgroundColor: theme.border + "50" }}
-              />
-              <View style={{ flex: 1, alignItems: "center" }}>
-                <Text
-                  style={{
-                    fontSize: 10,
-                    fontWeight: "700",
-                    fontFamily: "PlusJakartaSans_700Bold",
-                    color: theme.textLight,
-                    textTransform: "uppercase",
-                    marginBottom: 4,
-                  }}
-                >
-                  Goal
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 14,
-                    fontWeight: "900",
-                    fontFamily: "PlusJakartaSans_800ExtraBold",
-                    color: theme.textBlack,
-                  }}
-                >
-                  {profile.goal_type}
-                </Text>
-              </View>
-            </View>
+            <NutritionProfileOverview profile={profile} theme={theme} />
           )}
 
           {/* ── ONBOARDING FORM (step by step) ─────────────────────────────── */}
           {formOpen && (
-            <ShadowGlowCard style={{ padding: 16 }}>
-              <View style={[styles.sectionHeader, { marginBottom: 12 }]}>
+            <ShadowGlowCard style={styles.formCard}>
+              <View style={[styles.sectionHeader, styles.sectionHeaderSpacing12]}>
                 <Text style={styles.sectionTitle}>
                   {step === 0
                     ? "Step 1 — Your Body"
@@ -1122,69 +596,96 @@ export default function FoodDiary() {
                       ? "Step 2 — Activity"
                       : "Step 3 — Your Goal"}
                 </Text>
-                <TouchableOpacity onPress={() => setFormOpen(false)}>
-                  <MaterialIcons
-                    name="close"
-                    size={20}
-                    color={theme.textLight}
-                  />
-                </TouchableOpacity>
+                <IconButton
+                  accessibilityLabel="Close nutrition profile"
+                  icon={
+                    <MaterialIcons
+                      name="close"
+                      size={20}
+                      color={theme.textLight}
+                    />
+                  }
+                  onPress={() => {
+                    setFormOpen(false);
+                    setFoodActionFeedback(null);
+                  }}
+                  size="compact"
+                  variant="ghost"
+                />
               </View>
+
+              {foodActionFeedback?.surface === "profile" ? (
+                <ActionStatus
+                  {...foodActionFeedback}
+                  onDismiss={() => setFoodActionFeedback(null)}
+                />
+              ) : null}
 
               {/* Step 0 — body metrics */}
               {step === 0 && (
                 <>
-                  <View style={[styles.chipRow, { marginBottom: 12 }]}>
+                  <View style={[styles.chipRow, styles.chipRowSpacing12]}>
                     {genderOptions.map((g) => (
-                      <TouchableOpacity
+                      <SelectionCard
                         key={g.value}
-                        style={[
-                          styles.filterChip,
-                          gender === g.value && styles.filterChipActive,
-                        ]}
+                        compact
+                        label={g.label}
                         onPress={() => setGender(g.value)}
-                      >
-                        <Text
-                          style={[
-                            styles.filterChipText,
-                            gender === g.value && styles.filterChipTextActive,
-                          ]}
-                        >
-                          {g.label}
-                        </Text>
-                      </TouchableOpacity>
+                        selected={gender === g.value}
+                        style={styles.flexOne}
+                      />
                     ))}
                   </View>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Weight (kg)"
+                  <FormField
+                    label={`Weight (${massUnitLabel(measurementSystem)})`}
+                    placeholder={`Weight (${massUnitLabel(measurementSystem)})`}
                     placeholderTextColor={theme.textLight}
                     keyboardType="decimal-pad"
                     value={weight}
                     onChangeText={setWeight}
                   />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Height (cm)"
-                    placeholderTextColor={theme.textLight}
-                    keyboardType="decimal-pad"
-                    value={height}
-                    onChangeText={setHeight}
-                  />
-                  <TextInput
-                    style={styles.input}
+                  {measurementSystem === "IMPERIAL" ? (
+                    <View style={styles.rowGap8}>
+                      <FormField
+                        accessibilityLabel="Height in feet"
+                        containerStyle={styles.flexOne}
+                        label="Height (ft)"
+                        keyboardType="number-pad"
+                        placeholder="ft"
+                        placeholderTextColor={theme.textLight}
+                        value={heightFeet}
+                        onChangeText={setHeightFeet}
+                      />
+                      <FormField
+                        accessibilityLabel="Height in inches"
+                        containerStyle={styles.flexOne}
+                        label="Height (in)"
+                        keyboardType="number-pad"
+                        placeholder="in"
+                        placeholderTextColor={theme.textLight}
+                        value={heightInches}
+                        onChangeText={setHeightInches}
+                      />
+                    </View>
+                  ) : (
+                    <FormField
+                      label="Height (cm)"
+                      placeholder="Height (cm)"
+                      placeholderTextColor={theme.textLight}
+                      keyboardType="decimal-pad"
+                      value={height}
+                      onChangeText={setHeight}
+                    />
+                  )}
+                  <FormField
+                    label="Age"
                     placeholder="Age"
                     placeholderTextColor={theme.textLight}
                     keyboardType="number-pad"
                     value={age}
                     onChangeText={setAge}
                   />
-                  <TouchableOpacity
-                    style={styles.primaryButton}
-                    onPress={() => setStep(1)}
-                  >
-                    <Text style={styles.primaryButtonText}>Next →</Text>
-                  </TouchableOpacity>
+                  <AppButton label="Next" onPress={() => setStep(1)} />
                 </>
               )}
 
@@ -1192,60 +693,27 @@ export default function FoodDiary() {
               {step === 1 && (
                 <>
                   {activityOptions.map((a) => (
-                    <TouchableOpacity
+                    <SelectionCard
                       key={a.value}
-                      style={[
-                        styles.listCard,
-                        activity === a.value && {
-                          borderColor: theme.primary,
-                          borderWidth: 1.5,
-                        },
-                        { marginBottom: 8, padding: 12, borderRadius: 12 },
-                      ]}
+                      description={a.desc}
+                      label={a.label}
                       onPress={() => setActivity(a.value)}
-                    >
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                        }}
-                      >
-                        <View>
-                          <Text style={styles.listTitle}>{a.label}</Text>
-                          <Text style={styles.listMeta}>{a.desc}</Text>
-                        </View>
-                        {activity === a.value && (
-                          <MaterialIcons
-                            name="check-circle"
-                            size={20}
-                            color={theme.primary}
-                          />
-                        )}
-                      </View>
-                    </TouchableOpacity>
+                      selected={activity === a.value}
+                      style={styles.optionSpacing8}
+                    />
                   ))}
-                  <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
-                    <TouchableOpacity
-                      style={[
-                        styles.filterChip,
-                        {
-                          flex: 1,
-                          height: 42,
-                          justifyContent: "center",
-                          alignItems: "center",
-                        },
-                      ]}
+                  <View style={styles.stepNavRow}>
+                    <AppButton
+                      label="Back"
                       onPress={() => setStep(0)}
-                    >
-                      <Text style={styles.filterChipText}>← Back</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.primaryButton, { flex: 2 }]}
+                      style={styles.flexOne}
+                      variant="secondary"
+                    />
+                    <AppButton
+                      label="Next"
                       onPress={() => setStep(2)}
-                    >
-                      <Text style={styles.primaryButtonText}>Next →</Text>
-                    </TouchableOpacity>
+                      style={styles.flexTwo}
+                    />
                   </View>
                 </>
               )}
@@ -1254,67 +722,28 @@ export default function FoodDiary() {
               {step === 2 && (
                 <>
                   {goalOptions.map((g) => (
-                    <TouchableOpacity
+                    <SelectionCard
                       key={g.value}
-                      style={[
-                        styles.listCard,
-                        goal === g.value && {
-                          borderColor: theme.primary,
-                          borderWidth: 1.5,
-                        },
-                        { marginBottom: 8, padding: 12, borderRadius: 12 },
-                      ]}
+                      description={g.desc}
+                      label={g.label}
                       onPress={() => setGoal(g.value)}
-                    >
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                        }}
-                      >
-                        <View>
-                          <Text style={styles.listTitle}>{g.label}</Text>
-                          <Text style={styles.listMeta}>{g.desc}</Text>
-                        </View>
-                        {goal === g.value && (
-                          <MaterialIcons
-                            name="check-circle"
-                            size={20}
-                            color={theme.primary}
-                          />
-                        )}
-                      </View>
-                    </TouchableOpacity>
+                      selected={goal === g.value}
+                      style={styles.optionSpacing8}
+                    />
                   ))}
-                  <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
-                    <TouchableOpacity
-                      style={[
-                        styles.filterChip,
-                        {
-                          flex: 1,
-                          height: 42,
-                          justifyContent: "center",
-                          alignItems: "center",
-                        },
-                      ]}
+                  <View style={styles.stepNavRow}>
+                    <AppButton
+                      label="Back"
                       onPress={() => setStep(1)}
-                    >
-                      <Text style={styles.filterChipText}>← Back</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.primaryButton, { flex: 2 }]}
+                      style={styles.flexOne}
+                      variant="secondary"
+                    />
+                    <AppButton
+                      label="Save Profile"
+                      loading={saveMutation.isPending}
                       onPress={saveProfile}
-                      disabled={saveMutation.isPending}
-                    >
-                      {saveMutation.isPending ? (
-                        <ActivityIndicator color={theme.white} />
-                      ) : (
-                        <Text style={styles.primaryButtonText}>
-                          Save Profile
-                        </Text>
-                      )}
-                    </TouchableOpacity>
+                      style={styles.flexTwo}
+                    />
                   </View>
                 </>
               )}
@@ -1323,25 +752,33 @@ export default function FoodDiary() {
 
           {/* ── MANUAL OVERRIDE FORM ─────────────────────────────────── */}
           {overrideOpen && (
-            <ShadowGlowCard style={{ padding: 16 }}>
+            <ShadowGlowCard style={styles.formCard}>
               <View style={styles.sectionHeader}>
                 <Text style={styles.sectionTitle}>Override Goals</Text>
-                <TouchableOpacity onPress={() => setOverrideOpen(false)}>
-                  <MaterialIcons
-                    name="close"
-                    size={20}
-                    color={theme.textLight}
-                  />
-                </TouchableOpacity>
+                <IconButton
+                  accessibilityLabel="Close goal override"
+                  icon={
+                    <MaterialIcons
+                      name="close"
+                      size={20}
+                      color={theme.textLight}
+                    />
+                  }
+                  onPress={() => {
+                    setOverrideOpen(false);
+                    setFoodActionFeedback(null);
+                  }}
+                  size="compact"
+                  variant="ghost"
+                />
               </View>
-              <View
-                style={{
-                  flexDirection: "column",
-                  gap: 8,
-                  marginBottom: 12,
-                  marginTop: 12,
-                }}
-              >
+              {foodActionFeedback?.surface === "override" ? (
+                <ActionStatus
+                  {...foodActionFeedback}
+                  onDismiss={() => setFoodActionFeedback(null)}
+                />
+              ) : null}
+              <View style={styles.overrideFieldsColumn}>
                 {[
                   {
                     label: "Calories (kcal)",
@@ -1352,9 +789,9 @@ export default function FoodDiary() {
                   { label: "Carbs (g)", val: oCarbs, set: setOCarbs },
                   { label: "Fat (g)", val: oFat, set: setOFat },
                 ].map(({ label, val, set }) => (
-                  <TextInput
+                  <FormField
                     key={label}
-                    style={styles.input}
+                    label={label}
                     placeholder={label}
                     placeholderTextColor={theme.textLight}
                     keyboardType="decimal-pad"
@@ -1363,68 +800,36 @@ export default function FoodDiary() {
                   />
                 ))}
               </View>
-              <TouchableOpacity
-                style={styles.primaryButton}
+              <AppButton
+                label="Save Goals"
                 onPress={saveOverride}
-                disabled={overrideMutation.isPending}
-              >
-                {overrideMutation.isPending ? (
-                  <ActivityIndicator color={theme.white} />
-                ) : (
-                  <Text style={styles.primaryButtonText}>Save Goals</Text>
-                )}
-              </TouchableOpacity>
+                loading={overrideMutation.isPending}
+              />
             </ShadowGlowCard>
           )}
 
           {/* ── NO PROFILE YET ─────────────────────────────────────────────── */}
           {!hasProfile && !formOpen && !profileLoading && (
-            <View style={styles.subEmptyCard}>
-              <Text style={styles.subEmptyText}>
-                Set up your body profile to get personalized calorie and macro
-                goals.
-              </Text>
-              <TouchableOpacity
-                style={[styles.primaryButton, { marginTop: 12 }]}
-                onPress={openForm}
-              >
-                <Text style={styles.primaryButtonText}>Get Started</Text>
-              </TouchableOpacity>
-            </View>
+            <StatePanel
+              variant="empty"
+              title="Set up your nutrition profile"
+              message="Add your body profile to receive personalized calorie and macro goals."
+              primaryAction={{ label: "Get started", onPress: openForm }}
+            />
           )}
 
           {hasProfile && !formOpen && !overrideOpen && (
             <>
-              <ShadowGlowCard
-                style={{
-                  backgroundColor: theme.background,
-                  borderColor: theme.primary + "20",
-                  borderWidth: 1.5,
-                }}
-              >
-                <View style={[styles.sectionHeader, { marginBottom: 14 }]}>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 6,
-                    }}
-                  >
-                    <MaterialCommunityIcons
-                      name="calculator-variant-outline"
-                      size={18}
-                      color={theme.primary}
-                    />
+              <ShadowGlowCard style={styles.intakeSummaryCardBorder}>
+                <View style={[styles.sectionHeader, styles.sectionHeaderSpacing14]}>
+                  <View style={styles.rowGap6Center}>
                     <Text style={styles.sectionTitle}>Intake Summary</Text>
                   </View>
                   <Text
                     style={[
                       styles.listMeta,
-                      {
-                        color: statusColor(todayDairySummary?.status, theme),
-                        fontWeight: "800",
-                        fontFamily: "PlusJakartaSans_800ExtraBold",
-                      },
+                      styles.statusLabelText,
+                      { color: statusColor(todayDairySummary?.status, theme) },
                     ]}
                   >
                     {summaryLoading
@@ -1434,15 +839,25 @@ export default function FoodDiary() {
                 </View>
 
                 {summaryLoading ? (
-                  <ActivityIndicator color={theme.primary} />
+                  <IntakeSummarySkeleton />
                 ) : prog ? (
                   <>
                     {/* Big calorie stats */}
-                    <View style={[styles.heroStats, { marginBottom: 16 }]}>
+                    <View style={[styles.heroStats, styles.heroStatsSpacing16]}>
                       <View style={styles.heroStat}>
-                        <Text style={styles.heroStatLabel}>Consumed</Text>
                         <Text
-                          style={[styles.heroStatValue, { color: calColor }]}
+                          style={[
+                            styles.heroStatLabel,
+                            { color: nutritionAccents.calories },
+                          ]}
+                        >
+                          Consumed
+                        </Text>
+                        <Text
+                          style={[
+                            styles.heroStatValue,
+                            { color: nutritionAccents.calories },
+                          ]}
                         >
                           {prog.calories.consumed.toFixed(0)}
                         </Text>
@@ -1465,13 +880,21 @@ export default function FoodDiary() {
                         <Text style={styles.listMeta}>kcal</Text>
                       </View>
                     </View>
+                    <Text style={styles.calorieEncouragementText}>
+                      {calorieEncouragement(
+                        prog.calories.consumed,
+                        prog.calories.remaining,
+                        prog.calories.goal,
+                        todayDairySummary?.status,
+                      )}
+                    </Text>
 
                     {/* Macro progress bars */}
                     <MacroBar
                       label="Protein"
                       unit="g"
                       progress={prog.protein}
-                      color={theme.expense}
+                      color={nutritionAccents.protein}
                       theme={theme}
                       style={styles}
                     />
@@ -1479,7 +902,7 @@ export default function FoodDiary() {
                       label="Carbohydrate"
                       unit="g"
                       progress={prog.carbohydrate}
-                      color={theme.primary ?? "#2ecc71"}
+                      color={nutritionAccents.carbohydrate}
                       theme={theme}
                       style={styles}
                     />
@@ -1487,7 +910,7 @@ export default function FoodDiary() {
                       label="Fat"
                       unit="g"
                       progress={prog.fat}
-                      color={"#fff240"}
+                      color={nutritionAccents.fat}
                       theme={theme}
                       style={styles}
                     />
@@ -1497,7 +920,7 @@ export default function FoodDiary() {
                           label="Fiber"
                           unit="g"
                           progress={prog.fiber}
-                          color={theme.teriary ?? "#9b59b6"}
+                          color={theme.tertiary}
                           theme={theme}
                           style={styles}
                         />
@@ -1505,7 +928,7 @@ export default function FoodDiary() {
                           label="Sugar"
                           unit="g"
                           progress={prog.sugar}
-                          color={"#f39c12"}
+                          color={semantics.warning}
                           theme={theme}
                           style={styles}
                         />
@@ -1513,7 +936,7 @@ export default function FoodDiary() {
                           label="Sodium"
                           unit="mg"
                           progress={prog.sodium}
-                          color={"#1abc9c"}
+                          color={semantics.success}
                           theme={theme}
                           style={styles}
                         />
@@ -1521,7 +944,7 @@ export default function FoodDiary() {
                           label="Cholesterol"
                           unit="mg"
                           progress={prog.cholesterol}
-                          color={"#e67e22"}
+                          color={nutritionAccents.calories}
                           theme={theme}
                           style={styles}
                         />
@@ -1529,22 +952,23 @@ export default function FoodDiary() {
                           label="Potassium"
                           unit="mg"
                           progress={prog.potassium}
-                          color={"#3498db"}
+                          color={semantics.info}
                           theme={theme}
                           style={styles}
                         />
                       </>
                     )}
 
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        marginTop: 8,
-                      }}
-                    >
+                    <View style={styles.macroActionsRow}>
                       <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          openMoreMacros
+                            ? "Hide additional nutrients"
+                            : "Show additional nutrients"
+                        }
+                        accessibilityState={{ expanded: openMoreMacros }}
+                        hitSlop={8}
                         onPress={() => setOpenMoreMacros(!openMoreMacros)}
                       >
                         <Text style={styles.inlineActionText}>
@@ -1552,45 +976,27 @@ export default function FoodDiary() {
                         </Text>
                       </TouchableOpacity>
 
-                      <View style={{ flexDirection: "row", gap: 8 }}>
+                      <View style={styles.rowGap8}>
                         <TouchableOpacity
-                          style={{
-                            paddingHorizontal: 10,
-                            paddingVertical: 5,
-                            borderRadius: 8,
-                            backgroundColor: theme.primary + "12",
-                          }}
+                          accessibilityRole="button"
+                          accessibilityLabel="Open nutrition profile"
+                          hitSlop={6}
+                          style={styles.pillButton}
                           onPress={openForm}
                         >
-                          <Text
-                            style={{
-                              fontSize: 11,
-                              fontWeight: "800",
-                              fontFamily: "PlusJakartaSans_800ExtraBold",
-                              color: theme.primary,
-                            }}
-                          >
+                          <Text style={styles.pillButtonText}>
                             Edit Profile
                           </Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
-                          style={{
-                            paddingHorizontal: 10,
-                            paddingVertical: 5,
-                            borderRadius: 8,
-                            backgroundColor: theme.primary + "12",
-                          }}
+                          accessibilityRole="button"
+                          accessibilityLabel="Override nutrition goals"
+                          hitSlop={6}
+                          style={styles.pillButton}
                           onPress={openOverride}
                         >
-                          <Text
-                            style={{
-                              fontSize: 11,
-                              fontWeight: "800",
-                              fontFamily: "PlusJakartaSans_800ExtraBold",
-                              color: theme.primary,
-                            }}
-                          >
+                          <Text style={styles.pillButtonText}>
                             Override
                           </Text>
                         </TouchableOpacity>
@@ -1614,160 +1020,43 @@ export default function FoodDiary() {
                     </View>
                   </>
                 ) : (
-                  <Text style={styles.subEmptyText}>
-                    No food logged today. Go log a meal!
-                  </Text>
-                )}
-              </ShadowGlowCard>
-
-              {/* Today's Food Entries Section */}
-              <ShadowGlowCard
-                style={{
-                  marginTop: 16,
-                  backgroundColor: theme.background,
-                  borderColor: theme.primary + "20",
-                  borderWidth: 1.5,
-                }}
-              >
-                <View style={[styles.sectionHeader, { marginBottom: 14 }]}>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 6,
+                  <StatePanel
+                    variant="empty"
+                    compact
+                    embedded
+                    title="No nutrition recorded"
+                    message="Log your first food to start today's calorie and macro summary."
+                    primaryAction={{
+                      label: "Search food",
+                      onPress: () =>
+                        setFoodLoggingOpenRequest((request) => request + 1),
                     }}
-                  >
-                    <MaterialCommunityIcons
-                      name="food-fork-drink"
-                      size={18}
-                      color={theme.primary}
-                    />
-                    <Text style={styles.sectionTitle}>Today&apos;s Meals</Text>
-                  </View>
-                </View>
-
-                {summaryDiaryLoading ? (
-                  <ActivityIndicator color={theme.primary} />
-                ) : todayDairySummary?.entries &&
-                  todayDairySummary.entries.length > 0 ? (
-                  <FoodEntriesByMeal
-                    entries={todayDairySummary.entries}
-                    onDelete={confirmDeleteEntry}
-                    theme={theme}
-                    style={styles}
                   />
-                ) : (
-                  <Text style={styles.subEmptyText}>
-                    No food logged today. Start adding items below!
-                  </Text>
                 )}
               </ShadowGlowCard>
+
+              <FoodDiaryEntriesSection
+                entries={todayDairySummary?.entries}
+                isLoading={summaryDiaryLoading}
+                onAddFood={() =>
+                  setFoodLoggingOpenRequest((request) => request + 1)
+                }
+                onDelete={confirmDeleteEntry}
+              />
             </>
           )}
           {/* Segmented Selector for Add Food / Meal Prep */}
 
           {hasProfile && !formOpen && !overrideOpen && (
-            <View
-              onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
-              style={{
-                flexDirection: "row",
-                backgroundColor: theme.background,
-                borderRadius: 24,
-                padding: 4,
-                borderWidth: 1.5,
-                borderColor: theme.border,
-                marginVertical: 12,
-                position: "relative",
-              }}
-            >
-              {containerWidth > 0 && (
-                <Animated.View
-                  style={{
-                    position: "absolute",
-                    top: 4,
-                    bottom: 4,
-                    left: 4,
-                    width: (containerWidth - 8) / 2,
-                    backgroundColor: theme.primary + "12",
-                    borderWidth: 1.5,
-                    borderColor: theme.primary + "30",
-                    borderRadius: 20,
-                    transform: [
-                      {
-                        translateX: tabTranslateX.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0, (containerWidth - 8) / 2],
-                        }),
-                      },
-                    ],
-                  }}
-                />
-              )}
-
-              <TouchableOpacity
-                style={{
-                  flex: 1,
-                  flexDirection: "row",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  paddingVertical: 10,
-                  borderRadius: 20,
-                }}
-                activeOpacity={0.8}
-                onPress={() => setActiveTab("SINGLE")}
-              >
-                <MaterialCommunityIcons
-                  name="food-apple"
-                  size={18}
-                  color={
-                    activeTab === "SINGLE" ? theme.primary : theme.textLight
-                  }
-                  style={{ marginRight: 6 }}
-                />
-                <Text
-                  style={{
-                    fontSize: 13,
-                    fontWeight: "800",
-                    fontFamily: "PlusJakartaSans_800ExtraBold",
-                    color:
-                      activeTab === "SINGLE" ? theme.primary : theme.textLight,
-                  }}
-                >
-                  Single Food
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={{
-                  flex: 1,
-                  flexDirection: "row",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  paddingVertical: 10,
-                  borderRadius: 20,
-                }}
-                activeOpacity={0.8}
-                onPress={() => setActiveTab("PREP")}
-              >
-                <MaterialCommunityIcons
-                  name="food"
-                  size={18}
-                  color={activeTab === "PREP" ? theme.primary : theme.textLight}
-                  style={{ marginRight: 6 }}
-                />
-                <Text
-                  style={{
-                    fontSize: 13,
-                    fontWeight: "800",
-                    fontFamily: "PlusJakartaSans_800ExtraBold",
-                    color:
-                      activeTab === "PREP" ? theme.primary : theme.textLight,
-                  }}
-                >
-                  Prep Food
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <SegmentedControl
+              accessibilityLabel="Food logging mode"
+              value={activeTab}
+              options={[
+                { value: "SINGLE", label: "Single Food" },
+                { value: "PREP", label: "Prep Food" },
+              ]}
+              onChange={setActiveTab}
+            />
           )}
 
           {/* Conditional rendering based on activeTab */}
@@ -1775,494 +1064,21 @@ export default function FoodDiary() {
             <MealPrepSection />
           )}
 
-          {hasProfile &&
-            !formOpen &&
-            !overrideOpen &&
-            activeTab === "SINGLE" && (
-              <>
-                <View style={[styles.sectionHeader, { marginBottom: 12 }]}>
-                  <Text style={styles.sectionTitle}>Log Food Now</Text>
-                  <TouchableOpacity
-                    style={styles.inlineAction}
-                    onPress={() => setShowFoodPicker(true)}
-                  >
-                    <MaterialIcons
-                      name="search"
-                      size={16}
-                      color={theme.primary}
-                    />
-                    <Text style={styles.inlineActionText}>Search food</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <ShadowGlowCard
-                  style={{
-                    backgroundColor: theme.background,
-                    borderColor: theme.primary + "20",
-                    borderWidth: 1.5,
-                  }}
-                >
-                  {selectedFood && serving ? (
-                    <>
-                      <View style={styles.exerciseHeader}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.exerciseName}>
-                            {selectedFood.food_name}
-                          </Text>
-                          <Text style={styles.exerciseMeta}>
-                            {selectedFood.brand_name ??
-                              selectedFood.food_type ??
-                              "-"}
-                          </Text>
-                          <Text style={styles.exerciseSubMeta}>
-                            {serving.serving_description ?? "Selected serving"}
-                          </Text>
-                        </View>
-                        <TouchableOpacity onPress={() => setSelectedFood(null)}>
-                          <MaterialIcons
-                            name="close"
-                            size={20}
-                            color={theme.textLight}
-                          />
-                        </TouchableOpacity>
-                      </View>
-
-                      <View
-                        style={[
-                          styles.chipRow,
-                          { marginBottom: 12, marginTop: 8, flexWrap: "wrap" },
-                        ]}
-                      >
-                        {mealOptions.map((meal) => {
-                          const active = selectedMeal === meal.value;
-                          return (
-                            <TouchableOpacity
-                              key={meal.value}
-                              style={[
-                                styles.filterChip,
-                                active && styles.filterChipActive,
-                              ]}
-                              onPress={() => setSelectedMeal(meal.value)}
-                            >
-                              <Text
-                                style={[
-                                  styles.filterChipText,
-                                  active && styles.filterChipTextActive,
-                                ]}
-                              >
-                                {meal.label}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-
-                      <TextInput
-                        style={styles.input}
-                        keyboardType="decimal-pad"
-                        placeholder="Quantity"
-                        placeholderTextColor={theme.textLight}
-                        value={quantity}
-                        onChangeText={setQuantity}
-                      />
-
-                      <View style={styles.setTable}>
-                        <View style={styles.setTableHeader}>
-                          <Text style={styles.setHeaderText}>Cal</Text>
-                          <Text style={styles.setHeaderText}>Protein</Text>
-                          <Text style={styles.setHeaderText}>Carbs</Text>
-                          <Text style={styles.setHeaderText}>Fat</Text>
-                        </View>
-                        <View style={styles.setRow}>
-                          <Text style={styles.setValue}>
-                            {selectedMacros.calories.toFixed(0)}
-                          </Text>
-                          <Text style={styles.setValue}>
-                            {selectedMacros.protein.toFixed(1)}g
-                          </Text>
-                          <Text style={styles.setValue}>
-                            {selectedMacros.carbohydrate.toFixed(1)}g
-                          </Text>
-                          <Text style={styles.setValue}>
-                            {selectedMacros.fat.toFixed(1)}g
-                          </Text>
-                        </View>
-                      </View>
-
-                      <TouchableOpacity
-                        style={styles.primaryButton}
-                        onPress={saveSelectedFood}
-                        disabled={createEntryMutation.isPending}
-                      >
-                        {createEntryMutation.isPending ? (
-                          <ActivityIndicator color={theme.white} />
-                        ) : (
-                          <Text style={styles.primaryButtonText}>
-                            Save to Diary
-                          </Text>
-                        )}
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <TouchableOpacity
-                      onPress={() => setShowFoodPicker(true)}
-                      activeOpacity={0.8}
-                      style={{ paddingVertical: 12, alignItems: "center" }}
-                    >
-                      <Text
-                        style={[
-                          styles.subEmptyText,
-                          {
-                            textAlign: "center",
-                            color: theme.primary,
-                            fontWeight: "600",
-                          },
-                        ]}
-                      >
-                        Tap here to search and log food directly
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </ShadowGlowCard>
-              </>
-            )}
-        </ScrollView>
+          {hasProfile && !formOpen && !overrideOpen && activeTab === "SINGLE" && (
+            <FoodLoggingFlow
+              selectedDate={selectedDate}
+              openRequest={foodLoggingOpenRequest}
+            />
+          )}
+        </TabScreenScrollView>
       </KeyboardAvoidingView>
-
-      <Modal
-        visible={showFoodPicker}
-        transparent
-        animationType="slide"
-        onRequestClose={() => {
-          setShowFoodPicker(false);
-          setShowManual(false);
-        }}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { maxHeight: "88%" }]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {showManual ? "Add Custom Food" : "Find Food"}
-              </Text>
-              <View
-                style={{ flexDirection: "row", alignItems: "center", gap: 16 }}
-              >
-                {!showManual && (
-                  <TouchableOpacity
-                    onPress={() => setShowBarcodeScanner(true)}
-                    activeOpacity={0.7}
-                  >
-                    <MaterialCommunityIcons
-                      name="barcode-scan"
-                      size={20}
-                      color={theme.primary}
-                    />
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  onPress={() => {
-                    setShowFoodPicker(false);
-                    setShowManual(false);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <MaterialIcons
-                    name="close"
-                    size={22}
-                    color={theme.textBlack}
-                  />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {showManual ? (
-              <ScrollView
-                contentContainerStyle={{ gap: 12, paddingVertical: 8 }}
-              >
-                <TextInput
-                  style={styles.input}
-                  placeholder="Food name *"
-                  placeholderTextColor={theme.textLight}
-                  value={customName}
-                  onChangeText={setCustomName}
-                />
-                <View style={{ flexDirection: "row", gap: 10 }}>
-                  <TextInput
-                    style={[styles.input, { flex: 1.2 }]}
-                    placeholder="Serving (e.g. 100g)"
-                    placeholderTextColor={theme.textLight}
-                    value={customServingDesc}
-                    onChangeText={setCustomServingDesc}
-                  />
-                  <TextInput
-                    style={[styles.input, { flex: 0.8 }]}
-                    placeholder="Weight (g)"
-                    placeholderTextColor={theme.textLight}
-                    keyboardType="decimal-pad"
-                    value={customGramation}
-                    onChangeText={setCustomGramation}
-                  />
-                </View>
-                <View style={{ flexDirection: "row", gap: 10 }}>
-                  <TextInput
-                    style={[styles.input, { flex: 1 }]}
-                    placeholder="Calories *"
-                    placeholderTextColor={theme.textLight}
-                    keyboardType="decimal-pad"
-                    value={customCalories}
-                    onChangeText={setCustomCalories}
-                  />
-                  <TextInput
-                    style={[styles.input, { flex: 1 }]}
-                    placeholder="Protein (g) *"
-                    placeholderTextColor={theme.textLight}
-                    keyboardType="decimal-pad"
-                    value={customProtein}
-                    onChangeText={setCustomProtein}
-                  />
-                </View>
-                <View style={{ flexDirection: "row", gap: 10 }}>
-                  <TextInput
-                    style={[styles.input, { flex: 1 }]}
-                    placeholder="Carbs (g) *"
-                    placeholderTextColor={theme.textLight}
-                    keyboardType="decimal-pad"
-                    value={customCarbs}
-                    onChangeText={setCustomCarbs}
-                  />
-                  <TextInput
-                    style={[styles.input, { flex: 1 }]}
-                    placeholder="Fat (g) *"
-                    placeholderTextColor={theme.textLight}
-                    keyboardType="decimal-pad"
-                    value={customFat}
-                    onChangeText={setCustomFat}
-                  />
-                </View>
-
-                {/* Optional fields toggle */}
-                <TouchableOpacity
-                  onPress={() => setShowOptionalFields(!showOptionalFields)}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 4,
-                    alignSelf: "flex-start",
-                    marginVertical: 4,
-                  }}
-                >
-                  <MaterialIcons
-                    name={showOptionalFields ? "expand-less" : "expand-more"}
-                    size={16}
-                    color={theme.primary}
-                  />
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      fontWeight: "700",
-                      color: theme.primary,
-                      fontFamily: "PlusJakartaSans_700Bold",
-                    }}
-                  >
-                    {showOptionalFields
-                      ? "Hide Optional"
-                      : "Add Fiber & Sodium"}
-                  </Text>
-                </TouchableOpacity>
-
-                {showOptionalFields && (
-                  <View style={{ flexDirection: "row", gap: 10 }}>
-                    <TextInput
-                      style={[styles.input, { flex: 1 }]}
-                      placeholder="Fiber (g)"
-                      placeholderTextColor={theme.textLight}
-                      keyboardType="decimal-pad"
-                      value={customFiber}
-                      onChangeText={setCustomFiber}
-                    />
-                    <TextInput
-                      style={[styles.input, { flex: 1 }]}
-                      placeholder="Sodium (mg)"
-                      placeholderTextColor={theme.textLight}
-                      keyboardType="decimal-pad"
-                      value={customSodium}
-                      onChangeText={setCustomSodium}
-                    />
-                  </View>
-                )}
-
-                <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
-                  <TouchableOpacity
-                    style={[
-                      styles.primaryButton,
-                      {
-                        flex: 1,
-                        backgroundColor: "transparent",
-                        borderWidth: 1,
-                        borderColor: theme.border,
-                      },
-                    ]}
-                    onPress={() => setShowManual(false)}
-                  >
-                    <Text style={{ color: theme.textLight }}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.primaryButton, { flex: 2 }]}
-                    onPress={() => {
-                      if (!customName.trim())
-                        return alert("Required", "Enter a food name.");
-                      if (!customCalories)
-                        return alert("Required", "Enter calories.");
-                      if (!customProtein)
-                        return alert("Required", "Enter protein.");
-                      if (!customCarbs)
-                        return alert("Required", "Enter carbs.");
-                      if (!customFat) return alert("Required", "Enter fat.");
-                      createCustomFoodMutation.mutate({
-                        food_name: customName.trim(),
-                        serving_description: customServingDesc.trim() || "100g",
-                        metric_serving_amount:
-                          parseFloat(customGramation) || 100,
-                        calories: parseFloat(customCalories),
-                        protein: parseFloat(customProtein),
-                        carbohydrate: parseFloat(customCarbs),
-                        fat: parseFloat(customFat),
-                        fiber: customFiber
-                          ? parseFloat(customFiber)
-                          : undefined,
-                        sodium: customSodium
-                          ? parseFloat(customSodium)
-                          : undefined,
-                      });
-                    }}
-                    disabled={createCustomFoodMutation.isPending}
-                  >
-                    {createCustomFoodMutation.isPending ? (
-                      <ActivityIndicator color={theme.white} />
-                    ) : (
-                      <Text style={styles.primaryButtonText}>
-                        Save & Log Food
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </ScrollView>
-            ) : (
-              <>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Search custom foods..."
-                  placeholderTextColor={theme.textLight}
-                  value={search}
-                  onChangeText={setSearch}
-                  autoFocus
-                />
-
-                <TouchableOpacity
-                  style={[
-                    styles.primaryButton,
-                    {
-                      marginHorizontal: 0,
-                      marginBottom: 12,
-                      backgroundColor: theme.primary + "12",
-                      borderWidth: 1.5,
-                      borderColor: theme.primary + "30",
-                    },
-                  ]}
-                  onPress={() => setShowManual(true)}
-                >
-                  <Text
-                    style={{
-                      color: theme.primary,
-                      fontSize: 13,
-                      fontWeight: "800",
-                      fontFamily: "PlusJakartaSans_800ExtraBold",
-                    }}
-                  >
-                    + Create New Custom Food
-                  </Text>
-                </TouchableOpacity>
-
-                <ScrollView contentContainerStyle={{ gap: 8 }}>
-                  {foodSearchQuery.isFetching ? (
-                    <View style={styles.loadingState}>
-                      <ActivityIndicator color={theme.primary} />
-                      <Text style={styles.loadingText}>
-                        Searching custom foods...
-                      </Text>
-                    </View>
-                  ) : foodSearchQuery.data?.length ? (
-                    foodSearchQuery.data.map((food: CustomFoodResponse) => (
-                      <TouchableOpacity
-                        key={food.id}
-                        style={styles.listCard}
-                        activeOpacity={0.82}
-                        onPress={() => handleSelectCustomFood(food)}
-                      >
-                        <View style={styles.exerciseHeader}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.listTitle}>
-                              {food.food_name}
-                            </Text>
-                            <Text style={styles.listMeta}>
-                              {food.serving_description || "1 serving"} •{" "}
-                              {food.calories} kcal
-                            </Text>
-                            <Text style={styles.listSubtle}>
-                              P: {food.protein}g • C: {food.carbohydrate}g • F:{" "}
-                              {food.fat}g
-                            </Text>
-                          </View>
-                          <View
-                            style={{
-                              flexDirection: "row",
-                              alignItems: "center",
-                              gap: 12,
-                            }}
-                          >
-                            <TouchableOpacity
-                              onPress={(e) =>
-                                handleDeleteCustomFood(e, food.id)
-                              }
-                              activeOpacity={0.7}
-                              style={{ padding: 4 }}
-                            >
-                              <MaterialIcons
-                                name="delete-outline"
-                                size={20}
-                                color={theme.expense}
-                              />
-                            </TouchableOpacity>
-                            <MaterialIcons
-                              name="add-circle-outline"
-                              size={22}
-                              color={theme.primary}
-                            />
-                          </View>
-                        </View>
-                      </TouchableOpacity>
-                    ))
-                  ) : (
-                    <Text style={styles.emptyText}>
-                      {search
-                        ? "No custom foods found."
-                        : "No custom foods created yet."}
-                    </Text>
-                  )}
-                </ScrollView>
-              </>
-            )}
-          </View>
-        </View>
-      </Modal>
-
-      <BarcodeScannerModal
-        visible={showBarcodeScanner}
-        onClose={() => setShowBarcodeScanner(false)}
-        onScanned={(barcode) => barcodeScanMutation.mutate(barcode)}
-        isLoading={barcodeScanMutation.isPending}
+      <DurableUndoSnackbar
+        onExpired={() => setDeleteUndo((current) => current?.phase === "countdown" ? { phase: "unavailable", label: current.label, message: "Undo period expired." } : current)}
+        onUndo={() => void undoFoodDeletion()}
+        state={deleteUndo}
+        theme={theme}
       />
-    </SafeAreaView>
+</SafeAreaView>
   );
 }
 const statusLabel = (status?: string) => {

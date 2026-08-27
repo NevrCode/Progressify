@@ -31,18 +31,24 @@ describe("SyncStatusBadge", () => {
   });
 
   it("renders nothing when online data is synchronized", async () => {
-    mockUseSyncStatus.mockReturnValue({ pending: 0, failed: 0, isSyncing: false, isOnline: true });
+    mockUseSyncStatus.mockReturnValue({ pending: 0, failed: 0, isSyncing: false, isOnline: true, lastSuccessfulSyncAt: null, failedItems: [] });
     expect((await render(<SyncStatusBadge />)).toJSON()).toBeNull();
   });
 
   it("communicates queued changes while offline", async () => {
-    mockUseSyncStatus.mockReturnValue({ pending: 3, failed: 0, isSyncing: false, isOnline: false });
+    mockUseSyncStatus.mockReturnValue({ pending: 3, failed: 0, isSyncing: false, isOnline: false, lastSuccessfulSyncAt: null, failedItems: [] });
     const screen = await render(<SyncStatusBadge />);
     expect(screen.getByLabelText("3 pending offline")).toBeTruthy();
   });
 
+  it("communicates active synchronization", async () => {
+    mockUseSyncStatus.mockReturnValue({ pending: 2, failed: 0, isSyncing: true, isOnline: true, lastSuccessfulSyncAt: null, failedItems: [] });
+    const screen = await render(<SyncStatusBadge />);
+    expect(screen.getByLabelText("Syncing 2")).toBeTruthy();
+  });
+
   it("requires an explicit retry or discard decision for failed changes", async () => {
-    mockUseSyncStatus.mockReturnValue({ pending: 1, failed: 2, isSyncing: false, isOnline: true });
+    mockUseSyncStatus.mockReturnValue({ pending: 1, failed: 2, isSyncing: false, isOnline: true, lastSuccessfulSyncAt: null, failedItems: [] });
     const screen = await render(<SyncStatusBadge />);
     fireEvent.press(screen.getByRole("button", { name: "2 failed - retry" }));
     expect(alert).toHaveBeenCalledWith(

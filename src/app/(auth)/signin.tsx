@@ -1,4 +1,6 @@
-import { authStyles } from "@/assets/styles/auth.style";
+import { AppButton } from "@/components/base/app-button";
+import { FormField } from "@/components/base/form-field";
+import { IconButton } from "@/components/base/icon-button";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
 import { signIn } from "@/services/authService";
@@ -9,7 +11,6 @@ import {
   ActivityIndicator,
   ScrollView,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -33,7 +34,6 @@ export default function SignIn() {
   }>({});
   const router = useRouter();
   const { theme } = useTheme();
-  const style = authStyles(theme);
 
   const validateForm = () => {
     const newErrors: typeof errors = {};
@@ -169,16 +169,10 @@ export default function SignIn() {
           >
             Full Name
           </Text>
-          <TextInput
-            style={[
-              style.input,
-              {
-                borderColor: errors.name ? theme.expense : theme.border,
-                borderWidth: 1.2,
-              },
-            ]}
+          <FormField
+            accessibilityLabel="Full Name"
+            error={errors.name}
             placeholder="John Doe"
-            placeholderTextColor={theme.textLight}
             value={name}
             onChangeText={(text) => {
               setName(text);
@@ -186,11 +180,6 @@ export default function SignIn() {
             }}
             editable={!loading}
           />
-          {errors.name ? (
-            <Text style={{ color: theme.expense, fontSize: 12, marginTop: 4 }}>
-              {errors.name}
-            </Text>
-          ) : null}
         </View>
 
         <View style={{ marginBottom: 8 }}>
@@ -204,16 +193,10 @@ export default function SignIn() {
           >
             Email Address
           </Text>
-          <TextInput
-            style={[
-              style.input,
-              {
-                borderColor: errors.email ? theme.expense : theme.border,
-                borderWidth: 1.2,
-              },
-            ]}
+          <FormField
+            accessibilityLabel="Email Address"
+            error={errors.email}
             placeholder="your@email.com"
-            placeholderTextColor={theme.textLight}
             value={email}
             onChangeText={(text) => {
               setEmail(text);
@@ -222,11 +205,6 @@ export default function SignIn() {
             keyboardType="email-address"
             editable={!loading}
           />
-          {errors.email ? (
-            <Text style={{ color: theme.expense, fontSize: 12, marginTop: 4 }}>
-              {errors.email}
-            </Text>
-          ) : null}
         </View>
 
         {/* Password Input */}
@@ -241,51 +219,37 @@ export default function SignIn() {
           >
             Password
           </Text>
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              borderColor: errors.password ? theme.expense : theme.border,
-              borderWidth: 1.2,
-              borderRadius: 10,
-              backgroundColor: theme.card,
-              paddingRight: 12,
+          <FormField
+            accessibilityLabel="Password"
+            error={errors.password}
+            placeholder="Min. 8 characters"
+            secureTextEntry={!showPassword}
+            value={password}
+            onChangeText={(text) => {
+              setPassword(text);
+              if (errors.password)
+                setErrors({ ...errors, password: undefined });
             }}
-          >
-            <TextInput
-              style={{
-                flex: 1,
-                height: 40,
-                paddingHorizontal: 10,
-                color: theme.text,
-              }}
-              placeholder="Min. 8 characters"
-              placeholderTextColor={theme.textLight}
-              secureTextEntry={!showPassword}
-              value={password}
-              onChangeText={(text) => {
-                setPassword(text);
-                if (errors.password)
-                  setErrors({ ...errors, password: undefined });
-              }}
-              editable={!loading}
-            />
-            <TouchableOpacity
-              onPress={() => setShowPassword(!showPassword)}
-              style={{ padding: 8 }}
-            >
-              <MaterialIcons
-                name={showPassword ? "visibility" : "visibility-off"}
-                size={20}
-                color={theme.textLight}
+            editable={!loading}
+            trailing={
+              <IconButton
+                accessibilityLabel={
+                  showPassword ? "Hide password" : "Show password"
+                }
+                icon={
+                  <MaterialIcons
+                    name={showPassword ? "visibility" : "visibility-off"}
+                    size={20}
+                    color={theme.textLight}
+                  />
+                }
+                onPress={() => setShowPassword(!showPassword)}
+                selected={showPassword}
+                size="compact"
+                variant="ghost"
               />
-            </TouchableOpacity>
-          </View>
-          {errors.password ? (
-            <Text style={{ color: theme.expense, fontSize: 12, marginTop: 4 }}>
-              {errors.password}
-            </Text>
-          ) : null}
+            }
+          />
         </View>
 
         {/* Confirm Password Input */}
@@ -300,56 +264,47 @@ export default function SignIn() {
           >
             Confirm Password
           </Text>
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              borderColor: errors.confirmPassword
-                ? theme.expense
-                : theme.border,
-              borderWidth: 1.2,
-              borderRadius: 10,
-              backgroundColor: theme.card,
-              paddingRight: 12,
+          <FormField
+            accessibilityLabel="Confirm Password"
+            error={errors.confirmPassword}
+            placeholder="Re-enter your password"
+            secureTextEntry={!showConfirmPassword}
+            value={confirmPassword}
+            onChangeText={(text) => {
+              setConfirmPassword(text);
+              if (errors.confirmPassword)
+                setErrors({ ...errors, confirmPassword: undefined });
             }}
-          >
-            <TextInput
-              style={{
-                flex: 1,
-                height: 40,
-                paddingHorizontal: 10,
-                color: theme.text,
-              }}
-              placeholder="Re-enter your password"
-              placeholderTextColor={theme.textLight}
-              secureTextEntry={!showConfirmPassword}
-              value={confirmPassword}
-              onChangeText={(text) => {
-                setConfirmPassword(text);
-                if (errors.confirmPassword)
-                  setErrors({ ...errors, confirmPassword: undefined });
-              }}
-              editable={!loading}
-            />
-            <TouchableOpacity
-              onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-              style={{ padding: 8 }}
-            >
-              <MaterialIcons
-                name={showConfirmPassword ? "visibility" : "visibility-off"}
-                size={20}
-                color={theme.textLight}
+            editable={!loading}
+            trailing={
+              <IconButton
+                accessibilityLabel={
+                  showConfirmPassword
+                    ? "Hide password confirmation"
+                    : "Show password confirmation"
+                }
+                icon={
+                  <MaterialIcons
+                    name={
+                      showConfirmPassword ? "visibility" : "visibility-off"
+                    }
+                    size={20}
+                    color={theme.textLight}
+                  />
+                }
+                onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                selected={showConfirmPassword}
+                size="compact"
+                variant="ghost"
               />
-            </TouchableOpacity>
-          </View>
-          {errors.confirmPassword ? (
-            <Text style={{ color: theme.expense, fontSize: 12, marginTop: 4 }}>
-              {errors.confirmPassword}
-            </Text>
-          ) : null}
+            }
+          />
         </View>
 
         <TouchableOpacity
+          accessibilityRole="checkbox"
+          accessibilityLabel="Accept Terms and Privacy Policy"
+          accessibilityState={{ checked: acceptedLegal }}
           onPress={() => {
             setAcceptedLegal((value) => !value);
             if (errors.acceptedLegal) {
@@ -380,10 +335,20 @@ export default function SignIn() {
             marginLeft: 32,
           }}
         >
-          <TouchableOpacity onPress={() => router.push("/terms")}>
+          <TouchableOpacity
+            accessibilityRole="link"
+            accessibilityLabel="Read Terms"
+            hitSlop={6}
+            onPress={() => router.push("/terms")}
+          >
             <Text style={{ color: theme.primary }}>Terms</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push("/privacy")}>
+          <TouchableOpacity
+            accessibilityRole="link"
+            accessibilityLabel="Read Privacy Policy"
+            hitSlop={6}
+            onPress={() => router.push("/privacy")}
+          >
             <Text style={{ color: theme.primary }}>Privacy Policy</Text>
           </TouchableOpacity>
         </View>
@@ -394,28 +359,12 @@ export default function SignIn() {
         ) : null}
 
         {/* Sign Up Button */}
-        <TouchableOpacity
-          style={[
-            style.loginButton,
-            {
-              paddingVertical: 8,
-              paddingHorizontal: 20,
-              marginBottom: 6,
-              opacity: loading ? 0.6 : 1,
-            },
-          ]}
+        <AppButton
+          label="Create Account"
+          loading={loading}
           onPress={handleSignin}
-          disabled={loading}
-        >
-          <Text
-            style={[
-              style.loginButtonText,
-              { fontSize: 16, fontWeight: "bold" },
-            ]}
-          >
-            Create Account
-          </Text>
-        </TouchableOpacity>
+          style={{ marginBottom: 6 }}
+        />
 
         {/* Divider */}
         <View
@@ -451,22 +400,12 @@ export default function SignIn() {
         </View>
 
         {/* Login Link */}
-        <TouchableOpacity
+        <AppButton
+          label="Back to Login"
+          variant="secondary"
           onPress={() => router.replace("/login")}
-          style={[
-            style.signInButton,
-            {
-              paddingVertical: 7,
-              paddingHorizontal: 20,
-              opacity: loading ? 0.6 : 1,
-            },
-          ]}
           disabled={loading}
-        >
-          <Text style={[style.signInButtonText, { fontSize: 16 }]}>
-            Back to Login
-          </Text>
-        </TouchableOpacity>
+        />
       </View>
     </ScrollView>
   );

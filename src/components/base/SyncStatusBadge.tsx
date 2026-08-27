@@ -1,4 +1,5 @@
 import { useTheme } from "@/context/ThemeContext";
+import { getThemeSemantics } from "@/constants/semantic-colors";
 import { useAlert } from "@/context/AlertContext";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
 import {
@@ -15,13 +16,14 @@ import {
 
 export function SyncStatusBadge() {
   const { theme } = useTheme();
+  const semantics = getThemeSemantics(theme);
   const { alert } = useAlert();
   const { pending, failed, isSyncing, isOnline } = useSyncStatus();
 
   if (pending === 0 && failed === 0 && isOnline) return null;
 
   const hasFailed = failed > 0;
-  const color = hasFailed ? theme.expense : theme.primary;
+  const color = hasFailed ? semantics.danger : theme.primary;
   const label = hasFailed
     ? `${failed} failed - retry`
     : !isOnline
@@ -51,6 +53,11 @@ export function SyncStatusBadge() {
     <TouchableOpacity
       accessibilityRole={hasFailed ? "button" : "text"}
       accessibilityLabel={label}
+      accessibilityHint={
+        hasFailed ? "Opens synchronization recovery options" : undefined
+      }
+      accessibilityLiveRegion="polite"
+      accessibilityState={{ disabled: !hasFailed, busy: isSyncing }}
       disabled={!hasFailed}
       onPress={handlePress}
       style={[
@@ -58,6 +65,7 @@ export function SyncStatusBadge() {
         {
           backgroundColor: color + "15",
           borderColor: color + "40",
+          minHeight: hasFailed ? 44 : 30,
         },
       ]}
     >

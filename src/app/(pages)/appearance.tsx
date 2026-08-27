@@ -11,10 +11,18 @@ const themeLabels: Record<string, string> = {
   purple: "Purple",
   ocean: "Ocean",
   green: "Green",
-  darkGym: "Dark Gym",
+  darkGym: "Signature",
 };
 
-const ColorDot = ({ color, label }: { color: string; label: string }) => (
+const ColorDot = ({
+  color,
+  label,
+  textColor,
+}: {
+  color: string;
+  label: string;
+  textColor: string;
+}) => (
   <View style={{ alignItems: "center", gap: 4 }}>
     <View
       style={{
@@ -27,7 +35,7 @@ const ColorDot = ({ color, label }: { color: string; label: string }) => (
       }}
     />
     <Text
-      style={{ fontSize: 9, color: "rgba(255,255,255,0.5)", fontWeight: "600" }}
+      style={{ fontSize: 11, color: textColor, fontWeight: "600" }}
     >
       {label}
     </Text>
@@ -56,6 +64,8 @@ export default function AppearanceSettings() {
             }}
           >
             <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
               onPress={() => router.back()}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               style={{
@@ -107,6 +117,9 @@ export default function AppearanceSettings() {
             return (
               <TouchableOpacity
                 key={key}
+                accessibilityRole="radio"
+                accessibilityLabel={`${themeLabels[key] ?? key} theme`}
+                accessibilityState={{ selected: isActive }}
                 onPress={() => setThemeName(key as keyof typeof THEMES)}
                 activeOpacity={0.7}
                 style={{
@@ -157,12 +170,12 @@ export default function AppearanceSettings() {
                     borderColor: currentTheme.border,
                   }}
                 >
-                  <ColorDot color={currentTheme.primary} label="Primary" />
-                  <ColorDot color={currentTheme.secondary} label="Accent" />
-                  <ColorDot color={currentTheme.card} label="Card" />
-                  <ColorDot color={currentTheme.textBlack} label="Text" />
-                  <ColorDot color={currentTheme.expense} label="Expense" />
-                  <ColorDot color={currentTheme.income} label="Income" />
+                  <ColorDot color={currentTheme.primary} label="Primary" textColor={currentTheme.textLight} />
+                  <ColorDot color={currentTheme.secondary} label="Accent" textColor={currentTheme.textLight} />
+                  <ColorDot color={currentTheme.card} label="Card" textColor={currentTheme.textLight} />
+                  <ColorDot color={currentTheme.textBlack} label="Text" textColor={currentTheme.textLight} />
+                  <ColorDot color={currentTheme.expense} label="Alert" textColor={currentTheme.textLight} />
+                  <ColorDot color={currentTheme.income} label="On track" textColor={currentTheme.textLight} />
                 </View>
 
                 {/* Mini button preview */}

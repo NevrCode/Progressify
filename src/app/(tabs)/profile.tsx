@@ -1,27 +1,23 @@
 import { profileStyles } from "@/assets/styles/profile.style";
 import { ShadowGlowCard } from "@/components/base/ShadowGlowCard";
+import { AppButton } from "@/components/base/app-button";
+import { PageHeader } from "@/components/base/page-header";
+import { StatePanel } from "@/components/base/state-panel";
+import { TabScreenScrollView } from "@/components/base/tab-screen-scroll-view";
 import { MenuButton } from "@/components/profile/menuButton";
+import { SyncStatusPanel } from "@/components/profile/sync-status-panel";
 import { useAlert } from "@/context/AlertContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useOnboardingPreference } from "@/hooks/useOnboardingPreference";
 import { useProfile } from "@/hooks/useProfile";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
 import { logout } from "@/services/authService";
-import {
-  Feather,
-  MaterialCommunityIcons,
-  MaterialIcons,
-} from "@expo/vector-icons";
+import { MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { useQueryClient } from "@tanstack/react-query";
 import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import { ComponentProps } from "react";
-import {
-  RefreshControl,
-  ScrollView,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { RefreshControl, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 type MaterialIconsName = ComponentProps<typeof MaterialIcons>["name"];
@@ -45,6 +41,21 @@ const menuSections: { title: string; items: MenuItem[] }[] = [
         icon: "palette",
         label: "Appearance",
         description: "Theme and display options",
+      },
+      {
+        icon: "straighten",
+        label: "Measurements",
+        description: "Metric or imperial units",
+      },
+      {
+        icon: "vibration",
+        label: "Rest timer feedback",
+        description: "Vibration when your rest ends",
+      },
+      {
+        icon: "checklist",
+        label: "Setup checklist",
+        description: "Review your first steps",
       },
       {
         icon: "new-releases",
@@ -71,6 +82,7 @@ export default function Profile() {
   const queryClient = useQueryClient();
   const { pending, failed } = useSyncStatus();
   const { theme } = useTheme();
+  const [, setOnboardingPreference] = useOnboardingPreference();
   const { alert } = useAlert();
   const profileStyless = profileStyles(theme);
 
@@ -117,62 +129,13 @@ export default function Profile() {
 
   return (
     <SafeAreaView style={profileStyless.safeArea}>
-      <ScrollView
+      <TabScreenScrollView
         contentContainerStyle={profileStyless.container}
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={refetchAll} />
         }
       >
-        {/* Header */}
-        <View
-          style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 8,
-          }}
-        >
-          <View>
-            <Text
-              style={{
-                color: theme.textLight,
-                fontSize: 12,
-                fontWeight: "800",
-                fontFamily: "PlusJakartaSans_800ExtraBold",
-                textTransform: "uppercase",
-                letterSpacing: 1.5,
-                marginBottom: 2,
-              }}
-            >
-              Account
-            </Text>
-            <Text
-              style={{
-                color: theme.textBlack,
-                fontSize: 28,
-                fontWeight: "900",
-                fontFamily: "PlusJakartaSans_800ExtraBold",
-                letterSpacing: -0.8,
-              }}
-            >
-              Profile
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 14,
-              backgroundColor: theme.primary + "15",
-              borderWidth: 1.5,
-              borderColor: theme.primary + "30",
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            <Feather name="edit-2" size={18} color={theme.primary} />
-          </TouchableOpacity>
-        </View>
+        <PageHeader eyebrow="Account" title="Profile" showSyncStatus={false} />
 
         {/* Identity card */}
         <View style={profileStyless.identityCard}>
@@ -189,7 +152,7 @@ export default function Profile() {
               <MaterialCommunityIcons
                 name="crown-outline"
                 size={14}
-                color={theme.teriary}
+                color={theme.tertiary}
               />
               <Text style={profileStyless.memberChipText}>Premium planner</Text>
             </View>
@@ -197,21 +160,23 @@ export default function Profile() {
         </View>
 
         {!!profileError && (
-          <View style={profileStyless.noticeCard}>
-            <MaterialIcons
-              name="info-outline"
-              size={18}
-              color={theme.expense}
-            />
-            <Text style={profileStyless.noticeText}>
-              Profile data could not refresh. Pull down to try again.
-            </Text>
-          </View>
+          <StatePanel
+            variant="error"
+            compact
+            title="Profile refresh failed"
+            message="Your saved profile is still displayed. Try loading the latest data again."
+            primaryAction={{
+              label: "Retry",
+              onPress: () => refetchProfile(),
+            }}
+          />
         )}
+
+        <SyncStatusPanel />
 
         {/* Preferences section */}
         <ShadowGlowCard
-          style={{ padding: 16, backgroundColor: theme.background }}
+          style={{ padding: 16 }}
         >
           <Text style={[profileStyless.sectionTitle, { marginBottom: 12 }]}>
             Preferences
@@ -222,6 +187,13 @@ export default function Profile() {
               item={item}
               onPress={() => {
                 if (item.label === "Appearance") router.push("/appearance");
+                if (item.label === "Measurements") router.push("/measurementPreferences");
+                // The route is auto-discovered by Expo Router; generated route types refresh on the next dev start.
+                if (item.label === "Rest timer feedback") router.push("/restTimerFeedback" as never);
+                if (item.label === "Setup checklist") {
+                  setOnboardingPreference("review");
+                  router.push("/home");
+                }
                 if (item.label === "Patch Notes") router.push("/changelog");
                 if (item.label === "Privacy and security")
                   router.push("/privacy");
@@ -231,41 +203,31 @@ export default function Profile() {
         </ShadowGlowCard>
 
         {/* Logout */}
-        <TouchableOpacity
-          style={profileStyless.logoutButton}
+        <AppButton
+          label="Logout"
+          description="End this session on your device"
+          variant="secondary"
           onPress={handleLogout}
-          activeOpacity={0.82}
-        >
-          <View style={profileStyless.logoutIconWrap}>
-            <MaterialIcons name="logout" size={22} color={theme.expense} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={profileStyless.logoutText}>Logout</Text>
-            <Text style={profileStyless.logoutDescription}>
-              End this session on your device
-            </Text>
-          </View>
-        </TouchableOpacity>
+          leftIcon={
+            <MaterialIcons name="logout" size={22} color={theme.primary} />
+          }
+          style={{ justifyContent: "flex-start", paddingVertical: 13 }}
+        />
 
-        <TouchableOpacity
-          style={[profileStyless.logoutButton, { marginTop: 12 }]}
+        <AppButton
+          label="Delete account"
+          description="Permanently delete your account and private data"
+          variant="destructive"
           onPress={() => router.push("/delete-account")}
-          activeOpacity={0.82}
-        >
-          <View style={profileStyless.logoutIconWrap}>
+          leftIcon={
             <MaterialIcons
               name="delete-forever"
               size={22}
               color={theme.expense}
             />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={profileStyless.logoutText}>Delete account</Text>
-            <Text style={profileStyless.logoutDescription}>
-              Permanently delete your account and private data
-            </Text>
-          </View>
-        </TouchableOpacity>
+          }
+          style={{ justifyContent: "flex-start", paddingVertical: 13 }}
+        />
 
         <View style={{ alignItems: "center", paddingVertical: 24 }}>
           <Text
@@ -279,7 +241,7 @@ export default function Profile() {
             {Constants.expoConfig?.extra?.displayedVersion ?? "1.0.0"}
           </Text>
         </View>
-      </ScrollView>
+      </TabScreenScrollView>
     </SafeAreaView>
   );
 }

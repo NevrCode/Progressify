@@ -1,14 +1,53 @@
 appId: com.nevrcode.progressify
-name: Critical workout and nutrition navigation
+name: Complete a workout and log food
 tags:
   - critical
 env:
   E2E_EMAIL: ${E2E_EMAIL}
   E2E_PASSWORD: ${E2E_PASSWORD}
+  E2E_EXERCISE: ${E2E_EXERCISE}
+  E2E_CUSTOM_FOOD: ${E2E_CUSTOM_FOOD}
 ---
 - runFlow: login.yaml
 - tapOn: "Workout"
 - assertVisible: "Start a Workout"
+- tapOn: "Start a Workout"
+- tapOn: "Search Exercise..."
+- inputText: ${E2E_EXERCISE}
+- tapOn: ${E2E_EXERCISE}
+- tapOn: "Start (1)"
+- assertVisible: "Finish Exercise"
+- tapOn: "Set 1 weight"
+- eraseText
+- inputText: "50"
+- tapOn: "Set 1 reps"
+- eraseText
+- inputText: "8"
+- tapOn: "Set 1 RIR"
+- eraseText
+- inputText: "2"
+- tapOn: "Finish Exercise"
+- assertVisible: "Session Complete"
 - tapOn: "Food"
 - assertVisible: "Food Diary"
-- assertVisible: "Log Food Now"
+- scrollUntilVisible:
+    element:
+      text: "+ Create New Custom Food"
+    direction: DOWN
+- tapOn: "+ Create New Custom Food"
+- tapOn: "Food name *"
+- inputText: ${E2E_CUSTOM_FOOD}
+- tapOn: "Serving (e.g. 100g)"
+- inputText: "100g"
+- tapOn: "Weight (g)"
+- inputText: "100"
+- tapOn: "Calories *"
+- inputText: "200"
+- tapOn: "Protein (g) *"
+- inputText: "20"
+- tapOn: "Carbs (g) *"
+- inputText: "15"
+- tapOn: "Fat (g) *"
+- inputText: "6"
+- tapOn: "Save & Log Food"
+- assertVisible: ${E2E_CUSTOM_FOOD}

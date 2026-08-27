@@ -2,13 +2,14 @@ import { API_BASE_URL } from "@/constants/apiConfig";
 import { getAccessToken } from "@/services/authSessionService";
 import {
   cacheResponse,
-  enqueueMutation,
   getCachedResponse,
+  syncQueue,
 } from "@/services/syncQueueService";
 import { refreshAuthSession } from "@/services/tokenRefreshService";
 import { create as createAxios } from "axios";
 import * as Crypto from "expo-crypto";
 import { toApiError } from "@/utils/apiError";
+import { requiresImmediateServerResponse } from "@/utils/apiRequestPolicy";
 
 export const api = createAxios({
   baseURL: API_BASE_URL,
@@ -52,7 +53,7 @@ const authEndpoints = [
 ];
 const isAuthEndpoint = (url?: string) =>
   authEndpoints.some((endpoint) => url?.includes(endpoint));
-const isOnlineOnlyEndpoint = (url?: string) => url === "/v1/user/me";
+const isOnlineOnlyEndpoint = requiresImmediateServerResponse;
 
 const canonicalize = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -70,10 +71,15 @@ const canonicalize = (value: unknown): unknown => {
 const buildCacheKey = (url?: string, params?: unknown) =>
   `GET:${url ?? ""}:${JSON.stringify(canonicalize(params ?? {}))}`;
 
-const getHeader = (headers: any, name: string) => {
-  const value = typeof headers?.get === "function"
-    ? headers.get(name)
-    : headers?.[name];
+// Axios headers are either an AxiosHeaders instance (has .get) or a plain bag,
+// depending on where in the interceptor chain they came from.
+const getHeader = (headers: unknown, name: string) => {
+  if (typeof headers !== "object" || headers === null) return undefined;
+  const bag = headers as {
+    get?: (headerName: string) => unknown;
+  } & Record<string, unknown>;
+  const value =
+    typeof bag.get === "function" ? bag.get(name) : bag[name];
   return typeof value === "string" ? value : undefined;
 };
 
@@ -135,7 +141,7 @@ api.interceptors.response.use(
           const idempotencyKey =
             getHeader(originalRequest.headers, "Idempotency-Key") ??
             Crypto.randomUUID();
-          const pendingId = await enqueueMutation(
+          const pendingId = await syncQueue.enqueue(
             originalRequest.url || "",
             (originalRequest.method || "POST").toUpperCase() as
               | "POST"
